@@ -23,6 +23,10 @@ struct DeviceInfo {
     std::vector<HIDP_BUTTON_CAPS> buttonCaps;
     std::vector<HIDP_VALUE_CAPS>  valueCaps;
 
+    // Pre-allocated usages scratch buffer for HidP_GetUsages calls
+    // Sized to worst-case button count during openAndBuildDeviceInfo()
+    std::vector<USAGE>            usagesBuf;
+
     bool isOpen() const { return handle != INVALID_HANDLE_VALUE; }
 
     // Close handle, free preparsed data, reset fields
