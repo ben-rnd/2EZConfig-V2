@@ -22,7 +22,7 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
     } else {
         // Create default structure
         m_gameSettings = {
-            {"game_id", ""},
+            {"game_id", "ez2dj"},
         };
     }
 
@@ -32,11 +32,8 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
     } else {
         // Create default structure
         m_globalSettings = {
-            {"bindings", json::array({
-                {"BUTTON_ID", "USB_ID"}
-            })},
-            {"usb_devices", json::array()},
-            {"controller_bindings", json::object()}
+            {"button_bindings", json::object()},
+            {"analog_bindings", json::object()}
         };
     }
 
