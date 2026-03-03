@@ -124,14 +124,20 @@ int main() {
 
     // Initialize game selector state from persisted game_id
     {
-        std::string gid = g_settings.gameSettings().value("game_id", "ez2dj");
-        static const int DJ_COUNT = (int)(sizeof(djGames) / sizeof(djGames[0]));
-        g_isDancer = (gid == "ez2dancer");
-        if (g_isDancer) {
-            g_gameIdx = DJ_COUNT; // default to first dancer entry
-        } else {
-            g_gameIdx = 0;
+        std::string gid = g_settings.gameSettings().value("game_id", "ez2dj_1st");
+        static const int DJ_COUNT_M     = (int)(sizeof(djGames)     / sizeof(djGames[0]));
+        static const int DANCER_COUNT_M = (int)(sizeof(dancerGames) / sizeof(dancerGames[0]));
+        g_gameIdx = 0;
+        g_isDancer = false;
+        bool found = false;
+        for (int i = 0; !found && i < DJ_COUNT_M; i++) {
+            if (gid == djGames[i].id) { g_gameIdx = i; found = true; }
         }
+        for (int i = 0; !found && i < DANCER_COUNT_M; i++) {
+            if (gid == dancerGames[i].id) { g_gameIdx = DJ_COUNT_M + i; g_isDancer = true; found = true; }
+        }
+        // Migration: old-style "ez2dancer" (no version) — default to first Dancer entry
+        if (!found && gid == "ez2dancer") { g_gameIdx = DJ_COUNT_M; g_isDancer = true; }
     }
 
     // Start input subsystem
@@ -179,6 +185,19 @@ static void renderUI() {
     ImGui::Begin("##main", nullptr, flags);
 
     ImGui::TextUnformatted("2EZConfig");
+    ImGui::SameLine();
+    // Right-align Play EZ2 button: compute position so the button sits at window right edge
+    {
+        float btnWidth = 90.0f;
+        float avail = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btnWidth);
+        // Get current exeName at frame time (not from Settings tab scope)
+        static const int DJ_COUNT_TB = (int)(sizeof(djGames) / sizeof(djGames[0]));
+        const char* tbExeName = (g_gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_gameIdx].defaultExeName;
+        if (ImGui::Button("Play EZ2", ImVec2(btnWidth, 0))) {
+            Injector::LaunchAndInject(tbExeName);
+        }
+    }
     ImGui::Separator();
 
     if (ImGui::BeginTabBar("##tabs")) {
@@ -200,31 +219,15 @@ static void renderUI() {
 
             if (ImGui::Combo("Game", &g_gameIdx, gameComboItems, TOTAL_COUNT)) {
                 g_isDancer = (g_gameIdx >= DJ_COUNT);
-                // Derive game_id
                 std::string gameId;
                 if (g_isDancer) {
-                    gameId = "ez2dancer";
+                    int dancerIdx = g_gameIdx - DJ_COUNT;
+                    gameId = dancerGames[dancerIdx].id;
                 } else {
-                    std::string exeName = djGames[g_gameIdx].defaultExeName;
-                    // EZ2AC games use "EZ2AC.exe"
-                    gameId = (exeName.find("EZ2AC") != std::string::npos) ? "ez2ac" : "ez2dj";
+                    gameId = djGames[g_gameIdx].id;
                 }
                 g_settings.gameSettings()["game_id"] = gameId;
                 g_settings.save();
-            }
-
-            ImGui::Separator();
-
-            const char* exeName = "EZ2Dancer.exe"; // default for Dancer
-            if (!g_isDancer) {
-                exeName = djGames[g_gameIdx].defaultExeName;
-            }
-            if (ImGui::Button("Launch + Inject")) {
-                Injector::LaunchAndInject(exeName);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Inject Running")) {
-                Injector::InjectRunningProcess(exeName);
             }
 
             ImGui::EndTabItem();
