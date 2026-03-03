@@ -92,7 +92,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 # usb-hid-usage — two-file C library (Apache-2.0) — usage page/ID to human-readable name
 FetchContent_Declare(usbhidusage
     GIT_REPOSITORY https://github.com/smokris/usb-hid-usage.git
-    GIT_TAG        main
+    GIT_TAG        master
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(usbhidusage)
