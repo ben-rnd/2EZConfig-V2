@@ -12,54 +12,53 @@ extern "C" {
 #include <cstdint>
 #include <vector>
 #include <optional>
+#include <utility>
 
 namespace Input {
 
-// DeviceDesc: lightweight descriptor for UI enumeration (Phase 2)
+// Runtime device descriptor for UI enumeration.
+// Axis caps pre-built from preparsed data — no secondary CreateFile needed.
 struct DeviceDesc {
-    std::string path;          // HID device path (use as binding device_path)
-    std::string manufacturer;  // from HidD_GetManufacturerString
-    std::string product;       // from HidD_GetProductString
+    uint16_t vendor_id  = 0;
+    uint16_t product_id = 0;
+    uint8_t  instance   = 0;
+    std::string manufacturer;
+    std::string product;
+    std::string path;
+    std::vector<std::pair<uint16_t, uint16_t>> axis_usages;  // (usage_page, usage_id)
+    std::vector<std::string>                   axis_labels;   // human-readable names
 };
 
-// Initialize the input subsystem: enumerate and open HID devices, start polling
-// and VTT threads. Call once at startup (DLL inject or config EXE launch).
+// Initialize: enumerate HID devices, create Raw Input window, parse bindings.
 void init(SettingsManager& settings);
 
-// Stop polling threads, close all HID handles, release preparsed data.
-// Call from DLL_PROCESS_DETACH or config EXE shutdown.
+// Shutdown: destroy Raw Input window, stop threads.
 void shutdown();
 
-// Return list of currently attached HID devices for UI display (Phase 2).
-// Safe to call from UI thread; does not interact with polling state.
+// Return list of currently attached HID devices with pre-built axis info.
 std::vector<DeviceDesc> enumerateDevices();
 
-// Return the active-low button state for the given game action name.
-// Returns true (pressed) or false (not pressed / unbound).
-// Reads from lock-free shared state — safe to call from VEH handler.
-// action must match a string from ioButtons[] in strings.h.
+// Return pressed state for a game action. Safe to call from UI thread.
 bool getButtonState(const std::string& gameAction);
 
-// Return the combined turntable position [0-255] for the given action name.
-// Combined value = scaled_axis_value + vtt_delta (uint8 wraparound).
-// Returns 128 (center) if no axis or VTT binding is present.
-// Reads from lock-free shared state — safe to call from VEH handler.
-// action must match a string from analogs[] in strings.h.
+// Return combined turntable position [0-255] for a game action. Safe to call from UI thread.
 uint8_t getAnalogValue(const std::string& gameAction);
 
-// Result type for listen/capture mode (Phase 2 Buttons tab)
-struct ButtonPressResult {
-    std::string device_path;
+// Stable capture result — VID/PID, not device path.
+struct ButtonCaptureResult {
+    uint16_t vendor_id;
+    uint16_t product_id;
+    uint8_t  instance;
     uint16_t usage_page;
     uint16_t usage_id;
 };
 
-// Poll all open device handles once for any newly-pressed HID button.
-// Returns the first button detected as newly-pressed (was not pressed on prior call).
-// Returns empty optional if no new press detected.
-// Call from UI thread during listen/capture mode — safe alongside polling thread
-// because it uses the same shared device handles (FILE_SHARE_READ|WRITE).
-// Internal state (previous button set) is static — call once per frame while listening.
-std::optional<ButtonPressResult> pollNextButtonPress();
+// Poll for a newly-pressed HID button. Returns the first press detected since last call.
+// Call once per frame from UI thread while in listen mode.
+std::optional<ButtonCaptureResult> pollNextButtonPress();
+
+// Enable/disable listen mode. While enabled, edge-detected button presses are captured
+// for pollNextButtonPress() rather than being routed to normal action bindings.
+void setListenMode(bool enabled);
 
 } // namespace Input
