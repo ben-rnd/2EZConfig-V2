@@ -315,9 +315,14 @@ static void renderUI() {
                 } else {
                     // NORMAL state for this row
                     std::string bindLabel = getButtonBindingLabel(action);
+                    bool isPressed = Input::getButtonState(action);
                     ImGui::Text("%s:", action);
                     ImGui::SameLine(160.0f);
-                    ImGui::TextUnformatted(bindLabel.c_str());
+                    if (isPressed) {
+                        ImGui::TextColored({1.0f, 1.0f, 0.0f, 1.0f}, "%s", bindLabel.c_str());
+                    } else {
+                        ImGui::TextUnformatted(bindLabel.c_str());
+                    }
                     ImGui::SameLine(310.0f);
                     if (ImGui::Button("Bind")) {
                         s_bindState   = BindState::Listening;
@@ -407,142 +412,190 @@ static void renderUI() {
                     deviceLabels.push_back(d.product.empty() ? d.path.c_str() : d.product.c_str());
                 }
 
-                // Per-turntable rendering
-                for (int p = 0; p < ANALOG_COUNT; p++) {
-                    ImGui::PushID(p);
-                    ImGui::Text("%s", analogs[p]);
-                    ImGui::Separator();
+                // Table: one row per turntable
+                static int s_editPopupPort = -1;  // which turntable is being edited; -1 = none
 
-                    // Device combo
-                    int prevDevIdx = s_analogDeviceIdx[p];
-                    if (ImGui::Combo("Device", &s_analogDeviceIdx[p], deviceLabels.data(), deviceCount)) {
-                        if (s_analogDeviceIdx[p] != prevDevIdx) {
-                            // Device changed — rebuild axis list
-                            std::string path;
-                            if (s_analogDeviceIdx[p] > 0) {
-                                path = s_analogDevices[(size_t)(s_analogDeviceIdx[p] - 1)].path;
-                            }
-                            rebuildAxisList(p, path);
-                            s_analogAxisIdx[p] = 0;
-                            // Persist device_path
-                            writeAnalogAxisField(p, "device_path", path);
-                        }
-                    }
+                if (ImGui::BeginTable("##analogTable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
+                    ImGui::TableSetupColumn("Turntable",   ImGuiTableColumnFlags_WidthFixed, 110.0f);
+                    ImGui::TableSetupColumn("Binding",     ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("##edit_btn",  ImGuiTableColumnFlags_WidthFixed, 50.0f);
+                    ImGui::TableHeadersRow();
 
-                    // Axis combo
-                    int axisCount = (int)s_axisLabels[p].size();
-                    if (axisCount > 0) {
-                        std::vector<const char*> axisLabelPtrs;
-                        axisLabelPtrs.reserve((size_t)axisCount);
-                        for (auto& lbl : s_axisLabels[p]) axisLabelPtrs.push_back(lbl.c_str());
+                    for (int p = 0; p < ANALOG_COUNT; p++) {
+                        ImGui::PushID(p);
+                        ImGui::TableNextRow();
 
-                        if (ImGui::Combo("Axis", &s_analogAxisIdx[p], axisLabelPtrs.data(), axisCount)) {
-                            auto& usage = s_axisUsages[p][(size_t)s_analogAxisIdx[p]];
-                            writeAnalogAxisField(p, "usage_page", (int)usage.first);
-                            writeAnalogAxisField(p, "usage_id",   (int)usage.second);
-                        }
-                    } else {
-                        ImGui::TextDisabled("Axis: (select device first)");
-                    }
+                        // Column 0: name
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextUnformatted(analogs[p]);
 
-                    // Reverse checkbox
-                    if (ImGui::Checkbox("Reverse", &s_analogReverse[p])) {
-                        writeAnalogAxisField(p, "reverse", s_analogReverse[p]);
-                    }
-
-                    // Sensitivity slider (0.1 to 5.0)
-                    if (ImGui::SliderFloat("Sensitivity", &s_analogSensitivity[p], 0.1f, 5.0f)) {
-                        writeAnalogAxisField(p, "sensitivity", s_analogSensitivity[p]);
-                    }
-
-                    // Dead zone slider (0 to 127)
-                    if (ImGui::SliderInt("Dead Zone", &s_analogDeadZone[p], 0, 127)) {
-                        writeAnalogAxisField(p, "dead_zone", s_analogDeadZone[p]);
-                    }
-
-                    // VTT step slider (1 to 10)
-                    if (ImGui::SliderInt("VTT Step", &s_vttStep[p], 1, 10)) {
-                        writeAnalogVttField(p, "step", s_vttStep[p]);
-                    }
-
-                    // VTT+ key capture
-                    {
-                        char vttPlusLabel[64] = "(unbound)";
-                        if (s_vttPlusVK[p] != 0) {
-                            UINT sc = MapVirtualKeyA((UINT)s_vttPlusVK[p], MAPVK_VK_TO_VSC);
-                            GetKeyNameTextA((LONG)(sc << 16), vttPlusLabel, sizeof(vttPlusLabel));
-                        }
-                        ImGui::Text("VTT+: %s", vttPlusLabel);
-                        ImGui::SameLine();
-                        if (s_capturingVTT[p][0]) {
-                            ImGui::TextColored({1.0f, 1.0f, 0.0f, 1.0f}, "[Press key...]");
-                            // Scan for newly-pressed key (keyboard only)
-                            for (int vk = 0x01; vk < 0xFF; vk++) {
-                                bool pressed = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                                if (pressed && !s_vttPrevKeys[vk]) {
-                                    if (vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
-                                        s_vttPlusVK[p] = vk;
-                                        writeAnalogVttField(p, "plus_vk", vk);
-                                        s_capturingVTT[p][0] = false;
-                                        s_vttPrevKeys[vk] = true;
-                                        break;
+                        // Column 1: binding summary
+                        ImGui::TableSetColumnIndex(1);
+                        {
+                            auto& gs = g_settings.globalSettings();
+                            std::string summary = "(unbound)";
+                            if (gs.contains("analog_bindings") && gs["analog_bindings"].contains(analogs[p])) {
+                                auto& ab = gs["analog_bindings"][analogs[p]];
+                                if (ab.contains("axis") && ab["axis"].contains("device_path")) {
+                                    std::string dpath = ab["axis"].value("device_path", "");
+                                    // Find product name for the path
+                                    std::string prod;
+                                    for (auto& d : s_analogDevices) {
+                                        if (d.path == dpath) { prod = d.product.empty() ? dpath : d.product; break; }
                                     }
+                                    uint16_t pg = (uint16_t)ab["axis"].value("usage_page", 0);
+                                    uint16_t uid = (uint16_t)ab["axis"].value("usage_id",  0);
+                                    char* axName = getHidUsageText((uint32_t)pg, (uint32_t)uid);
+                                    std::string axStr = axName ? std::string(axName) : ("0x" + std::to_string(uid));
+                                    if (axName) free(axName);
+                                    summary = (prod.empty() ? "HID" : prod) + " / " + axStr;
+                                } else if (ab.contains("vtt")) {
+                                    summary = "(VTT only)";
                                 }
-                                s_vttPrevKeys[vk] = pressed;
+                            }
+                            ImGui::TextUnformatted(summary.c_str());
+                        }
+
+                        // Column 2: Edit button
+                        ImGui::TableSetColumnIndex(2);
+                        if (ImGui::Button("Edit")) {
+                            s_editPopupPort = p;
+                            ImGui::OpenPopup("EditAnalog");
+                        }
+
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+                }
+
+                // Modal popup — rendered once, outside the table loop
+                if (ImGui::BeginPopupModal("EditAnalog", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    int p = s_editPopupPort;
+                    if (p >= 0 && p < ANALOG_COUNT) {
+                        ImGui::PushID(p);
+                        ImGui::Text("Editing: %s", analogs[p]);
+                        ImGui::Separator();
+
+                        // Device combo
+                        int prevDevIdx = s_analogDeviceIdx[p];
+                        if (ImGui::Combo("Device", &s_analogDeviceIdx[p], deviceLabels.data(), deviceCount)) {
+                            if (s_analogDeviceIdx[p] != prevDevIdx) {
+                                std::string path;
+                                if (s_analogDeviceIdx[p] > 0) {
+                                    path = s_analogDevices[(size_t)(s_analogDeviceIdx[p] - 1)].path;
+                                }
+                                rebuildAxisList(p, path);
+                                s_analogAxisIdx[p] = 0;
+                                writeAnalogAxisField(p, "device_path", path);
+                            }
+                        }
+
+                        // Axis combo
+                        int axisCount = (int)s_axisLabels[p].size();
+                        if (axisCount > 0) {
+                            std::vector<const char*> axisLabelPtrs;
+                            axisLabelPtrs.reserve((size_t)axisCount);
+                            for (auto& lbl : s_axisLabels[p]) axisLabelPtrs.push_back(lbl.c_str());
+                            if (ImGui::Combo("Axis", &s_analogAxisIdx[p], axisLabelPtrs.data(), axisCount)) {
+                                auto& usage = s_axisUsages[p][(size_t)s_analogAxisIdx[p]];
+                                writeAnalogAxisField(p, "usage_page", (int)usage.first);
+                                writeAnalogAxisField(p, "usage_id",   (int)usage.second);
                             }
                         } else {
-                            if (ImGui::Button("Bind##vttp")) {
-                                s_capturingVTT[p][0] = true;
-                                // Reset prevKeys to avoid immediate capture
-                                for (int vk = 0; vk < 256; vk++)
-                                    s_vttPrevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                            }
+                            ImGui::TextDisabled("Axis: (select device first)");
                         }
-                    }
 
-                    // VTT- key capture
-                    {
-                        char vttMinusLabel[64] = "(unbound)";
-                        if (s_vttMinusVK[p] != 0) {
-                            UINT sc = MapVirtualKeyA((UINT)s_vttMinusVK[p], MAPVK_VK_TO_VSC);
-                            GetKeyNameTextA((LONG)(sc << 16), vttMinusLabel, sizeof(vttMinusLabel));
-                        }
-                        ImGui::Text("VTT-: %s", vttMinusLabel);
-                        ImGui::SameLine();
-                        if (s_capturingVTT[p][1]) {
-                            ImGui::TextColored({1.0f, 1.0f, 0.0f, 1.0f}, "[Press key...]");
-                            for (int vk = 0x01; vk < 0xFF; vk++) {
-                                bool pressed = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                                if (pressed && !s_vttPrevKeys[vk]) {
-                                    if (vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
-                                        s_vttMinusVK[p] = vk;
-                                        writeAnalogVttField(p, "minus_vk", vk);
-                                        s_capturingVTT[p][1] = false;
-                                        s_vttPrevKeys[vk] = true;
-                                        break;
+                        if (ImGui::Checkbox("Reverse", &s_analogReverse[p]))
+                            writeAnalogAxisField(p, "reverse", s_analogReverse[p]);
+                        if (ImGui::SliderFloat("Sensitivity", &s_analogSensitivity[p], 0.1f, 5.0f))
+                            writeAnalogAxisField(p, "sensitivity", s_analogSensitivity[p]);
+                        if (ImGui::SliderInt("Dead Zone", &s_analogDeadZone[p], 0, 127))
+                            writeAnalogAxisField(p, "dead_zone", s_analogDeadZone[p]);
+                        if (ImGui::SliderInt("VTT Step", &s_vttStep[p], 1, 10))
+                            writeAnalogVttField(p, "step", s_vttStep[p]);
+
+                        // VTT+ capture
+                        {
+                            char vttPlusLabel[64] = "(unbound)";
+                            if (s_vttPlusVK[p] != 0) {
+                                UINT sc = MapVirtualKeyA((UINT)s_vttPlusVK[p], MAPVK_VK_TO_VSC);
+                                GetKeyNameTextA((LONG)(sc << 16), vttPlusLabel, sizeof(vttPlusLabel));
+                            }
+                            ImGui::Text("VTT+: %s", vttPlusLabel);
+                            ImGui::SameLine();
+                            if (s_capturingVTT[p][0]) {
+                                ImGui::TextColored({1.0f, 1.0f, 0.0f, 1.0f}, "[Press key...]");
+                                for (int vk = 0x01; vk < 0xFF; vk++) {
+                                    bool pressed = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                                    if (pressed && !s_vttPrevKeys[vk]) {
+                                        if (vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
+                                            s_vttPlusVK[p] = vk;
+                                            writeAnalogVttField(p, "plus_vk", vk);
+                                            s_capturingVTT[p][0] = false;
+                                            s_vttPrevKeys[vk] = true;
+                                            break;
+                                        }
                                     }
+                                    s_vttPrevKeys[vk] = pressed;
                                 }
-                                s_vttPrevKeys[vk] = pressed;
-                            }
-                        } else {
-                            if (ImGui::Button("Bind##vttm")) {
-                                s_capturingVTT[p][1] = true;
-                                // Reset prevKeys to avoid immediate capture
-                                for (int vk = 0; vk < 256; vk++)
-                                    s_vttPrevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                            } else {
+                                if (ImGui::Button("Bind##vttp"))  {
+                                    s_capturingVTT[p][0] = true;
+                                    for (int vk = 0; vk < 256; vk++)
+                                        s_vttPrevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                                }
                             }
                         }
-                    }
 
-                    // Live preview bar
-                    uint8_t val  = Input::getAnalogValue(analogs[p]);
-                    float   frac = (float)val / 255.0f;
-                    char    overlay[32];
-                    snprintf(overlay, sizeof(overlay), "%d/255", (int)val);
-                    ImGui::ProgressBar(frac, ImVec2(-1, 0), overlay);
+                        // VTT- capture
+                        {
+                            char vttMinusLabel[64] = "(unbound)";
+                            if (s_vttMinusVK[p] != 0) {
+                                UINT sc = MapVirtualKeyA((UINT)s_vttMinusVK[p], MAPVK_VK_TO_VSC);
+                                GetKeyNameTextA((LONG)(sc << 16), vttMinusLabel, sizeof(vttMinusLabel));
+                            }
+                            ImGui::Text("VTT-: %s", vttMinusLabel);
+                            ImGui::SameLine();
+                            if (s_capturingVTT[p][1]) {
+                                ImGui::TextColored({1.0f, 1.0f, 0.0f, 1.0f}, "[Press key...]");
+                                for (int vk = 0x01; vk < 0xFF; vk++) {
+                                    bool pressed = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                                    if (pressed && !s_vttPrevKeys[vk]) {
+                                        if (vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
+                                            s_vttMinusVK[p] = vk;
+                                            writeAnalogVttField(p, "minus_vk", vk);
+                                            s_capturingVTT[p][1] = false;
+                                            s_vttPrevKeys[vk] = true;
+                                            break;
+                                        }
+                                    }
+                                    s_vttPrevKeys[vk] = pressed;
+                                }
+                            } else {
+                                if (ImGui::Button("Bind##vttm")) {
+                                    s_capturingVTT[p][1] = true;
+                                    for (int vk = 0; vk < 256; vk++)
+                                        s_vttPrevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                                }
+                            }
+                        }
+
+                        // Live preview (inside popup so user can see it while configuring)
+                        uint8_t val  = Input::getAnalogValue(analogs[p]);
+                        float   frac = (float)val / 255.0f;
+                        char    overlay[32];
+                        snprintf(overlay, sizeof(overlay), "%d/255", (int)val);
+                        ImGui::ProgressBar(frac, ImVec2(-1, 0), overlay);
+
+                        ImGui::PopID();
+                    }
 
                     ImGui::Separator();
-                    ImGui::PopID();
+                    if (ImGui::Button("Close", ImVec2(120, 0))) {
+                        ImGui::CloseCurrentPopup();
+                        s_editPopupPort = -1;
+                    }
+                    ImGui::EndPopup();
                 }
             }
 
