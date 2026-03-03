@@ -8,9 +8,6 @@
 #pragma GCC diagnostic ignored "-Wnarrowing"
 #include "strings.h"
 #pragma GCC diagnostic pop
-extern "C" {
-#include "usb-hid-usage.h"
-}
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <string>
@@ -37,10 +34,24 @@ static std::string getButtonBindingLabel(const char* action) {
     if (type == "HidButton") {
         uint16_t page = (uint16_t)b.value("usage_page", 0);
         uint16_t id   = (uint16_t)b.value("usage_id",   0);
-        char* name = getHidUsageText((uint32_t)page, (uint32_t)id);
-        std::string label = name ? std::string(name) : ("Button 0x" + std::to_string(id));
-        if (name) free(name);
-        return label;
+        std::string axLabel;
+        if (page == 0x09) {
+            axLabel = "Button " + std::to_string(id);
+        } else if (page == 0x01) {
+            switch (id) {
+                case 0x30: axLabel = "X Axis"; break;
+                case 0x31: axLabel = "Y Axis"; break;
+                case 0x32: axLabel = "Z Axis"; break;
+                default:   axLabel = "Axis 0x" + std::to_string(id); break;
+            }
+        } else {
+            axLabel = "P=0x" + std::to_string(page) + " U=0x" + std::to_string(id);
+        }
+        uint16_t vid = (uint16_t)b.value("vendor_id",  0);
+        uint16_t pid = (uint16_t)b.value("product_id", 0);
+        char devBuf[32];
+        snprintf(devBuf, sizeof(devBuf), " [%04X:%04X]", (unsigned)vid, (unsigned)pid);
+        return axLabel + devBuf;
     } else if (type == "Keyboard") {
         uint32_t vk = b.value("vk_code", (uint32_t)0);
         char buf[64] = {};
@@ -66,40 +77,8 @@ static void writeAnalogVttField(int port, const char* field, T value) {
     g_settings.save();
 }
 
-// ---------------------------------------------------------------------------
-// Analogs tab: build axis list by opening device and querying HID value caps
-// ---------------------------------------------------------------------------
-static std::vector<std::pair<uint16_t,uint16_t>> s_axisUsages[2];
-static std::vector<std::string>                  s_axisLabels[2];
-
-static void rebuildAxisList(int port, const std::string& devicePath) {
-    s_axisUsages[port].clear();
-    s_axisLabels[port].clear();
-    if (devicePath.empty()) return;
-    HANDLE h = CreateFileA(devicePath.c_str(), GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-    if (h == INVALID_HANDLE_VALUE) return;
-    PHIDP_PREPARSED_DATA ppd = nullptr;
-    HidD_GetPreparsedData(h, &ppd);
-    if (ppd) {
-        HIDP_CAPS caps = {};
-        HidP_GetCaps(ppd, &caps);
-        USHORT numVal = caps.NumberInputValueCaps;
-        std::vector<HIDP_VALUE_CAPS> vc((size_t)numVal);
-        HidP_GetValueCaps(HidP_Input, vc.data(), &numVal, ppd);
-        for (auto& v : vc) {
-            uint16_t page = v.UsagePage;
-            uint16_t id   = v.IsRange ? v.Range.UsageMin : v.NotRange.Usage;
-            char* name = getHidUsageText((uint32_t)page, (uint32_t)id);
-            std::string label = name ? std::string(name) : ("0x" + std::to_string(id));
-            if (name) free(name);
-            s_axisUsages[port].push_back({page, id});
-            s_axisLabels[port].push_back(label);
-        }
-        HidD_FreePreparsedData(ppd);
-    }
-    CloseHandle(h);
-}
+// Axis data now comes from DeviceDesc.axis_usages/axis_labels
+// (built from RIDI_PREPARSEDDATA in Input::enumerateDevices, no secondary CreateFile needed)
 
 int main() {
     glfwSetErrorCallback([](int e, const char* d) { fprintf(stderr, "GLFW error %d: %s\n", e, d); });
@@ -237,9 +216,17 @@ static void renderUI() {
         if (ImGui::BeginTabItem("Buttons")) {
             // Bind state machine statics
             enum class BindState { Normal, Listening };
-            static BindState s_bindState   = BindState::Normal;
-            static int       s_listenIdx   = -1;
-            static float     s_listenTimer = 0.0f;
+            static BindState s_bindState     = BindState::Normal;
+            static BindState s_prevBindState = BindState::Normal;
+            static int       s_listenIdx     = -1;
+            static float     s_listenTimer   = 0.0f;
+
+            // Propagate listen mode to input subsystem so the background polling
+            // thread pauses HID polling while the UI thread captures button presses.
+            if (s_bindState != s_prevBindState) {
+                Input::setListenMode(s_bindState == BindState::Listening);
+                s_prevBindState = s_bindState;
+            }
 
             // Select action list based on game type
             const char** actionList  = g_isDancer ? ez2DancerIOButtons : ioButtons;
@@ -270,13 +257,17 @@ static void renderUI() {
                     auto hit = Input::pollNextButtonPress();
                     if (hit.has_value()) {
                         auto& bb = g_settings.globalSettings()["button_bindings"][action];
-                        bb["type"]        = "HidButton";
-                        bb["device_path"] = hit->device_path;
-                        bb["usage_page"]  = (int)hit->usage_page;
-                        bb["usage_id"]    = (int)hit->usage_id;
+                        bb["type"]       = "HidButton";
+                        bb["vendor_id"]  = (int)hit->vendor_id;
+                        bb["product_id"] = (int)hit->product_id;
+                        bb["instance"]   = (int)hit->instance;
+                        bb["usage_page"] = (int)hit->usage_page;
+                        bb["usage_id"]   = (int)hit->usage_id;
                         g_settings.save();
                         s_bindState = BindState::Normal;
                         s_listenIdx = -1;
+                        Input::shutdown();
+                        Input::init(g_settings);
                     }
 
                     // Poll for keyboard key press (scan VK 0x01..0xFE)
@@ -299,6 +290,10 @@ static void renderUI() {
                                     s_listenIdx = -1;
                                     // Update prevKeys for this vk to avoid re-triggering
                                     prevKeys[vk] = true;
+                                    // Re-init input so the new binding is registered in
+                                    // g_buttonState and the active indicator works immediately.
+                                    Input::shutdown();
+                                    Input::init(g_settings);
                                     break;
                                 }
                             }
@@ -315,7 +310,12 @@ static void renderUI() {
                 } else {
                     // NORMAL state for this row
                     std::string bindLabel = getButtonBindingLabel(action);
-                    bool isPressed = Input::getButtonState(action);
+                    bool isPressed = false;
+                    {
+                        auto& gs2 = g_settings.globalSettings();
+                        if (gs2.contains("button_bindings") && gs2["button_bindings"].contains(action))
+                            isPressed = Input::getButtonState(action);
+                    }
                     ImGui::Text("%s:", action);
                     ImGui::SameLine(160.0f);
                     if (isPressed) {
@@ -371,6 +371,12 @@ static void renderUI() {
                 static std::vector<Input::DeviceDesc> s_analogDevices;
                 static bool s_analogDevicesLoaded = false;
 
+                // Enumerate devices once and cache (must run before state restore for index matching)
+                if (!s_analogDevicesLoaded) {
+                    s_analogDevicesLoaded = true;
+                    s_analogDevices = Input::enumerateDevices();
+                }
+
                 // Load persisted analog settings on first render
                 if (!s_analogStateLoaded) {
                     s_analogStateLoaded = true;
@@ -392,12 +398,32 @@ static void renderUI() {
                             s_vttStep[p]    = vt.value("step",      3);
                         }
                     }
-                }
-
-                // Enumerate devices once and cache
-                if (!s_analogDevicesLoaded) {
-                    s_analogDevicesLoaded = true;
-                    s_analogDevices = Input::enumerateDevices();
+                    // Restore device combo selection by VID/PID match
+                    for (int p = 0; p < ANALOG_COUNT; p++) {
+                        auto& gs2 = g_settings.globalSettings();
+                        if (!gs2.contains("analog_bindings") || !gs2["analog_bindings"].contains(analogs[p])) continue;
+                        auto& ab = gs2["analog_bindings"][analogs[p]];
+                        if (!ab.contains("axis") || !ab["axis"].contains("vendor_id")) continue;
+                        uint16_t vid = (uint16_t)ab["axis"].value("vendor_id", 0);
+                        uint16_t pid = (uint16_t)ab["axis"].value("product_id", 0);
+                        for (int di = 0; di < (int)s_analogDevices.size(); di++) {
+                            if (s_analogDevices[(size_t)di].vendor_id == vid &&
+                                s_analogDevices[(size_t)di].product_id == pid) {
+                                s_analogDeviceIdx[p] = di + 1;  // +1 for "(none)"
+                                uint16_t pg  = (uint16_t)ab["axis"].value("usage_page", 0);
+                                uint16_t uid = (uint16_t)ab["axis"].value("usage_id",   0);
+                                auto& desc = s_analogDevices[(size_t)di];
+                                for (int ai = 0; ai < (int)desc.axis_usages.size(); ai++) {
+                                    if (desc.axis_usages[(size_t)ai].first  == pg &&
+                                        desc.axis_usages[(size_t)ai].second == uid) {
+                                        s_analogAxisIdx[p] = ai;
+                                        break;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 // Build device label list:
@@ -413,7 +439,8 @@ static void renderUI() {
                 }
 
                 // Table: one row per turntable
-                static int s_editPopupPort = -1;  // which turntable is being edited; -1 = none
+                static int  s_editPopupPort    = -1;    // which turntable is being edited; -1 = none
+                static bool s_openEditPopup    = false; // deferred OpenPopup flag
 
                 if (ImGui::BeginTable("##analogTable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
                     ImGui::TableSetupColumn("Turntable",   ImGuiTableColumnFlags_WidthFixed, 110.0f);
@@ -436,19 +463,38 @@ static void renderUI() {
                             std::string summary = "(unbound)";
                             if (gs.contains("analog_bindings") && gs["analog_bindings"].contains(analogs[p])) {
                                 auto& ab = gs["analog_bindings"][analogs[p]];
-                                if (ab.contains("axis") && ab["axis"].contains("device_path")) {
-                                    std::string dpath = ab["axis"].value("device_path", "");
-                                    // Find product name for the path
-                                    std::string prod;
+                                if (ab.contains("axis") && ab["axis"].contains("vendor_id")) {
+                                    uint16_t vid = (uint16_t)ab["axis"].value("vendor_id", 0);
+                                    uint16_t pid = (uint16_t)ab["axis"].value("product_id", 0);
+                                    std::string devName;
                                     for (auto& d : s_analogDevices) {
-                                        if (d.path == dpath) { prod = d.product.empty() ? dpath : d.product; break; }
+                                        if (d.vendor_id == vid && d.product_id == pid) {
+                                            devName = d.product.empty() ? d.manufacturer : d.product;
+                                            break;
+                                        }
                                     }
-                                    uint16_t pg = (uint16_t)ab["axis"].value("usage_page", 0);
-                                    uint16_t uid = (uint16_t)ab["axis"].value("usage_id",  0);
-                                    char* axName = getHidUsageText((uint32_t)pg, (uint32_t)uid);
-                                    std::string axStr = axName ? std::string(axName) : ("0x" + std::to_string(uid));
-                                    if (axName) free(axName);
-                                    summary = (prod.empty() ? "HID" : prod) + " / " + axStr;
+                                    if (devName.empty()) {
+                                        char buf[24];
+                                        snprintf(buf, sizeof(buf), "%04X:%04X", (unsigned)vid, (unsigned)pid);
+                                        devName = buf;
+                                    }
+                                    uint16_t pg  = (uint16_t)ab["axis"].value("usage_page", 0);
+                                    uint16_t uid = (uint16_t)ab["axis"].value("usage_id",   0);
+                                    std::string axStr;
+                                    for (auto& d : s_analogDevices) {
+                                        if (d.vendor_id == vid && d.product_id == pid) {
+                                            for (int ai = 0; ai < (int)d.axis_usages.size(); ai++) {
+                                                if (d.axis_usages[(size_t)ai].first  == pg &&
+                                                    d.axis_usages[(size_t)ai].second == uid) {
+                                                    axStr = d.axis_labels[(size_t)ai];
+                                                    break;
+                                                }
+                                            }
+                                            break;
+                                        }
+                                    }
+                                    if (axStr.empty()) axStr = "0x" + std::to_string(uid);
+                                    summary = devName + " / " + axStr;
                                 } else if (ab.contains("vtt")) {
                                     summary = "(VTT only)";
                                 }
@@ -456,16 +502,24 @@ static void renderUI() {
                             ImGui::TextUnformatted(summary.c_str());
                         }
 
-                        // Column 2: Edit button
+                        // Column 2: Edit button — set a deferred flag so OpenPopup is called
+                        // outside all PushID scopes and the ID matches BeginPopupModal below.
                         ImGui::TableSetColumnIndex(2);
                         if (ImGui::Button("Edit")) {
                             s_editPopupPort = p;
-                            ImGui::OpenPopup("EditAnalog");
+                            s_openEditPopup = true;
                         }
 
                         ImGui::PopID();
                     }
                     ImGui::EndTable();
+                }
+
+                // Open the popup here — outside every PushID scope — so the string ID
+                // "EditAnalog" hashes to the same value as in BeginPopupModal below.
+                if (s_openEditPopup) {
+                    ImGui::OpenPopup("EditAnalog");
+                    s_openEditPopup = false;
                 }
 
                 // Modal popup — rendered once, outside the table loop
@@ -477,29 +531,38 @@ static void renderUI() {
                         ImGui::Separator();
 
                         // Device combo
-                        int prevDevIdx = s_analogDeviceIdx[p];
                         if (ImGui::Combo("Device", &s_analogDeviceIdx[p], deviceLabels.data(), deviceCount)) {
-                            if (s_analogDeviceIdx[p] != prevDevIdx) {
-                                std::string path;
-                                if (s_analogDeviceIdx[p] > 0) {
-                                    path = s_analogDevices[(size_t)(s_analogDeviceIdx[p] - 1)].path;
-                                }
-                                rebuildAxisList(p, path);
-                                s_analogAxisIdx[p] = 0;
-                                writeAnalogAxisField(p, "device_path", path);
+                            s_analogAxisIdx[p] = 0;
+                            if (s_analogDeviceIdx[p] > 0) {
+                                auto& desc = s_analogDevices[(size_t)(s_analogDeviceIdx[p] - 1)];
+                                auto& ax = g_settings.globalSettings()["analog_bindings"][analogs[p]]["axis"];
+                                ax["vendor_id"]  = (int)desc.vendor_id;
+                                ax["product_id"] = (int)desc.product_id;
+                                ax["instance"]   = (int)desc.instance;
+                                ax.erase("usage_page");
+                                ax.erase("usage_id");
+                                g_settings.save();
                             }
                         }
 
-                        // Axis combo
-                        int axisCount = (int)s_axisLabels[p].size();
+                        // Axis combo — from DeviceDesc directly
+                        int axisCount = 0;
+                        std::vector<const char*> axisLabelPtrs;
+                        if (s_analogDeviceIdx[p] > 0) {
+                            auto& desc = s_analogDevices[(size_t)(s_analogDeviceIdx[p] - 1)];
+                            axisCount = (int)desc.axis_labels.size();
+                            for (auto& lbl : desc.axis_labels) axisLabelPtrs.push_back(lbl.c_str());
+                        }
                         if (axisCount > 0) {
-                            std::vector<const char*> axisLabelPtrs;
-                            axisLabelPtrs.reserve((size_t)axisCount);
-                            for (auto& lbl : s_axisLabels[p]) axisLabelPtrs.push_back(lbl.c_str());
                             if (ImGui::Combo("Axis", &s_analogAxisIdx[p], axisLabelPtrs.data(), axisCount)) {
-                                auto& usage = s_axisUsages[p][(size_t)s_analogAxisIdx[p]];
-                                writeAnalogAxisField(p, "usage_page", (int)usage.first);
-                                writeAnalogAxisField(p, "usage_id",   (int)usage.second);
+                                auto& desc = s_analogDevices[(size_t)(s_analogDeviceIdx[p] - 1)];
+                                if (s_analogAxisIdx[p] < (int)desc.axis_usages.size()) {
+                                    auto [pg, uid] = desc.axis_usages[(size_t)s_analogAxisIdx[p]];
+                                    auto& ax = g_settings.globalSettings()["analog_bindings"][analogs[p]]["axis"];
+                                    ax["usage_page"] = (int)pg;
+                                    ax["usage_id"]   = (int)uid;
+                                    g_settings.save();
+                                }
                             }
                         } else {
                             ImGui::TextDisabled("Axis: (select device first)");
