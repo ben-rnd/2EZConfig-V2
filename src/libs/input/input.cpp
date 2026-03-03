@@ -359,19 +359,11 @@ void Input::init(SettingsManager& settings) {
         // Malformed JSON — proceed with empty bindings (graceful degradation)
     }
 
-    // Collect the set of device paths that must be opened
-    std::set<std::string> neededPaths;
-    for (auto& kv : g_buttonBindings)  neededPaths.insert(kv.second.device_path);
-    for (auto& kv : g_analogBindings)  neededPaths.insert(kv.second.device_path);
-    for (int i = 0; i < 2; i++) {
-        if (!g_mouseWheelDevicePaths[(size_t)i].empty())
-            neededPaths.insert(g_mouseWheelDevicePaths[(size_t)i]);
-    }
-
-    // Enumerate HID devices and open the ones we need
+    // Open ALL enumerated HID devices (not just those in bindings).
+    // g_buttonBindings and g_analogBindings handle whether a device contributes
+    // to any result — no pre-filtering needed here.
     std::vector<std::string> allPaths = enumerateDevicesInternal();
     for (const auto& path : allPaths) {
-        if (neededPaths.count(path) == 0) continue;
         DeviceInfo dev = openAndBuildDeviceInfo(path);
         if (dev.isOpen()) {
             g_devices.push_back(std::move(dev));
