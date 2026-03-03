@@ -15,7 +15,20 @@ extern "C" {
 #include <map>
 #include <set>
 #include <array>
+#include <cstdlib>     // abs
 #include <cstdint>
+
+// ---------------------------------------------------------------------------
+// Atomic 8-bit add compatibility shim.
+// _InterlockedExchangeAdd8 is an MSVC/intrin.h intrinsic; on older MinGW
+// builds it is not declared.  __sync_fetch_and_add on GCC produces the
+// identical lock-xadd machine instruction on x86, so behaviour is identical.
+// ---------------------------------------------------------------------------
+#if defined(__GNUC__) && !defined(_InterlockedExchangeAdd8)
+static inline char _InterlockedExchangeAdd8(volatile char* ptr, char val) {
+    return __sync_fetch_and_add(ptr, val);
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Internal state (file-scope, not exported)
@@ -186,7 +199,22 @@ static DWORD WINAPI pollingThread(void*) {
 }
 
 static DWORD WINAPI vttThread(void*) {
-    return 0;  // Plan 03 implements this
+    timeBeginPeriod(1);
+    while (g_running) {
+        for (int port = 0; port < 2; port++) {
+            const VTTBinding& b = g_vttBindings[(size_t)port];
+            if (b.plus_vk == 0 && b.minus_vk == 0) continue;  // no binding
+
+            if (GetAsyncKeyState((int)b.plus_vk) & 0x8000)
+                _InterlockedExchangeAdd8((volatile char*)&g_state.vttDelta[port], (char)b.step);
+            if (GetAsyncKeyState((int)b.minus_vk) & 0x8000)
+                _InterlockedExchangeAdd8((volatile char*)&g_state.vttDelta[port], -(char)b.step);
+            // uint8 wraparound is intentional — allows full 360 degree emulation
+        }
+        Sleep(5);
+    }
+    timeEndPeriod(1);
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -379,6 +407,77 @@ void Input::shutdown() {
 }
 
 // ---------------------------------------------------------------------------
+// readAndScaleAxis — internal helper: read one HID value cap, scale to [0-255]
+// ---------------------------------------------------------------------------
+
+static uint8_t readAndScaleAxis(const DeviceInfo& dev, const AnalogBinding& binding, DWORD bytes) {
+    ULONG rawValue = 0;
+    NTSTATUS status = HidP_GetUsageValue(
+        HidP_Input,
+        (USAGE)binding.usage_page,
+        0,
+        (USAGE)binding.usage_id,
+        &rawValue,
+        dev.preparsedData,
+        (PCHAR)dev.reportBuf.data(),
+        (ULONG)bytes
+    );
+    if (status != HIDP_STATUS_SUCCESS) return 128;  // center on error
+
+    // Find matching value caps entry for logical min/max
+    LONG logMin = 0, logMax = 255;
+    for (const auto& vc : dev.valueCaps) {
+        bool match = false;
+        if (vc.IsRange) {
+            match = (vc.UsagePage == (USAGE)binding.usage_page &&
+                     vc.Range.UsageMin <= (USAGE)binding.usage_id &&
+                     (USAGE)binding.usage_id <= vc.Range.UsageMax);
+        } else {
+            match = (vc.UsagePage == (USAGE)binding.usage_page &&
+                     vc.NotRange.Usage == (USAGE)binding.usage_id);
+        }
+        if (match) {
+            logMin = vc.LogicalMin;
+            logMax = vc.LogicalMax;
+            break;
+        }
+    }
+
+    // Scale [LogicalMin, LogicalMax] -> [0, 255]; clamp to guard against out-of-range
+    uint8_t scaled;
+    if (logMax == logMin) {
+        scaled = 128;
+    } else {
+        long scaled_long = ((long)rawValue - logMin) * 255L / (logMax - logMin);
+        if (scaled_long < 0)   scaled_long = 0;
+        if (scaled_long > 255) scaled_long = 255;
+        scaled = (uint8_t)scaled_long;
+    }
+
+    // Apply reverse flag
+    if (binding.reverse) scaled = 255 - scaled;
+
+    // Apply sensitivity: scale deviation from center
+    if (binding.sensitivity != 1.0f) {
+        int deviation = (int)scaled - 128;
+        int deviated  = (int)((float)deviation * binding.sensitivity);
+        int clamped   = deviated + 128;
+        if (clamped < 0)   clamped = 0;
+        if (clamped > 255) clamped = 255;
+        scaled = (uint8_t)clamped;
+    }
+
+    // Apply dead zone: snap to center if within dead_zone of 128
+    if (binding.dead_zone > 0) {
+        int dist = (int)scaled - 128;
+        if (dist < 0) dist = -dist;
+        if (dist < (int)binding.dead_zone) scaled = 128;
+    }
+
+    return scaled;
+}
+
+// ---------------------------------------------------------------------------
 // pollAllDevices — called every 1ms from pollingThread
 // ---------------------------------------------------------------------------
 
@@ -421,6 +520,88 @@ static void pollAllDevices() {
                 g_buttonState[actionName] = pressed;
             }
 
+            // Analog axis read: for each AnalogBinding whose device_path matches this device
+            for (auto& akv : g_analogBindings) {
+                const std::string& actionName      = akv.first;
+                const AnalogBinding& analogBinding = akv.second;
+
+                if (analogBinding.device_path != dev.path) continue;
+
+                // Determine port index from action name
+                int port = -1;
+                if (actionName == "P1 Turntable") port = 0;
+                else if (actionName == "P2 Turntable") port = 1;
+                if (port < 0) continue;
+
+                uint8_t axisVal = readAndScaleAxis(dev, analogBinding, bytes);
+
+                // Combine: axis + vttDelta (uint8 natural wraparound — intentional)
+                g_state.ttPos[(size_t)port] = axisVal + g_state.vttDelta[(size_t)port];
+            }
+
+            // Mouse wheel handling: accumulate wheel delta into vttDelta via atomic add
+            for (int port = 0; port < 2; port++) {
+                const MouseWheelBinding& mwb = g_mouseWheelBindings[(size_t)port];
+                if (mwb.step == 0) continue;
+                if (mwb.device_path != dev.path) continue;
+
+                // Find Wheel usage (page 0x01, usage 0x38) in this device's value caps
+                bool wheelFound = false;
+                LONG logMax = 0;
+                for (const auto& vc : dev.valueCaps) {
+                    bool match = false;
+                    if (vc.IsRange) {
+                        match = (vc.UsagePage == 0x01 &&
+                                 vc.Range.UsageMin <= 0x38 &&
+                                 0x38 <= vc.Range.UsageMax);
+                    } else {
+                        match = (vc.UsagePage == 0x01 && vc.NotRange.Usage == 0x38);
+                    }
+                    if (match) {
+                        logMax = vc.LogicalMax;
+                        wheelFound = true;
+                        break;
+                    }
+                }
+                if (!wheelFound) continue;
+
+                ULONG rawWheel = 0;
+                NTSTATUS wStatus = HidP_GetUsageValue(
+                    HidP_Input,
+                    0x01,   // HID_USAGE_PAGE_GENERIC
+                    0,
+                    0x38,   // Wheel usage
+                    &rawWheel,
+                    dev.preparsedData,
+                    (PCHAR)dev.reportBuf.data(),
+                    (ULONG)bytes
+                );
+                if (wStatus != HIDP_STATUS_SUCCESS) continue;
+                if (rawWheel == 0) continue;
+
+                // Interpret sign: if rawWheel > (LogicalMax / 2) it is a negative number
+                // expressed as unsigned (two's complement in the logical range)
+                int delta;
+                if (logMax > 0 && (LONG)rawWheel > (logMax / 2))
+                    delta = -1;
+                else
+                    delta = 1;
+
+                // Atomic accumulate into vttDelta (concurrent with vttThread)
+                if (delta > 0)
+                    _InterlockedExchangeAdd8((volatile char*)&g_state.vttDelta[(size_t)port],  (char)mwb.step);
+                if (delta < 0)
+                    _InterlockedExchangeAdd8((volatile char*)&g_state.vttDelta[(size_t)port], -(char)mwb.step);
+
+                // Recombine with current axis value; use 0 if no analog is bound for this port
+                uint8_t curAxis = 0;
+                for (auto& akv : g_analogBindings) {
+                    if (akv.first == "P1 Turntable" && port == 0) { curAxis = g_state.ttPos[0] - g_state.vttDelta[0]; break; }
+                    if (akv.first == "P2 Turntable" && port == 1) { curAxis = g_state.ttPos[1] - g_state.vttDelta[1]; break; }
+                }
+                g_state.ttPos[(size_t)port] = curAxis + g_state.vttDelta[(size_t)port];
+            }
+
             // Re-arm read for next cycle
             ResetEvent(dev.ov.hEvent);
             ReadFile(dev.handle, dev.reportBuf.data(), dev.caps.InputReportByteLength, NULL, &dev.ov);
@@ -461,6 +642,12 @@ bool Input::getButtonState(const std::string& gameAction) {
     return false;  // unbound action = not pressed
 }
 
-uint8_t Input::getAnalogValue(const std::string& /*gameAction*/) {
-    return 128;  // center; Plan 03 implements real value
+uint8_t Input::getAnalogValue(const std::string& gameAction) {
+    // Map action name to port index
+    int port = -1;
+    if (gameAction == "P1 Turntable") port = 0;
+    else if (gameAction == "P2 Turntable") port = 1;
+    if (port < 0) return 128;  // unrecognised action: return center
+
+    return g_state.ttPos[(size_t)port];  // volatile uint8_t read — atomic on x86
 }
