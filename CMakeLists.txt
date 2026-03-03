@@ -79,15 +79,6 @@ target_include_directories(imgui PUBLIC
 target_link_libraries(imgui PUBLIC glfw opengl32)
 target_compile_options(imgui PRIVATE -w)
 
-# hidapi 0.11.2 — last version clean under _WIN32_WINNT=0x0501
-FetchContent_Declare(hidapi
-    GIT_REPOSITORY https://github.com/libusb/hidapi.git
-    GIT_TAG        hidapi-0.11.2
-    GIT_SHALLOW    TRUE
-)
-set(HIDAPI_BUILD_HIDTEST OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(hidapi)
-
 # nlohmann/json — JSON serialization library
 FetchContent_Declare(nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -98,7 +89,16 @@ set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 set(JSON_Install    OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(nlohmann_json)
 
+# usb-hid-usage — two-file C library (Apache-2.0) — usage page/ID to human-readable name
+FetchContent_Declare(usbhidusage
+    GIT_REPOSITORY https://github.com/smokris/usb-hid-usage.git
+    GIT_TAG        main
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(usbhidusage)
+
 add_subdirectory(src/libs/injector)
 add_subdirectory(src/libs/settings)
+add_subdirectory(src/libs/input)
 add_subdirectory(src/ez2config-exe)
 add_subdirectory(src/ez2-dll)
