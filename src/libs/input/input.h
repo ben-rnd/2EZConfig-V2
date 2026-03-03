@@ -11,6 +11,7 @@ extern "C" {
 #include <string>
 #include <cstdint>
 #include <vector>
+#include <optional>
 
 namespace Input {
 
@@ -45,5 +46,20 @@ bool getButtonState(const std::string& gameAction);
 // Reads from lock-free shared state — safe to call from VEH handler.
 // action must match a string from analogs[] in strings.h.
 uint8_t getAnalogValue(const std::string& gameAction);
+
+// Result type for listen/capture mode (Phase 2 Buttons tab)
+struct ButtonPressResult {
+    std::string device_path;
+    uint16_t usage_page;
+    uint16_t usage_id;
+};
+
+// Poll all open device handles once for any newly-pressed HID button.
+// Returns the first button detected as newly-pressed (was not pressed on prior call).
+// Returns empty optional if no new press detected.
+// Call from UI thread during listen/capture mode — safe alongside polling thread
+// because it uses the same shared device handles (FILE_SHARE_READ|WRITE).
+// Internal state (previous button set) is static — call once per frame while listening.
+std::optional<ButtonPressResult> pollNextButtonPress();
 
 } // namespace Input

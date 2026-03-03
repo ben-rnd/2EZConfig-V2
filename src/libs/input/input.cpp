@@ -15,6 +15,7 @@ extern "C" {
 #include <map>
 #include <set>
 #include <array>
+#include <optional>
 #include <cstdlib>     // abs
 #include <cstdint>
 
@@ -280,74 +281,82 @@ std::vector<Input::DeviceDesc> Input::enumerateDevices() {
 // ---------------------------------------------------------------------------
 
 void Input::init(SettingsManager& settings) {
-    json& bindings = settings.globalSettings()["bindings"];
+    try {
+        // Parse button_bindings: {"action": {"type": "HidButton"|"Keyboard", ...}}
+        if (settings.globalSettings().contains("button_bindings")) {
+            const json& buttonBindings = settings.globalSettings()["button_bindings"];
+            for (auto it = buttonBindings.begin(); it != buttonBindings.end(); ++it) {
+                const std::string& actionName = it.key();
+                const json& b = it.value();
 
-    for (auto it = bindings.begin(); it != bindings.end(); ++it) {
-        const std::string& actionName = it.key();
-        const json& b = it.value();
+                if (!b.contains("type")) continue;
+                std::string btype = b["type"].get<std::string>();
 
-        if (!b.contains("type")) continue;
-        std::string btype = b["type"].get<std::string>();
-
-        if (btype == "hid_button") {
-            ButtonBinding bb;
-            bb.device_path = b.value("device_path", "");
-            bb.usage_page  = b.value("usage_page",  (uint16_t)0);
-            bb.usage_id    = b.value("usage_id",    (uint16_t)0);
-            g_buttonBindings[actionName] = bb;
-            g_buttonState[actionName] = false;
+                if (btype == "HidButton") {
+                    ButtonBinding bb;
+                    bb.device_path = b.value("device_path", "");
+                    bb.usage_page  = b.value("usage_page",  (uint16_t)0);
+                    bb.usage_id    = b.value("usage_id",    (uint16_t)0);
+                    g_buttonBindings[actionName] = bb;
+                    g_buttonState[actionName] = false;
+                }
+                else if (btype == "Keyboard") {
+                    KeyboardBinding kb;
+                    kb.vk_code = b.value("vk_code", (uint32_t)0);
+                    g_keyBindings[actionName] = kb;
+                    g_buttonState[actionName] = false;
+                }
+            }
         }
-        else if (btype == "keyboard") {
-            KeyboardBinding kb;
-            kb.vk_code = b.value("vk_code", (uint32_t)0);
-            g_keyBindings[actionName] = kb;
-            g_buttonState[actionName] = false;
-        }
-        else if (btype == "hid_axis") {
-            AnalogBinding ab;
-            ab.device_path = b.value("device_path", "");
-            ab.usage_page  = b.value("usage_page",  (uint16_t)0);
-            ab.usage_id    = b.value("usage_id",    (uint16_t)0);
-            ab.reverse     = b.value("reverse",     false);
-            ab.sensitivity = b.value("sensitivity", 1.0f);
-            ab.dead_zone   = b.value("dead_zone",   (uint8_t)0);
-            g_analogBindings[actionName] = ab;
-        }
-        else if (btype == "virtual_tt") {
-            // Key convention: "{analog_name}_vtt" e.g. "P1 Turntable_vtt"
-            // Strip "_vtt" suffix to find the port index
-            std::string base = actionName;
-            if (base.size() > 4 && base.substr(base.size() - 4) == "_vtt")
-                base = base.substr(0, base.size() - 4);
 
-            int port = -1;
-            if (base == "P1 Turntable") port = 0;
-            else if (base == "P2 Turntable") port = 1;
-            if (port < 0) continue;
+        // Parse analog_bindings: {"action": {"axis": {...}, "vtt": {...}, "mouse_wheel": {...}}}
+        if (settings.globalSettings().contains("analog_bindings")) {
+            const json& analogBindings = settings.globalSettings()["analog_bindings"];
+            for (auto it = analogBindings.begin(); it != analogBindings.end(); ++it) {
+                const std::string& actionName = it.key();
+                const json& a = it.value();
 
-            VTTBinding vb;
-            vb.plus_vk  = b.value("plus_vk",  (uint32_t)0);
-            vb.minus_vk = b.value("minus_vk", (uint32_t)0);
-            vb.step     = b.value("step",      (uint8_t)3);
-            g_vttBindings[(size_t)port] = vb;
+                // Determine port index (0 = P1, 1 = P2) from action name
+                int port = -1;
+                if (actionName == "P1 Turntable") port = 0;
+                else if (actionName == "P2 Turntable") port = 1;
+
+                // axis sub-object: HID analog axis source (mutually exclusive with mouse_wheel)
+                if (a.contains("axis")) {
+                    const json& ax = a["axis"];
+                    AnalogBinding ab;
+                    ab.device_path = ax.value("device_path", "");
+                    ab.usage_page  = ax.value("usage_page",  (uint16_t)0);
+                    ab.usage_id    = ax.value("usage_id",    (uint16_t)0);
+                    ab.reverse     = ax.value("reverse",     false);
+                    ab.sensitivity = ax.value("sensitivity", 1.0f);
+                    ab.dead_zone   = ax.value("dead_zone",   (uint8_t)0);
+                    g_analogBindings[actionName] = ab;
+                }
+
+                // mouse_wheel sub-object: mouse wheel as turntable source
+                if (a.contains("mouse_wheel") && port >= 0) {
+                    const json& mw = a["mouse_wheel"];
+                    MouseWheelBinding mwb;
+                    mwb.device_path = mw.value("device_path", "");
+                    mwb.step        = mw.value("step",        (uint8_t)3);
+                    g_mouseWheelBindings[(size_t)port]    = mwb;
+                    g_mouseWheelDevicePaths[(size_t)port] = mwb.device_path;
+                }
+
+                // vtt sub-object: virtual turntable keys (independent, can coexist with axis/mouse_wheel)
+                if (a.contains("vtt") && port >= 0) {
+                    const json& vt = a["vtt"];
+                    VTTBinding vb;
+                    vb.plus_vk  = vt.value("plus_vk",  (uint32_t)0);
+                    vb.minus_vk = vt.value("minus_vk", (uint32_t)0);
+                    vb.step     = vt.value("step",      (uint8_t)3);
+                    g_vttBindings[(size_t)port] = vb;
+                }
+            }
         }
-        else if (btype == "mouse_wheel") {
-            // Key convention: "{analog_name}_mouse" e.g. "P1 Turntable_mouse"
-            std::string base = actionName;
-            if (base.size() > 6 && base.substr(base.size() - 6) == "_mouse")
-                base = base.substr(0, base.size() - 6);
-
-            int port = -1;
-            if (base == "P1 Turntable") port = 0;
-            else if (base == "P2 Turntable") port = 1;
-            if (port < 0) continue;
-
-            MouseWheelBinding mwb;
-            mwb.device_path = b.value("device_path", "");
-            mwb.step        = b.value("step",         (uint8_t)3);
-            g_mouseWheelBindings[(size_t)port]     = mwb;
-            g_mouseWheelDevicePaths[(size_t)port]  = mwb.device_path;
-        }
+    } catch (const std::exception&) {
+        // Malformed JSON — proceed with empty bindings (graceful degradation)
     }
 
     // Collect the set of device paths that must be opened
@@ -650,4 +659,95 @@ uint8_t Input::getAnalogValue(const std::string& gameAction) {
     if (port < 0) return 128;  // unrecognised action: return center
 
     return g_state.ttPos[(size_t)port];  // volatile uint8_t read — atomic on x86
+}
+
+// ---------------------------------------------------------------------------
+// Input::pollNextButtonPress — called from UI thread during listen/capture mode
+// ---------------------------------------------------------------------------
+//
+// Iterates all open device handles in g_devices, reads one HID input report
+// non-blocking (OVERLAPPED + 0 timeout via GetOverlappedResult FALSE), calls
+// HidP_GetUsages to get the current pressed-usage set, compares against the
+// previous set, and returns the first newly-pressed usage found.
+//
+// prevPressed is static — call once per frame while listening.  Thread safety:
+// the same OVERLAPPED handles are shared with the polling thread, which also
+// uses GetOverlappedResult(FALSE) and re-issues ReadFile after consumption.
+// Both sides use FILE_SHARE_READ|WRITE so handle access is safe.  The worst
+// case is a single report being consumed by one side or the other; this is
+// acceptable for a rare UI capture-mode use case.
+// ---------------------------------------------------------------------------
+
+std::optional<Input::ButtonPressResult> Input::pollNextButtonPress() {
+    static std::map<std::string, std::set<uint16_t>> prevPressed;
+
+    std::optional<ButtonPressResult> result;
+
+    for (auto& dev : g_devices) {
+        if (!dev.isOpen()) continue;
+        if (dev.reportBuf.empty() || dev.preparsedData == nullptr) continue;
+
+        // Non-blocking check: did the overlapped read complete?
+        DWORD bytes = 0;
+        BOOL ok = GetOverlappedResult(dev.handle, &dev.ov, &bytes, FALSE);
+
+        std::set<uint16_t> currentUsages;
+
+        if (ok && bytes > 0) {
+            // A report arrived — extract all pressed usages across all button caps
+            for (const auto& bc : dev.buttonCaps) {
+                std::vector<USAGE> usages(bc.Range.UsageMax - bc.Range.UsageMin + 1);
+                ULONG usageCount = (ULONG)usages.size();
+                NTSTATUS status = HidP_GetUsages(
+                    HidP_Input,
+                    bc.UsagePage,
+                    0,
+                    usages.data(),
+                    &usageCount,
+                    dev.preparsedData,
+                    (PCHAR)dev.reportBuf.data(),
+                    bytes
+                );
+                if (status == HIDP_STATUS_SUCCESS) {
+                    for (ULONG i = 0; i < usageCount; i++) {
+                        currentUsages.insert((uint16_t)usages[i]);
+                    }
+                }
+            }
+
+            // Re-arm read so the polling thread and future calls can continue
+            ResetEvent(dev.ov.hEvent);
+            ReadFile(dev.handle, dev.reportBuf.data(), dev.caps.InputReportByteLength, NULL, &dev.ov);
+        }
+        // If no new report (ERROR_IO_INCOMPLETE), currentUsages stays empty —
+        // we still update prevPressed so stale "pressed" state doesn't linger.
+
+        // Compare against previous set to find newly-pressed button
+        if (!result.has_value()) {
+            const std::set<uint16_t>& prev = prevPressed[dev.path];
+            for (uint16_t usage : currentUsages) {
+                if (prev.find(usage) == prev.end()) {
+                    // Determine usage_page from buttonCaps for this usage
+                    uint16_t foundPage = 0;
+                    for (const auto& bc : dev.buttonCaps) {
+                        if (usage >= bc.Range.UsageMin && usage <= bc.Range.UsageMax) {
+                            foundPage = (uint16_t)bc.UsagePage;
+                            break;
+                        }
+                    }
+                    ButtonPressResult r;
+                    r.device_path = dev.path;
+                    r.usage_page  = foundPage;
+                    r.usage_id    = usage;
+                    result = r;
+                    break;
+                }
+            }
+        }
+
+        // Always update prevPressed for this device before moving on
+        prevPressed[dev.path] = currentUsages;
+    }
+
+    return result;
 }
