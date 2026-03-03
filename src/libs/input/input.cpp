@@ -338,11 +338,12 @@ static void handleWmInput(LPARAM lParam) {
                         EnterCriticalSection(&g_captureLock);
                         if (!g_captureResult.has_value()) {
                             Input::ButtonCaptureResult r;
-                            r.vendor_id  = dev.vendor_id;
-                            r.product_id = dev.product_id;
-                            r.instance   = dev.instance;
-                            r.usage_page = bc.UsagePage;
-                            r.usage_id   = (uint16_t)(bc.Range.UsageMin + (bi - btnOffset));
+                            r.vendor_id   = dev.vendor_id;
+                            r.product_id  = dev.product_id;
+                            r.instance    = dev.instance;
+                            r.usage_page  = bc.UsagePage;
+                            r.usage_id    = (uint16_t)(bc.Range.UsageMin + (bi - btnOffset));
+                            r.device_name = dev.product.empty() ? dev.manufacturer : dev.product;
                             g_captureResult = r;
                         }
                         LeaveCriticalSection(&g_captureLock);

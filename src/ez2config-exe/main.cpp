@@ -49,8 +49,15 @@ static std::string getButtonBindingLabel(const char* action) {
         }
         uint16_t vid = (uint16_t)b.value("vendor_id",  0);
         uint16_t pid = (uint16_t)b.value("product_id", 0);
-        char devBuf[32];
-        snprintf(devBuf, sizeof(devBuf), " [%04X:%04X]", (unsigned)vid, (unsigned)pid);
+        std::string devName = b.value("device_name", std::string());
+        char devBuf[128];
+        if (!devName.empty()) {
+            // Truncate to keep the label compact (max ~18 chars of name)
+            if (devName.size() > 18) devName = devName.substr(0, 18);
+            snprintf(devBuf, sizeof(devBuf), " [%s]", devName.c_str());
+        } else {
+            snprintf(devBuf, sizeof(devBuf), " [%04X:%04X]", (unsigned)vid, (unsigned)pid);
+        }
         return axLabel + devBuf;
     } else if (type == "Keyboard") {
         uint32_t vk = b.value("vk_code", (uint32_t)0);
@@ -257,12 +264,14 @@ static void renderUI() {
                     auto hit = Input::pollNextButtonPress();
                     if (hit.has_value()) {
                         auto& bb = g_settings.globalSettings()["button_bindings"][action];
-                        bb["type"]       = "HidButton";
-                        bb["vendor_id"]  = (int)hit->vendor_id;
-                        bb["product_id"] = (int)hit->product_id;
-                        bb["instance"]   = (int)hit->instance;
-                        bb["usage_page"] = (int)hit->usage_page;
-                        bb["usage_id"]   = (int)hit->usage_id;
+                        bb["type"]        = "HidButton";
+                        bb["vendor_id"]   = (int)hit->vendor_id;
+                        bb["product_id"]  = (int)hit->product_id;
+                        bb["instance"]    = (int)hit->instance;
+                        bb["usage_page"]  = (int)hit->usage_page;
+                        bb["usage_id"]    = (int)hit->usage_id;
+                        if (!hit->device_name.empty())
+                            bb["device_name"] = hit->device_name;
                         g_settings.save();
                         s_bindState = BindState::Normal;
                         s_listenIdx = -1;
@@ -539,9 +548,13 @@ static void renderUI() {
                                 ax["vendor_id"]  = (int)desc.vendor_id;
                                 ax["product_id"] = (int)desc.product_id;
                                 ax["instance"]   = (int)desc.instance;
+                                ax["device_name"] = desc.product.empty() ? desc.manufacturer : desc.product;
                                 ax.erase("usage_page");
                                 ax.erase("usage_id");
                                 g_settings.save();
+                                // Reload in-memory binding state so new device takes effect immediately
+                                Input::shutdown();
+                                Input::init(g_settings);
                             }
                         }
 
@@ -562,6 +575,9 @@ static void renderUI() {
                                     ax["usage_page"] = (int)pg;
                                     ax["usage_id"]   = (int)uid;
                                     g_settings.save();
+                                    // Reload in-memory binding state so new axis takes effect immediately
+                                    Input::shutdown();
+                                    Input::init(g_settings);
                                 }
                             }
                         } else {

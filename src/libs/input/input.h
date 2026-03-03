@@ -46,11 +46,12 @@ uint8_t getAnalogValue(const std::string& gameAction);
 
 // Stable capture result — VID/PID, not device path.
 struct ButtonCaptureResult {
-    uint16_t vendor_id;
-    uint16_t product_id;
-    uint8_t  instance;
-    uint16_t usage_page;
-    uint16_t usage_id;
+    uint16_t    vendor_id;
+    uint16_t    product_id;
+    uint8_t     instance;
+    uint16_t    usage_page;
+    uint16_t    usage_id;
+    std::string device_name; // human-readable product string; empty if unavailable
 };
 
 // Poll for a newly-pressed HID button. Returns the first press detected since last call.
