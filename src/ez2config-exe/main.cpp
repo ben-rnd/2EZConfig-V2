@@ -2,11 +2,23 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl2.h"
 #include "injector.h"
+#include "settings.h"
+#include "input.h"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnarrowing"
+#include "strings.h"
+#pragma GCC diagnostic pop
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <string>
 
 static void renderUI();
 static void setTheme();
+
+// File-scope settings and game selector state — accessible to all tab functions
+static SettingsManager g_settings;
+static int  g_gameIdx  = 0;     // index into flat combo list (DJ games first, then Dancer)
+static bool g_isDancer = false; // derived from g_gameIdx
 
 int main() {
     glfwSetErrorCallback([](int e, const char* d) { fprintf(stderr, "GLFW error %d: %s\n", e, d); });
@@ -25,6 +37,24 @@ int main() {
     ImGui_ImplOpenGL2_Init();
 
     setTheme();
+
+    // Load settings from exe directory
+    g_settings.load(".", ".");
+
+    // Initialize game selector state from persisted game_id
+    {
+        std::string gid = g_settings.gameSettings().value("game_id", "ez2dj");
+        static const int DJ_COUNT = (int)(sizeof(djGames) / sizeof(djGames[0]));
+        g_isDancer = (gid == "ez2dancer");
+        if (g_isDancer) {
+            g_gameIdx = DJ_COUNT; // default to first dancer entry
+        } else {
+            g_gameIdx = 0;
+        }
+    }
+
+    // Start input subsystem
+    Input::init(g_settings);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -50,6 +80,8 @@ int main() {
     ImGui::DestroyContext();
     glfwDestroyWindow(window);
     glfwTerminate();
+
+    Input::shutdown();
     return 0;
 }
 
@@ -65,14 +97,58 @@ static void renderUI() {
 
     ImGui::Begin("##main", nullptr, flags);
 
-    ImGui::Text("R U READY 2 GO INSIDA DJ BOX?");
-    ImGui::SameLine(ImGui::GetWindowWidth() - 80);
-    if (ImGui::Button("Play EZ2!")) { Injector::LaunchAndInject("ez2dj.exe"); }
-
+    ImGui::TextUnformatted("2EZConfig");
     ImGui::Separator();
 
     if (ImGui::BeginTabBar("##tabs")) {
-        if (ImGui::BeginTabItem("Settings")) { ImGui::EndTabItem(); }
+
+        // ---- Settings Tab ----
+        if (ImGui::BeginTabItem("Settings")) {
+            static const int DJ_COUNT     = (int)(sizeof(djGames)     / sizeof(djGames[0]));
+            static const int DANCER_COUNT = (int)(sizeof(dancerGames) / sizeof(dancerGames[0]));
+            static const int TOTAL_COUNT  = DJ_COUNT + DANCER_COUNT;
+
+            // Build flat label array once
+            static const char* gameComboItems[DJ_COUNT + DANCER_COUNT];
+            static bool        gameComboBuilt = false;
+            if (!gameComboBuilt) {
+                for (int i = 0; i < DJ_COUNT;     i++) gameComboItems[i]           = djGames[i].name;
+                for (int i = 0; i < DANCER_COUNT; i++) gameComboItems[DJ_COUNT + i] = dancerGames[i].name;
+                gameComboBuilt = true;
+            }
+
+            if (ImGui::Combo("Game", &g_gameIdx, gameComboItems, TOTAL_COUNT)) {
+                g_isDancer = (g_gameIdx >= DJ_COUNT);
+                // Derive game_id
+                std::string gameId;
+                if (g_isDancer) {
+                    gameId = "ez2dancer";
+                } else {
+                    std::string exeName = djGames[g_gameIdx].defaultExeName;
+                    // EZ2AC games use "EZ2AC.exe"
+                    gameId = (exeName.find("EZ2AC") != std::string::npos) ? "ez2ac" : "ez2dj";
+                }
+                g_settings.gameSettings()["game_id"] = gameId;
+                g_settings.save();
+            }
+
+            ImGui::Separator();
+
+            const char* exeName = "EZ2Dancer.exe"; // default for Dancer
+            if (!g_isDancer) {
+                exeName = djGames[g_gameIdx].defaultExeName;
+            }
+            if (ImGui::Button("Launch + Inject")) {
+                Injector::LaunchAndInject(exeName);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Inject Running")) {
+                Injector::InjectRunningProcess(exeName);
+            }
+
+            ImGui::EndTabItem();
+        }
+
         if (ImGui::BeginTabItem("Buttons"))  { ImGui::EndTabItem(); }
         if (ImGui::BeginTabItem("Analogs"))  { ImGui::EndTabItem(); }
         if (ImGui::BeginTabItem("Lights"))   { ImGui::EndTabItem(); }

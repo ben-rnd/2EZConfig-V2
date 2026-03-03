@@ -1,5 +1,5 @@
 #include "md5.h"
-#include <Windows.h>
+#include <windows.h>
 #include <stdio.h>
 
 static struct djGame {
@@ -80,6 +80,30 @@ static const char* ioButtons[] = {  "Test",
                                     "P2 Pedal",
                                     };
 
+//EZ2Dancer stuff
+static const char* ez2DancerIOButtons[] = { "Test",
+                                            "Service",
+                                            //"Coin", //IO does this really weird.. will leave out for now
+
+                                            //Should we split the foot buttons out to the 4 sensors each? 
+                                            "P1 Left",
+                                            "P1 Centre",
+                                            "P1 Right",
+
+                                            "P2 Left",
+                                            "P2 Centre",
+                                            "P2 Right",
+
+                                            "P1 L Sensor Top",
+                                            "P1 L Sesor Bottom",
+                                            "P1 R Sensor Top",
+                                            "P1 R Sesor Bottom",
+
+                                            "P2 L Sensor Top",
+                                            "P2 L Sesor Bottom",
+                                            "P2 R Sensor Top",
+                                            "P2 R Sesor Bottom" };
+    
 static const char* analogs[] = { "P1 Turntable", 
                                  "P2 Turntable" };
 
