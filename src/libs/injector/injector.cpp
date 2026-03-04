@@ -102,27 +102,6 @@ static int InjectDll(HANDLE hProcess, const char* dllName) {
     return 1;
 }
 
-// static void InjectAdditionalDlls(HANDLE hProcess) {
-//     char addlDlls[255];
-//     GetPrivateProfileStringA("Settings", "AdditionalDLLs", "", addlDlls, sizeof(addlDlls), ".\\2EZ.ini");
-//     if (addlDlls[0] == '\0')
-//         return;
-
-//     char* start = addlDlls;
-//     for (;;) {
-//         char* comma = strchr(start, ',');
-//         if (comma)
-//             *comma = '\0';
-
-//         if (start[0] != '\0')
-//             InjectDll(hProcess, start);
-
-//         if (!comma)
-//             break;
-//         start = comma + 1;
-//     }
-// }
-
 static int Inject(DWORD *pid){
     EnableDebugPrivilege();
     int result = 1;
@@ -138,8 +117,6 @@ static int Inject(DWORD *pid){
         printf("[-] InjectDll failed\n");
         return 0;
     }
-
-    //InjectAdditionalDlls(hProcess);
 
     CloseHandle(hProcess);
     return 1;

@@ -3,7 +3,7 @@ build/
 out/
 
 #proj reference
-2EZconfig_Reference
+references/
 
 # CMake generated files
 CMakeCache.txt
@@ -34,3 +34,4 @@ _deps/
 # OS
 .DS_Store
 Thumbs.db
+.planning/

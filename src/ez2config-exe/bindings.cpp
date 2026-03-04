@@ -187,15 +187,6 @@ void BindingStore::load(SettingsManager& settings,
                         const char* const* ioButtonNames, int ioCount,
                         const char* const* dancerButtonNames, int dancerCount) {
     auto& gs = settings.globalSettings();
-    if (!gs.contains("version") || gs["version"] != BINDINGS_SETTINGS_VERSION) {
-        // Version mismatch or missing — start clean
-        gs = { {"version", BINDINGS_SETTINGS_VERSION},
-                {"button_bindings", nlohmann::json::object()},
-                {"analog_bindings",  nlohmann::json::object()} };
-        settings.save();
-        return;
-    }
-
     if (gs.contains("button_bindings") && gs["button_bindings"].is_object()) {
         const auto& bb = gs["button_bindings"];
         for (int i = 0; i < ioCount && i < BUTTON_COUNT; ++i) {
