@@ -114,46 +114,58 @@ uint8_t computeDJPortByte(uint16_t port, const BindingStore& bs, InputManager& m
 }
 
 // ---- computeDancerPortWord ----
-// Dancer port mapping is LOW confidence — best-effort from dll.cpp comments.
-// Ports 0x300/0x302/0x306 are active-low (0xFFFF default, bits cleared on press).
-// Port 0x304 (hand sensors) is active-high (0x0000 default, bits set on press).
-// This lookup table can be corrected per-bit when tested against real hardware.
+// Port mapping verified against reference 2EZ.cpp (ez2dancer-stuff branch).
+//
+// dancerButtons[] index mapping (from s_dancerButtonNames[]):
+//   [0]=Test  [1]=Service
+//   [2]=P1 Left  [3]=P1 Centre  [4]=P1 Right
+//   [5]=P2 Left  [6]=P2 Centre  [7]=P2 Right
+//   [8]=P1 L Top  [9]=P1 L Bottom  [10]=P1 R Top  [11]=P1 R Bottom
+//   [12]=P2 L Top  [13]=P2 L Bottom  [14]=P2 R Top  [15]=P2 R Bottom
+//
+// Port 0x300/0x302: feet — 4-bit nibble masks on 0x0FFF, result inverted (~output).
+// Port 0x304: hands — unimplemented, returns 0.
+// Port 0x306: hands+test+svc — AND masks on 0xFFFF, then XOR 0xFF00.
 
 uint16_t computeDancerPortWord(uint16_t port, const BindingStore& bs, InputManager& mgr) {
-    uint16_t result = 0xFFFF;
     switch (port) {
-        case 0x300:
-            // P1 foot panels + Test/Service (active-low)
-            if (isActionPressed(bs.dancerButtons[0],  mgr)) result &= ~(1 << 0);  // Test
-            if (isActionPressed(bs.dancerButtons[1],  mgr)) result &= ~(1 << 1);  // Service
-            if (isActionPressed(bs.dancerButtons[2],  mgr)) result &= ~(1 << 2);  // P1 Left
-            if (isActionPressed(bs.dancerButtons[3],  mgr)) result &= ~(1 << 3);  // P1 Centre
-            if (isActionPressed(bs.dancerButtons[4],  mgr)) result &= ~(1 << 4);  // P1 Right
-            return result;
-        case 0x302:
-            // P2 foot panels (active-low)
-            if (isActionPressed(bs.dancerButtons[5],  mgr)) result &= ~(1 << 0);  // P2 Left
-            if (isActionPressed(bs.dancerButtons[6],  mgr)) result &= ~(1 << 1);  // P2 Centre
-            if (isActionPressed(bs.dancerButtons[7],  mgr)) result &= ~(1 << 2);  // P2 Right
-            return result;
+        case 0x300: {
+            // P1 foot panels — each panel clears a 4-bit nibble, result inverted
+            uint16_t output = 0x0FFF;
+            if (isActionPressed(bs.dancerButtons[2],  mgr)) output &= 0x0FF0;  // P1 Left (nibble 0)
+            if (isActionPressed(bs.dancerButtons[3],  mgr)) output &= 0x0F0F;  // P1 Centre (nibble 1)
+            if (isActionPressed(bs.dancerButtons[4],  mgr)) output &= 0x00FF;  // P1 Right (nibble 2)
+            return static_cast<uint16_t>(~output);
+        }
+        case 0x302: {
+            // P2 foot panels — same nibble mask pattern as P1
+            uint16_t output = 0x0FFF;
+            if (isActionPressed(bs.dancerButtons[5],  mgr)) output &= 0x0FF0;  // P2 Left (nibble 0)
+            if (isActionPressed(bs.dancerButtons[6],  mgr)) output &= 0x0F0F;  // P2 Centre (nibble 1)
+            if (isActionPressed(bs.dancerButtons[7],  mgr)) output &= 0x00FF;  // P2 Right (nibble 2)
+            return static_cast<uint16_t>(~output);
+        }
         case 0x304:
-            // Hand sensors (active-high per existing code convention)
-            result = 0x0000;
-            if (isActionPressed(bs.dancerButtons[8],  mgr)) result |= (1 << 0);   // P1 L Sensor Top
-            if (isActionPressed(bs.dancerButtons[9],  mgr)) result |= (1 << 1);   // P1 L Sensor Bottom
-            if (isActionPressed(bs.dancerButtons[10], mgr)) result |= (1 << 2);   // P1 R Sensor Top
-            if (isActionPressed(bs.dancerButtons[11], mgr)) result |= (1 << 3);   // P1 R Sensor Bottom
-            if (isActionPressed(bs.dancerButtons[12], mgr)) result |= (1 << 4);   // P2 L Sensor Top
-            if (isActionPressed(bs.dancerButtons[13], mgr)) result |= (1 << 5);   // P2 L Sensor Bottom
-            if (isActionPressed(bs.dancerButtons[14], mgr)) result |= (1 << 6);   // P2 R Sensor Top
-            if (isActionPressed(bs.dancerButtons[15], mgr)) result |= (1 << 7);   // P2 R Sensor Bottom
-            return result;
-        case 0x306:
-            // Testing inputs — mirrors Test/Service from 0x300 (active-low)
-            if (isActionPressed(bs.dancerButtons[0],  mgr)) result &= ~(1 << 0);  // Test
-            if (isActionPressed(bs.dancerButtons[1],  mgr)) result &= ~(1 << 1);  // Service
-            return result;
+            // Hands port — unimplemented in reference, returns 0
+            return 0x0000;
+        case 0x306: {
+            // Hand sensors + Test/Service — AND masks then XOR 0xFF00
+            // Default (no press): 0xFFFF ^ 0xFF00 = 0x00FF
+            // Pressed sensors set bits in upper byte; Test/Service set bits 5/4 in low byte
+            uint16_t output = 0xFFFF;
+            if (isActionPressed(bs.dancerButtons[8],  mgr)) output &= 0xF7FF;  // P1 L Top (clears bit 11)
+            if (isActionPressed(bs.dancerButtons[9],  mgr)) output &= 0xEFFF;  // P1 L Bottom (clears bit 12)
+            if (isActionPressed(bs.dancerButtons[10], mgr)) output &= 0xFBFF;  // P1 R Top (clears bit 10)
+            if (isActionPressed(bs.dancerButtons[11], mgr)) output &= 0xDFFF;  // P1 R Bottom (clears bit 13)
+            if (isActionPressed(bs.dancerButtons[12], mgr)) output &= 0xFDFF;  // P2 L Top (clears bit 9)
+            if (isActionPressed(bs.dancerButtons[13], mgr)) output &= 0xBFFF;  // P2 L Bottom (clears bit 14)
+            if (isActionPressed(bs.dancerButtons[14], mgr)) output &= 0xFEFF;  // P2 R Top (clears bit 8)
+            if (isActionPressed(bs.dancerButtons[15], mgr)) output &= 0x7FFF;  // P2 R Bottom (clears bit 15)
+            if (isActionPressed(bs.dancerButtons[0],  mgr)) output &= 0xFF20;  // Test
+            if (isActionPressed(bs.dancerButtons[1],  mgr)) output &= 0xFF10;  // Service
+            return output ^ 0xFF00;
+        }
         default:
-            return 0xFFFF;  // unrecognized port — all released
+            return 0xFFFF;
     }
 }
