@@ -150,6 +150,13 @@ struct AnalogBinding {
 
     nlohmann::json   toJson()  const;
     static AnalogBinding fromJson(const nlohmann::json& j);
+
+    uint8_t getPosition(const InputManager& mgr, uint8_t vtt_pos) const {
+        if (!isSet()) return vtt_pos;
+        float raw = mgr.getAxisValue(device_path, axis_idx);
+        if (reverse) raw = 1.0f - raw;
+        return (uint8_t)((int)(raw * 255.0f) + (int)vtt_pos - 128);
+    }
 };
 
 // ---- BindingStore --------------------------------------------------------
@@ -157,7 +164,7 @@ struct AnalogBinding {
 // Owns all binding arrays. Serializes to/from globalSettings() JSON.
 // Does NOT #include strings.h — receives name arrays as parameters.
 struct BindingStore {
-    static constexpr int BUTTON_COUNT = 24;   // ioButtons[] length
+    static constexpr int BUTTON_COUNT = 20;   // ioButtons[] length
     static constexpr int DANCER_COUNT = 16;   // ez2DancerIOButtons[] length
     static constexpr int ANALOG_COUNT = 2;    // p1_turntable + p2_turntable
 

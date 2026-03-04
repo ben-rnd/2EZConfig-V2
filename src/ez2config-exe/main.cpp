@@ -121,9 +121,9 @@ static void renderUI() {
     for (int port = 0; port < 2; port++) {
         const AnalogBinding& ab = g_bindings.analogs[port];
         if (ab.vtt_plus.isSet() && checkVttKey(ab.vtt_plus))
-            g_vtt_pos[port] = (uint8_t)std::clamp((int)g_vtt_pos[port] + ab.vtt_step, 0, 255);
+            g_vtt_pos[port] = (uint8_t)(((int)g_vtt_pos[port] + ab.vtt_step) & 0xFF);
         if (ab.vtt_minus.isSet() && checkVttKey(ab.vtt_minus))
-            g_vtt_pos[port] = (uint8_t)std::clamp((int)g_vtt_pos[port] - ab.vtt_step, 0, 255);
+            g_vtt_pos[port] = (uint8_t)(((int)g_vtt_pos[port] - ab.vtt_step + 256) & 0xFF);
     }
 
     const ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -203,94 +203,106 @@ static void renderUI() {
 
             const char** actionList  = g_isDancer ? ez2DancerIOButtons : ioButtons;
             const int    actionCount = g_isDancer ? DANCER_COUNT_K : IO_COUNT;
+            
+            ImGui::BeginChild("##buttonsScroll", ImVec2(0, ImGui::GetWindowHeight() - 85), false);
+            // 3-column table: [name | binding | Edit button]
+            if (ImGui::BeginTable("##buttonable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+                ImGui::TableSetupColumn("Binding",   ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                ImGui::TableHeadersRow();
 
-            ImGui::BeginChild("##buttonsScroll", ImVec2(0, 0), false);
-            for (int i = 0; i < actionCount; i++) {
-                ImGui::PushID(i);
-                ButtonBinding& bnd = g_isDancer ? g_bindings.dancerButtons[i] : g_bindings.buttons[i];
+                for (int i = 0; i < actionCount; i++) {
+                    ImGui::PushID(i);
+                    ImGui::TableNextRow();
+                    ButtonBinding& bnd = g_isDancer ? g_bindings.dancerButtons[i] : g_bindings.buttons[i];
 
-                if (s_state == BindState::Listening && s_listenIdx == i) {
-                    // Listening row
-                    ImGui::TextColored(ImVec4(1,1,0,1), "Press a button...");
-                    ImGui::SameLine();
-                    char timerStr[16]; snprintf(timerStr, sizeof(timerStr), "(%.1fs)", s_listenTimer);
-                    ImGui::TextUnformatted(timerStr);
-                    ImGui::SameLine();
-                    if (ImGui::Button("Cancel")) {
-                        g_input->stopCapture();
-                        s_state     = BindState::Normal;
-                        s_listenIdx = -1;
-                    }
-
-                    // Poll HID capture
-                    auto hit = g_input->pollCapture();
-                    if (hit) {
-                        bnd = ButtonBinding::fromCapture(*hit);
-                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
-                        s_state     = BindState::Normal;
-                        s_listenIdx = -1;
-                    }
-
-                    // Poll keyboard
-                    if (s_state == BindState::Listening) {
-                        for (int vk = 0x01; vk < 0xFF; vk++) {
-                            bool pr = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                            if (pr && !s_prevKeys[vk] &&
-                                vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
-                                ButtonBinding kb;
-                                kb.vk_code = vk;
-                                bnd = kb;
-                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
-                                g_input->stopCapture();
-                                s_state     = BindState::Normal;
-                                s_listenIdx = -1;
-                                s_prevKeys[vk] = true;
-                                break;
-                            }
-                            s_prevKeys[vk] = pr;
+                    if (s_state == BindState::Listening && s_listenIdx == i) {
+                        ImGui::TableSetColumnIndex(0);
+                        // Listening row
+                        ImGui::TextColored(ImVec4(1,1,0,1), "Press a button...");
+                        ImGui::TableSetColumnIndex(1);
+                        char timerStr[16]; snprintf(timerStr, sizeof(timerStr), "(%.1fs)", s_listenTimer);
+                        ImGui::TextUnformatted(timerStr);
+                        ImGui::TableSetColumnIndex(2);
+                        if (ImGui::Button("Cancel")) {
+                            g_input->stopCapture();
+                            s_state     = BindState::Normal;
+                            s_listenIdx = -1;
                         }
-                    }
 
-                    // Timeout
-                    s_listenTimer -= ImGui::GetIO().DeltaTime;
-                    if (s_listenTimer <= 0.0f) {
-                        g_input->stopCapture();
-                        s_state = BindState::Normal;
-                    }
-                } else {
-                    // Normal row
-                    std::string label = bnd.getDisplayString(*g_input);
-                    bool active = bnd.isSet() && (bnd.isKeyboard()
-                        ? (GetAsyncKeyState(bnd.vk_code) & 0x8000) != 0
-                        : g_input->getButtonState(bnd.device_path, bnd.button_idx));
-
-                    ImGui::Text("%s:", actionList[i]);
-                    ImGui::SameLine(160.0f);
-                    if (active)
-                        ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s", label.c_str());
-                    else
-                        ImGui::TextUnformatted(label.c_str());
-
-                    ImGui::SameLine(310.0f);
-                    if (ImGui::Button("Bind")) {
-                        s_state       = BindState::Listening;
-                        s_listenIdx   = i;
-                        s_listenTimer = 5.0f;
-                        // Prime prev keys to avoid spurious immediate trigger
-                        for (int vk = 0; vk < 256; vk++)
-                            s_prevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                    }
-                    if (bnd.isSet()) {
-                        ImGui::SameLine();
-                        if (ImGui::Button("Clear")) {
-                            bnd.clear();
+                        // Poll HID capture
+                        auto hit = g_input->pollCapture();
+                        if (hit) {
+                            bnd = ButtonBinding::fromCapture(*hit);
                             g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                            s_state     = BindState::Normal;
+                            s_listenIdx = -1;
+                        }
+
+                        // Poll keyboard
+                        if (s_state == BindState::Listening) {
+                            for (int vk = 0x01; vk < 0xFF; vk++) {
+                                bool pr = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                                if (pr && !s_prevKeys[vk] &&
+                                    vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
+                                    ButtonBinding kb;
+                                    kb.vk_code = vk;
+                                    bnd = kb;
+                                    g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                    g_input->stopCapture();
+                                    s_state     = BindState::Normal;
+                                    s_listenIdx = -1;
+                                    s_prevKeys[vk] = true;
+                                    break;
+                                }
+                                s_prevKeys[vk] = pr;
+                            }
+                        }
+
+                        // Timeout
+                        s_listenTimer -= ImGui::GetIO().DeltaTime;
+                        if (s_listenTimer <= 0.0f) {
+                            g_input->stopCapture();
+                            s_state = BindState::Normal;
+                        }
+                    } else {
+                        // Normal row
+                        ImGui::TableSetColumnIndex(0);
+                        std::string label = bnd.getDisplayString(*g_input);
+                        bool active = bnd.isSet() && (bnd.isKeyboard()
+                            ? (GetAsyncKeyState(bnd.vk_code) & 0x8000) != 0
+                            : g_input->getButtonState(bnd.device_path, bnd.button_idx));
+
+                        ImGui::Text("%s:", actionList[i]);
+                        ImGui::TableSetColumnIndex(1);
+                        if (active)
+                            ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s", label.c_str());
+                        else
+                            ImGui::TextUnformatted(label.c_str());
+
+                        ImGui::TableSetColumnIndex(2);
+                        if (ImGui::Button("Bind")) {
+                            s_state       = BindState::Listening;
+                            s_listenIdx   = i;
+                            s_listenTimer = 5.0f;
+                            // Prime prev keys to avoid spurious immediate trigger
+                            for (int vk = 0; vk < 256; vk++)
+                                s_prevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                        }
+                        if (bnd.isSet()) {
+                            ImGui::SameLine();
+                            if (ImGui::Button("Clear")) {
+                                bnd.clear();
+                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                            }
                         }
                     }
-                }
 
-                ImGui::PopID();
+                    ImGui::PopID();
+                }
             }
+            ImGui::EndTable();
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
@@ -317,9 +329,9 @@ static void renderUI() {
 
                     // 3-column table: [name | binding | Edit button]
                     if (ImGui::BeginTable("##analogTable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
-                        ImGui::TableSetupColumn("Turntable", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+                        ImGui::TableSetupColumn("Turntable", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                         ImGui::TableSetupColumn("Binding",   ImGuiTableColumnFlags_WidthStretch);
-                        ImGui::TableSetupColumn("##editbtn", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                        ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
                         ImGui::TableHeadersRow();
 
                         for (int p = 0; p < BindingStore::ANALOG_COUNT; p++) {
@@ -328,20 +340,22 @@ static void renderUI() {
 
                             // Col 0: name + live preview bar
                             ImGui::TableSetColumnIndex(0);
+                            ImGui::Text("P%d", p+1);
                             AnalogBinding& ab = g_bindings.analogs[p];
-                            if (ab.isSet()) {
-                                float rawAxis = g_input->getAxisValue(ab.device_path, ab.axis_idx);
-                                if (ab.reverse) rawAxis = 1.0f - rawAxis;
-                                float combined = std::clamp(rawAxis + (float)(g_vtt_pos[p] - 128) / 255.0f, 0.0f, 1.0f);
-                                char overlay[32]; snprintf(overlay, sizeof(overlay), "%.0f/255", combined * 255.0f);
-                                ImGui::ProgressBar(combined, ImVec2(100.0f, 0), overlay);
+                            if(ab.isSet() || ab.hasVtt()){
                                 ImGui::SameLine();
+                                float display = ab.getPosition(*g_input, g_vtt_pos[p]) / 255.0f;
+                                ImGui::ProgressBar(display, ImVec2(40.0f, 0));
                             }
-                            ImGui::TextUnformatted(analogs[p]);
 
                             // Col 1: binding label
                             ImGui::TableSetColumnIndex(1);
-                            ImGui::TextUnformatted(ab.getDisplayString(*g_input).c_str());
+                            
+                            if(!ab.isSet() && ab.hasVtt()){
+                                ImGui::TextUnformatted("Virtual TT keys Assigned");
+                            }else{
+                                ImGui::TextUnformatted(ab.getDisplayString(*g_input).c_str());
+                            }
 
                             // Col 2: [Edit] [Clear] buttons
                             ImGui::TableSetColumnIndex(2);
@@ -350,7 +364,7 @@ static void renderUI() {
                                 s_openPopup = true;
                                 s_initialized[p] = false;
                             }
-                            if (ab.isSet()) {
+                            if (ab.isSet() || ab.hasVtt()) {
                                 ImGui::SameLine();
                                 if (ImGui::Button("Clear")) {
                                     ab.clear();
@@ -421,16 +435,66 @@ static void renderUI() {
                             // Reverse checkbox
                             if (ImGui::Checkbox("Reverse", &ab.reverse))
                                 g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
-
-                            // VTT Step
-                            if (ImGui::SliderInt("VTT Step", &ab.vtt_step, 1, 10))
-                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
-
+                            
                             ImGui::Separator();
 
+                            // VTT- capture — accepts HID button OR keyboard key
+                            {
+                                ImGui::Text("Virtual TT-: %s", ab.vtt_minus.getLabel().c_str());
+                                ImGui::SameLine();
+                                if (s_capturingVtt[p][1]) {
+                                    ImGui::TextColored(ImVec4(1,1,0,1), "[Press button or key...]");
+
+                                    // Poll HID capture
+                                    auto hit = g_input->pollCapture();
+                                    if (hit) {
+                                        ab.vtt_minus.vk          = 0;
+                                        ab.vtt_minus.device_path = hit->path;
+                                        ab.vtt_minus.device_name = hit->device_name;
+                                        ab.vtt_minus.button_idx  = hit->button_idx;
+                                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                        g_input->stopCapture();
+                                        s_capturingVtt[p][1] = false;
+                                    } else {
+                                        // Poll keyboard
+                                        for (int vk = 0x01; vk < 0xFF; vk++) {
+                                            bool pr = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                                            if (pr && !s_vttPrevKeys[vk] &&
+                                                vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
+                                                ab.vtt_minus.clear();
+                                                ab.vtt_minus.vk = vk;
+                                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                                g_input->stopCapture();
+                                                s_capturingVtt[p][1] = false;
+                                                s_vttPrevKeys[vk] = true;
+                                                break;
+                                            }
+                                            s_vttPrevKeys[vk] = pr;
+                                        }
+                                    }
+                                } else {
+                                    if (ImGui::Button("Bind##vttm")) {
+                                        // Stop any other VTT capture in progress
+                                        s_capturingVtt[p][0] = false;
+                                        s_capturingVtt[p][1] = true;
+                                        g_input->startCapture();
+                                        for (int vk = 0; vk < 256; vk++)
+                                            s_vttPrevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                                    }
+                                    if (ab.vtt_minus.isSet()) {
+                                        ImGui::SameLine();
+                                        if (ImGui::Button("Clear##vttm")) {
+                                            ab.vtt_minus.clear();
+                                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            
                             // VTT+ capture — accepts HID button OR keyboard key
                             {
-                                ImGui::Text("VTT+: %s", ab.vtt_plus.getLabel().c_str());
+                                ImGui::Text("Virtual TT+: %s", ab.vtt_plus.getLabel().c_str());
                                 ImGui::SameLine();
                                 if (s_capturingVtt[p][0]) {
                                     ImGui::TextColored(ImVec4(1,1,0,1), "[Press button or key...]");
@@ -481,70 +545,25 @@ static void renderUI() {
                                 }
                             }
 
-                            // VTT- capture — accepts HID button OR keyboard key
-                            {
-                                ImGui::Text("VTT-: %s", ab.vtt_minus.getLabel().c_str());
-                                ImGui::SameLine();
-                                if (s_capturingVtt[p][1]) {
-                                    ImGui::TextColored(ImVec4(1,1,0,1), "[Press button or key...]");
 
-                                    // Poll HID capture
-                                    auto hit = g_input->pollCapture();
-                                    if (hit) {
-                                        ab.vtt_minus.vk          = 0;
-                                        ab.vtt_minus.device_path = hit->path;
-                                        ab.vtt_minus.device_name = hit->device_name;
-                                        ab.vtt_minus.button_idx  = hit->button_idx;
-                                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
-                                        g_input->stopCapture();
-                                        s_capturingVtt[p][1] = false;
-                                    } else {
-                                        // Poll keyboard
-                                        for (int vk = 0x01; vk < 0xFF; vk++) {
-                                            bool pr = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                                            if (pr && !s_vttPrevKeys[vk] &&
-                                                vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
-                                                ab.vtt_minus.clear();
-                                                ab.vtt_minus.vk = vk;
-                                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
-                                                g_input->stopCapture();
-                                                s_capturingVtt[p][1] = false;
-                                                s_vttPrevKeys[vk] = true;
-                                                break;
-                                            }
-                                            s_vttPrevKeys[vk] = pr;
-                                        }
-                                    }
-                                } else {
-                                    if (ImGui::Button("Bind##vttm")) {
-                                        // Stop any other VTT capture in progress
-                                        s_capturingVtt[p][0] = false;
-                                        s_capturingVtt[p][1] = true;
-                                        g_input->startCapture();
-                                        for (int vk = 0; vk < 256; vk++)
-                                            s_vttPrevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                                    }
-                                    if (ab.vtt_minus.isSet()) {
-                                        ImGui::SameLine();
-                                        if (ImGui::Button("Clear##vttm")) {
-                                            ab.vtt_minus.clear();
-                                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
-                                        }
-                                    }
-                                }
-                            }
+                            // VTT Step
+                            if (ImGui::SliderInt("Virtual TT Step Amount", &ab.vtt_step, 1, 10))
+                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
 
                             ImGui::Separator();
 
                             // Live preview
-                            if (ab.isSet()) {
-                                float rawAxis = g_input->getAxisValue(ab.device_path, ab.axis_idx);
-                                if (ab.reverse) rawAxis = 1.0f - rawAxis;
-                                float combined = std::clamp(rawAxis + (float)(g_vtt_pos[p] - 128) / 255.0f, 0.0f, 1.0f);
-                                char overlay[32]; snprintf(overlay, sizeof(overlay), "%.0f", combined * 255.0f);
-                                ImGui::ProgressBar(combined, ImVec2(-0.5f, 0), overlay);
-                            } else {
-                                ImGui::ProgressBar(0.5f, ImVec2(-0.5f, 0), "(unbound)");
+                            {
+                                float display = 0.5;
+                                char overlay[32];
+                                if (ab.isSet() || ab.hasVtt()){
+                                    display = ab.getPosition(*g_input, g_vtt_pos[p]) / 255.0f;
+                                    snprintf(overlay, sizeof(overlay), "%.0f", display * 255.0f);
+                                }
+                                else
+                                    snprintf(overlay, sizeof(overlay), "(unbound)");
+
+                                ImGui::ProgressBar(display, ImVec2(-0.5f, 0), overlay);
                             }
 
                             ImGui::PopID();
@@ -574,7 +593,7 @@ static void renderUI() {
         ImGui::EndTabBar();
     }
 
-    ImGui::SetCursorPos({ ImGui::GetWindowWidth() - 175, ImGui::GetWindowHeight() - 20 });
+    ImGui::SetCursorPos({ ImGui::GetWindowWidth() - 250, ImGui::GetWindowHeight() - 20 });
     ImGui::TextDisabled("Made by kasaski (kissass) - 2026");
 
     ImGui::End();

@@ -6,6 +6,8 @@
 
 using json = nlohmann::json;
 
+static constexpr int GAME_SETTINGS_VERSION  = 1;                                                                 
+static constexpr int PATCHES_VERSION        = 1;    
 class SettingsManager {
 public:
     // Load settings.json and patches.json from configDir.
