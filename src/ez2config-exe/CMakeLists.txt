@@ -1,5 +1,5 @@
 # EZ2Config.exe
-add_executable(EZ2Config WIN32 main.cpp)
+add_executable(EZ2Config WIN32 main.cpp bindings.cpp)
 
 target_include_directories(EZ2Config PRIVATE
     ${CMAKE_SOURCE_DIR}/src/common/include
