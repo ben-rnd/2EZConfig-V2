@@ -28,6 +28,7 @@ struct ButtonBinding {
     int         button_idx = -1;
     int         vk_code    = 0;
     std::string device_name;    // informational: for [Disconnected] display fallback
+    std::vector<ButtonBinding> alternatives;  // max 2 entries (pages 2 and 3)
 
     bool isSet()      const { return (!device_path.empty() && button_idx >= 0) || vk_code != 0; }
     bool isKeyboard() const { return vk_code != 0; }
@@ -159,6 +160,30 @@ struct AnalogBinding {
     }
 };
 
+// ---- LightBinding --------------------------------------------------------
+
+struct LightBinding {
+    std::string device_path;   // full Windows device path (same as ButtonBinding)
+    int         output_idx = -1;   // flat index: button_output_caps first, value_output_caps after
+    std::string device_name;   // informational; for [Disconnected] fallback display
+    std::vector<LightBinding> alternatives;  // max 2 entries (pages 2 and 3)
+
+    bool isSet() const { return !device_path.empty() && output_idx >= 0; }
+
+    void clear() {
+        device_path.clear();
+        output_idx = -1;
+        device_name.clear();
+        // Does NOT clear alternatives — caller decides per page
+    }
+
+    // Returns: "Button 3 (LED Controller)" or "[Disconnected] LED Controller" or "(unbound)"
+    std::string getDisplayString(const InputManager& mgr) const;
+
+    nlohmann::json toJson() const;
+    static LightBinding fromJson(const nlohmann::json& j);
+};
+
 // ---- BindingStore --------------------------------------------------------
 
 // Owns all binding arrays. Serializes to/from globalSettings() JSON.
@@ -167,20 +192,24 @@ struct BindingStore {
     static constexpr int BUTTON_COUNT = 20;   // ioButtons[] length
     static constexpr int DANCER_COUNT = 16;   // ez2DancerIOButtons[] length
     static constexpr int ANALOG_COUNT = 2;    // p1_turntable + p2_turntable
+    static constexpr int LIGHT_COUNT  = 23;   // lights[] array length in strings.h
 
     std::array<ButtonBinding, BUTTON_COUNT> buttons;
     std::array<ButtonBinding, DANCER_COUNT> dancerButtons;
     std::array<AnalogBinding, ANALOG_COUNT> analogs;
+    std::array<LightBinding,  LIGHT_COUNT>  lights;
 
     // Load from globalSettings(). Old-format entries (device_id key) silently skipped.
     // ioButtonNames = ioButtons[] pointer, dancerButtonNames = ez2DancerIOButtons[]
     void load(SettingsManager& settings,
               InputManager& mgr,
               const char* const* ioButtonNames, int ioCount,
-              const char* const* dancerButtonNames, int dancerCount);
+              const char* const* dancerButtonNames, int dancerCount,
+              const char* const* lightNames, int lightCount);
 
     // Save to globalSettings() and call settings.save().
     void save(SettingsManager& settings,
               const char* const* ioButtonNames, int ioCount,
-              const char* const* dancerButtonNames, int dancerCount) const;
+              const char* const* dancerButtonNames, int dancerCount,
+              const char* const* lightNames, int lightCount) const;
 };
