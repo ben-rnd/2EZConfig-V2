@@ -38,7 +38,7 @@ static LONG WINAPI CombinedIOHandler(PEXCEPTION_POINTERS ex) {
         } else if (eip[1] == 0xEF) {
             // OUT DX, AX (0x66 0xEF) — Dancer OUT
             uint8_t value = static_cast<uint8_t>(ex->ContextRecord->Eax & 0xFF);
-            handleDancerOut(port, value, s_bindings, *s_mgr);
+            handleDancerOut(port, value, s_bindings);
             ex->ContextRecord->Eip += 2;
             return EXCEPTION_CONTINUE_EXECUTION;
         }
@@ -51,7 +51,7 @@ static LONG WINAPI CombinedIOHandler(PEXCEPTION_POINTERS ex) {
     } else if (eip[0] == 0xEE) {
         // OUT DX, AL — DJ OUT (8-bit)
         uint8_t value = static_cast<uint8_t>(ex->ContextRecord->Eax & 0xFF);
-        handleDJOut(port, value, s_bindings, *s_mgr);
+        handleDJOut(port, value, s_bindings);
         ex->ContextRecord->Eip += 1;
         return EXCEPTION_CONTINUE_EXECUTION;
     }
@@ -100,6 +100,9 @@ static DWORD WINAPI InitThread(void*) {
             // Fall through to all-released state (no crash).
         }
     }
+
+    // Start background thread that flushes buffered light state to InputManager.
+    startLightFlushThread(s_bindings, *s_mgr);
 
     // Register VEH handler LAST — after InputManager and BindingStore are ready.
     // Position 1 = first in handler chain.
