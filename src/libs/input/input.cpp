@@ -9,13 +9,13 @@ extern "C" {
 #include "input.h"
 #include "binding.h"
 #include "device_info.h"
-#include "settings.h"
 #include <string>
 #include <vector>
 #include <map>
 #include <array>
 #include <optional>
 #include <cstdint>
+#include <cstdio>
 
 // ---------------------------------------------------------------------------
 // Atomic 8-bit add — MinGW shim
@@ -27,11 +27,21 @@ static inline char _InterlockedExchangeAdd8(volatile char* ptr, char val) {
 #endif
 
 // ---------------------------------------------------------------------------
+// Helper: build the opaque device_id string from VID/PID/instance
+// ---------------------------------------------------------------------------
+static std::string makeDeviceId(uint16_t vendor_id, uint16_t product_id, uint8_t instance) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "VID_%04X&PID_%04X&Instance_%u",
+             (unsigned)vendor_id, (unsigned)product_id, (unsigned)instance);
+    return buf;
+}
+
+// ---------------------------------------------------------------------------
 // Internal state
 // ---------------------------------------------------------------------------
 
-static volatile bool g_running    = false;
-static volatile bool g_listenMode = false;
+static volatile bool g_running     = false;
+static volatile bool g_captureMode = false;
 
 static HANDLE g_msgThread = nullptr;
 static HANDLE g_vttThread  = nullptr;
@@ -39,29 +49,27 @@ static HWND   g_inputHwnd  = nullptr;
 
 static std::vector<DeviceInfo> g_devices;
 
-static std::map<std::string, ButtonBinding>   g_buttonBindings;
-static std::map<std::string, KeyboardBinding> g_keyBindings;
-static std::map<std::string, AnalogBinding>   g_analogBindings;
-static std::array<VTTBinding, 2>              g_vttBindings = {};
+// State lock: protects button/axis state reads from WM_INPUT handler and g_devices
+static CRITICAL_SECTION g_stateLock;
 
-// Per-action logical state (written by msg thread + keyboard thread, read by UI)
-static std::map<std::string, bool> g_buttonState;
-static CRITICAL_SECTION            g_stateLock;
+// Capture result
+static std::optional<Input::CaptureResult> g_captureResult;
+static CRITICAL_SECTION                    g_captureLock;
 
-// Turntable positions
-struct AnalogState { volatile uint8_t pos[2]; volatile uint8_t vttDelta[2]; };
-static AnalogState g_analog = {};
+// Previous button state per device for edge detection in capture mode.
+// GUARD 2: keyed by full device_id string so identical VID/PID controllers
+// (different instance) each have independent edge-detection state.
+static std::map<std::string, std::vector<bool>> g_prevButtonStates;
 
-// Capture mode
-static std::optional<Input::ButtonCaptureResult> g_captureResult;
-static CRITICAL_SECTION                          g_captureLock;
+// VTT bindings (configurable via setVttKeys)
+static std::array<VTTBinding, 2> g_vttBindings = {};
 
-// Previous button state per device (for edge detection in listen mode)
-// Key = device VID|PID<<16, value = flat button index set
-static std::map<uint32_t, std::vector<bool>> g_prevButtonStates;
+// VTT accumulated delta [0..255] per port; volatile for lock-free read
+struct VttState { volatile uint8_t pos[2]; };
+static VttState g_vtt = {};
 
 // ---------------------------------------------------------------------------
-// enumerateRaw — returns raw HID device list for init() and enumerateDevices()
+// enumerateRaw — returns raw HID device list
 // ---------------------------------------------------------------------------
 
 struct RawDevEntry {
@@ -107,7 +115,7 @@ static std::vector<RawDevEntry> enumerateRaw() {
 }
 
 // ---------------------------------------------------------------------------
-// buildDeviceInfo — build DeviceInfo from a raw entry (no CreateFile for data)
+// buildDeviceInfo — build DeviceInfo from a raw entry
 // ---------------------------------------------------------------------------
 
 static DeviceInfo buildDeviceInfo(const RawDevEntry& re, uint8_t instance) {
@@ -137,14 +145,14 @@ static DeviceInfo buildDeviceInfo(const RawDevEntry& re, uint8_t instance) {
         dev.button_caps.resize(dev.caps.NumberInputButtonCaps);
         USHORT n = dev.caps.NumberInputButtonCaps;
         HidP_GetButtonCaps(HidP_Input, dev.button_caps.data(), &n, dev.preparsed);
-        // Normalize non-range entries
+        // Normalize non-range entries to Range form for consistent iteration
         for (auto& bc : dev.button_caps) {
             if (!bc.IsRange) {
                 bc.Range.UsageMin = bc.NotRange.Usage;
                 bc.Range.UsageMax = bc.NotRange.Usage;
             }
         }
-        // Allocate flat button_states
+        // Allocate flat button_states with same traversal order as handleWmInput and getDevices
         int total = 0;
         for (auto& bc : dev.button_caps) total += (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
         dev.button_states.assign((size_t)total, false);
@@ -189,69 +197,10 @@ static DeviceInfo buildDeviceInfo(const RawDevEntry& re, uint8_t instance) {
 }
 
 // ---------------------------------------------------------------------------
-// updateActionStates — called from WM_INPUT handler after button/axis update
-// ---------------------------------------------------------------------------
-
-static void updateActionStates(DeviceInfo& dev) {
-    // Buttons
-    for (auto& kv : g_buttonBindings) {
-        const ButtonBinding& b = kv.second;
-        if (b.device.vendor_id  != dev.vendor_id)  continue;
-        if (b.device.product_id != dev.product_id) continue;
-        if (b.device.instance   != dev.instance)   continue;
-        int idx = dev.findButtonIndex(b.usage_page, b.usage_id);
-        bool pressed = (idx >= 0 && idx < (int)dev.button_states.size())
-                       ? dev.button_states[(size_t)idx] : false;
-        EnterCriticalSection(&g_stateLock);
-        g_buttonState[kv.first] = pressed;
-        LeaveCriticalSection(&g_stateLock);
-    }
-
-    // Axes
-    for (auto& kv : g_analogBindings) {
-        const AnalogBinding& ab = kv.second;
-        if (ab.device.vendor_id  != dev.vendor_id)  continue;
-        if (ab.device.product_id != dev.product_id) continue;
-        if (ab.device.instance   != dev.instance)   continue;
-
-        int port = -1;
-        if (kv.first == "P1 Turntable") port = 0;
-        else if (kv.first == "P2 Turntable") port = 1;
-        if (port < 0) continue;
-
-        int idx = dev.findAxisIndex(ab.usage_page, ab.usage_id);
-        if (idx < 0 || idx >= (int)dev.axis_states.size()) continue;
-
-        float fval = dev.axis_states[(size_t)idx];  // [0,1]
-        if (ab.reverse) fval = 1.0f - fval;
-
-        // Apply sensitivity (scale deviation from center)
-        if (ab.sensitivity != 1.0f) {
-            float dev_v = (fval - 0.5f) * ab.sensitivity;
-            fval = 0.5f + dev_v;
-            if (fval < 0.0f) fval = 0.0f;
-            if (fval > 1.0f) fval = 1.0f;
-        }
-
-        uint8_t scaled = (uint8_t)(fval * 255.0f);
-
-        // Dead zone: snap to center if within dead_zone of 128
-        if (ab.dead_zone > 0) {
-            int dist = (int)scaled - 128;
-            if (dist < 0) dist = -dist;
-            if (dist < (int)ab.dead_zone) scaled = 128;
-        }
-
-        g_analog.pos[(size_t)port] = scaled + g_analog.vttDelta[(size_t)port];
-    }
-}
-
-// ---------------------------------------------------------------------------
 // WM_INPUT handler
 // ---------------------------------------------------------------------------
 
 static void handleWmInput(LPARAM lParam) {
-    // Get size
     UINT dataSize = 0;
     if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, nullptr, &dataSize,
                         sizeof(RAWINPUTHEADER)) == (UINT)-1) return;
@@ -273,7 +222,8 @@ static void handleWmInput(LPARAM lParam) {
         if (dev.raw_handle != devHandle) continue;
         if (!dev.preparsed) continue;
 
-        // Parse button states
+        // Parse button states — GUARD 1: iterate button_caps in the same order as getDevices()
+        // so flat_idx in button_labels[] matches button_states[] at the same index.
         int offset = 0;
         for (const auto& bc : dev.button_caps) {
             int count = (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
@@ -317,13 +267,11 @@ static void handleWmInput(LPARAM lParam) {
             }
         }
 
-        // Update action states (button + analog)
-        updateActionStates(dev);
-
         // Capture mode: edge-detect newly pressed buttons
-        if (g_listenMode) {
-            uint32_t key = ((uint32_t)dev.vendor_id) |
-                           ((uint32_t)dev.product_id << 16);
+        // GUARD 1: Use flat index (btnOffset + bi) — same arithmetic as button_labels[] in getDevices()
+        // GUARD 2: Key by full device_id string to avoid instance collision
+        if (g_captureMode) {
+            std::string key = makeDeviceId(dev.vendor_id, dev.product_id, dev.instance);
             auto& prev = g_prevButtonStates[key];
             if (prev.size() != dev.button_states.size())
                 prev.assign(dev.button_states.size(), false);
@@ -334,15 +282,11 @@ static void handleWmInput(LPARAM lParam) {
                 for (int bi = btnOffset; bi < btnOffset + count; bi++) {
                     if ((size_t)bi < dev.button_states.size() &&
                         dev.button_states[(size_t)bi] && !prev[(size_t)bi]) {
-                        // Newly pressed
                         EnterCriticalSection(&g_captureLock);
                         if (!g_captureResult.has_value()) {
-                            Input::ButtonCaptureResult r;
-                            r.vendor_id   = dev.vendor_id;
-                            r.product_id  = dev.product_id;
-                            r.instance    = dev.instance;
-                            r.usage_page  = bc.UsagePage;
-                            r.usage_id    = (uint16_t)(bc.Range.UsageMin + (bi - btnOffset));
+                            Input::CaptureResult r;
+                            r.device_id   = makeDeviceId(dev.vendor_id, dev.product_id, dev.instance);
+                            r.button_idx  = bi;  // flat index — matches button_labels[bi]
                             r.device_name = dev.product.empty() ? dev.manufacturer : dev.product;
                             g_captureResult = r;
                         }
@@ -371,7 +315,6 @@ static LRESULT CALLBACK InputWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
 }
 
 static DWORD WINAPI msgPumpThread(void*) {
-    // Register window class
     WNDCLASSEXA wc = {};
     wc.cbSize        = sizeof(wc);
     wc.lpfnWndProc   = InputWndProc;
@@ -379,16 +322,12 @@ static DWORD WINAPI msgPumpThread(void*) {
     wc.lpszClassName = "EZ2ConfigInput";
     RegisterClassExA(&wc);
 
-    // Create message-only window
     g_inputHwnd = CreateWindowExA(0, "EZ2ConfigInput", nullptr, 0,
                                   0, 0, 0, 0,
                                   HWND_MESSAGE, nullptr,
                                   GetModuleHandleA(nullptr), nullptr);
 
     if (g_inputHwnd) {
-        // Register for all Generic Desktop HID devices (joystick, gamepad, etc.)
-        // RIDEV_PAGEONLY with usUsage=0 catches all usages in page 0x01.
-        // RIDEV_INPUTSINK receives input even when the window is not focused.
         RAWINPUTDEVICE rid = {};
         rid.usUsagePage = 0x01;
         rid.usUsage     = 0x00;
@@ -422,16 +361,9 @@ static DWORD WINAPI vttThread(void*) {
             const VTTBinding& b = g_vttBindings[(size_t)port];
             if (b.plus_vk == 0 && b.minus_vk == 0) continue;
             if (GetAsyncKeyState((int)b.plus_vk)  & 0x8000)
-                _InterlockedExchangeAdd8((volatile char*)&g_analog.vttDelta[port],  (char)b.step);
+                _InterlockedExchangeAdd8((volatile char*)&g_vtt.pos[port],  (char)b.step);
             if (GetAsyncKeyState((int)b.minus_vk) & 0x8000)
-                _InterlockedExchangeAdd8((volatile char*)&g_analog.vttDelta[port], -(char)b.step);
-        }
-        // Keyboard bindings
-        for (auto& kv : g_keyBindings) {
-            bool pressed = (GetAsyncKeyState((int)kv.second.vk_code) & 0x8000) != 0;
-            EnterCriticalSection(&g_stateLock);
-            g_buttonState[kv.first] = pressed;
-            LeaveCriticalSection(&g_stateLock);
+                _InterlockedExchangeAdd8((volatile char*)&g_vtt.pos[port], -(char)b.step);
         }
         Sleep(5);
     }
@@ -440,10 +372,10 @@ static DWORD WINAPI vttThread(void*) {
 }
 
 // ---------------------------------------------------------------------------
-// Public API — enumerateDevices (for UI)
+// Public API — getDevices (for UI)
 // ---------------------------------------------------------------------------
 
-std::vector<Input::DeviceDesc> Input::enumerateDevices() {
+std::vector<Input::DeviceDesc> Input::getDevices() {
     auto rawList = enumerateRaw();
     std::map<uint32_t, uint8_t> instanceCount;
     std::vector<DeviceDesc> out;
@@ -456,37 +388,61 @@ std::vector<Input::DeviceDesc> Input::enumerateDevices() {
         if (!tmp.isValid()) { tmp.destroy(); continue; }
 
         DeviceDesc desc;
-        desc.vendor_id    = tmp.vendor_id;
-        desc.product_id   = tmp.product_id;
-        desc.instance     = tmp.instance;
-        desc.manufacturer = tmp.manufacturer;
-        desc.product      = tmp.product;
-        desc.path         = tmp.path;
+        desc.id   = makeDeviceId(tmp.vendor_id, tmp.product_id, tmp.instance);
+        // Device name: prefer product string, fall back to "VID_XXXX:PID_XXXX"
+        if (!tmp.product.empty()) {
+            desc.name = tmp.product;
+        } else if (!tmp.manufacturer.empty()) {
+            desc.name = tmp.manufacturer;
+        } else {
+            char nbuf[24];
+            snprintf(nbuf, sizeof(nbuf), "VID_%04X:PID_%04X",
+                     (unsigned)tmp.vendor_id, (unsigned)tmp.product_id);
+            desc.name = nbuf;
+        }
 
-        // Pre-build axis labels from value_caps (no CreateFile needed)
+        // GUARD 1: Build button_labels with the SAME flat-index iteration order used in
+        // buildDeviceInfo (button_caps traversal) and handleWmInput (button_states update).
+        // flat_idx == button_labels[flat_idx] index == button_states[flat_idx] index.
+        {
+            int flat_idx = 0;
+            for (const auto& bc : tmp.button_caps) {
+                int count = (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
+                for (int i = 0; i < count; i++) {
+                    desc.button_labels.push_back("Button " + std::to_string(flat_idx + 1));
+                    flat_idx++;
+                }
+            }
+        }
+
+        // Build axis_labels from value_caps
         for (const auto& vc : tmp.value_caps) {
             uint16_t page = vc.UsagePage;
             uint16_t id   = vc.IsRange ? vc.Range.UsageMin : vc.NotRange.Usage;
-            desc.axis_usages.push_back({page, id});
-
-            // Use HID usage name if available
             std::string label;
             if (page == 0x01) {
                 switch (id) {
-                    case 0x30: label = "X Axis"; break;
-                    case 0x31: label = "Y Axis"; break;
-                    case 0x32: label = "Z Axis"; break;
-                    case 0x33: label = "Rx"; break;
-                    case 0x34: label = "Ry"; break;
-                    case 0x35: label = "Rz"; break;
-                    case 0x36: label = "Slider"; break;
-                    case 0x37: label = "Dial"; break;
-                    case 0x38: label = "Wheel"; break;
+                    case 0x30: label = "X Axis";     break;
+                    case 0x31: label = "Y Axis";     break;
+                    case 0x32: label = "Z Axis";     break;
+                    case 0x33: label = "Rx";         break;
+                    case 0x34: label = "Ry";         break;
+                    case 0x35: label = "Rz";         break;
+                    case 0x36: label = "Slider";     break;
+                    case 0x37: label = "Dial";       break;
+                    case 0x38: label = "Wheel";      break;
                     case 0x39: label = "Hat Switch"; break;
-                    default:   label = "Axis 0x" + std::to_string(id); break;
+                    default:
+                        label = "Axis 0x";
+                        char hex[8];
+                        snprintf(hex, sizeof(hex), "%X", (unsigned)id);
+                        label += hex;
+                        break;
                 }
             } else {
-                label = "Page 0x" + std::to_string(page) + " Usage 0x" + std::to_string(id);
+                char lbuf[32];
+                snprintf(lbuf, sizeof(lbuf), "Page 0x%X Usage 0x%X", (unsigned)page, (unsigned)id);
+                label = lbuf;
             }
             desc.axis_labels.push_back(label);
         }
@@ -501,74 +457,9 @@ std::vector<Input::DeviceDesc> Input::enumerateDevices() {
 // Input::init
 // ---------------------------------------------------------------------------
 
-void Input::init(SettingsManager& settings) {
+void Input::init() {
     InitializeCriticalSection(&g_stateLock);
     InitializeCriticalSection(&g_captureLock);
-
-    // Parse bindings
-    try {
-        if (settings.globalSettings().contains("button_bindings")) {
-            for (auto it = settings.globalSettings()["button_bindings"].begin();
-                 it != settings.globalSettings()["button_bindings"].end(); ++it) {
-                const std::string& action = it.key();
-                const json& b = it.value();
-                if (!b.contains("type")) continue;
-                std::string btype = b["type"].get<std::string>();
-                if (btype == "HidButton") {
-                    ButtonBinding bb;
-                    bb.device.vendor_id  = (uint16_t)b.value("vendor_id",  0);
-                    bb.device.product_id = (uint16_t)b.value("product_id", 0);
-                    bb.device.instance   = (uint8_t)b.value("instance",    0);
-                    bb.usage_page        = (uint16_t)b.value("usage_page", 0);
-                    bb.usage_id          = (uint16_t)b.value("usage_id",   0);
-                    g_buttonBindings[action] = bb;
-                    EnterCriticalSection(&g_stateLock);
-                    g_buttonState[action] = false;
-                    LeaveCriticalSection(&g_stateLock);
-                } else if (btype == "Keyboard") {
-                    KeyboardBinding kb;
-                    kb.vk_code = b.value("vk_code", (uint32_t)0);
-                    g_keyBindings[action] = kb;
-                    EnterCriticalSection(&g_stateLock);
-                    g_buttonState[action] = false;
-                    LeaveCriticalSection(&g_stateLock);
-                }
-            }
-        }
-
-        if (settings.globalSettings().contains("analog_bindings")) {
-            for (auto it = settings.globalSettings()["analog_bindings"].begin();
-                 it != settings.globalSettings()["analog_bindings"].end(); ++it) {
-                const std::string& action = it.key();
-                const json& a = it.value();
-                int port = -1;
-                if (action == "P1 Turntable") port = 0;
-                else if (action == "P2 Turntable") port = 1;
-
-                if (a.contains("axis")) {
-                    const json& ax = a["axis"];
-                    AnalogBinding ab;
-                    ab.device.vendor_id  = (uint16_t)ax.value("vendor_id",  0);
-                    ab.device.product_id = (uint16_t)ax.value("product_id", 0);
-                    ab.device.instance   = (uint8_t)ax.value("instance",    0);
-                    ab.usage_page        = (uint16_t)ax.value("usage_page", 0);
-                    ab.usage_id          = (uint16_t)ax.value("usage_id",   0);
-                    ab.reverse           = ax.value("reverse",     false);
-                    ab.sensitivity       = ax.value("sensitivity", 1.0f);
-                    ab.dead_zone         = (uint8_t)ax.value("dead_zone",   0);
-                    g_analogBindings[action] = ab;
-                }
-                if (a.contains("vtt") && port >= 0) {
-                    const json& vt = a["vtt"];
-                    VTTBinding vb;
-                    vb.plus_vk  = vt.value("plus_vk",  (uint32_t)0);
-                    vb.minus_vk = vt.value("minus_vk", (uint32_t)0);
-                    vb.step     = (uint8_t)vt.value("step", 3);
-                    g_vttBindings[(size_t)port] = vb;
-                }
-            }
-        }
-    } catch (...) {}
 
     // Enumerate and build all HID devices (no CreateFile for data reading)
     auto rawList = enumerateRaw();
@@ -595,7 +486,6 @@ void Input::init(SettingsManager& settings) {
 void Input::shutdown() {
     g_running = false;
 
-    // Stop message pump
     if (g_inputHwnd)
         PostMessageA(g_inputHwnd, WM_QUIT, 0, 0);
     if (g_msgThread) {
@@ -610,15 +500,11 @@ void Input::shutdown() {
         g_vttThread = nullptr;
     }
 
+    EnterCriticalSection(&g_stateLock);
     for (auto& dev : g_devices) dev.destroy();
     g_devices.clear();
-    g_buttonBindings.clear();
-    g_keyBindings.clear();
-    g_analogBindings.clear();
-
-    EnterCriticalSection(&g_stateLock);
-    g_buttonState.clear();
     LeaveCriticalSection(&g_stateLock);
+
     g_prevButtonStates.clear();
 
     DeleteCriticalSection(&g_stateLock);
@@ -629,33 +515,59 @@ void Input::shutdown() {
 // Public read API
 // ---------------------------------------------------------------------------
 
-bool Input::getButtonState(const std::string& gameAction) {
+bool Input::getButtonState(const std::string& device_id, int button_idx) {
     EnterCriticalSection(&g_stateLock);
-    auto it = g_buttonState.find(gameAction);
-    bool r = (it != g_buttonState.end()) ? it->second : false;
-    LeaveCriticalSection(&g_stateLock);
-    return r;
-}
-
-uint8_t Input::getAnalogValue(const std::string& gameAction) {
-    int port = -1;
-    if (gameAction == "P1 Turntable") port = 0;
-    else if (gameAction == "P2 Turntable") port = 1;
-    if (port < 0) return 128;
-    return g_analog.pos[(size_t)port];
-}
-
-void Input::setListenMode(bool enabled) {
-    g_listenMode = enabled;
-    if (!enabled) {
-        EnterCriticalSection(&g_captureLock);
-        g_captureResult.reset();
-        LeaveCriticalSection(&g_captureLock);
-        g_prevButtonStates.clear();
+    bool result = false;
+    for (const auto& dev : g_devices) {
+        if (makeDeviceId(dev.vendor_id, dev.product_id, dev.instance) == device_id) {
+            if (button_idx >= 0 && button_idx < (int)dev.button_states.size())
+                result = dev.button_states[(size_t)button_idx];
+            break;
+        }
     }
+    LeaveCriticalSection(&g_stateLock);
+    return result;
 }
 
-std::optional<Input::ButtonCaptureResult> Input::pollNextButtonPress() {
+float Input::getAxisValue(const std::string& device_id, int axis_idx) {
+    EnterCriticalSection(&g_stateLock);
+    float result = 0.5f;  // center if not found
+    for (const auto& dev : g_devices) {
+        if (makeDeviceId(dev.vendor_id, dev.product_id, dev.instance) == device_id) {
+            if (axis_idx >= 0 && axis_idx < (int)dev.axis_states.size())
+                result = dev.axis_states[(size_t)axis_idx];
+            break;
+        }
+    }
+    LeaveCriticalSection(&g_stateLock);
+    return result;
+}
+
+void Input::setVttKeys(int port, int plus_vk, int minus_vk, int step) {
+    if (port < 0 || port >= 2) return;
+    g_vttBindings[(size_t)port].plus_vk  = (uint32_t)plus_vk;
+    g_vttBindings[(size_t)port].minus_vk = (uint32_t)minus_vk;
+    g_vttBindings[(size_t)port].step     = (uint8_t)step;
+}
+
+uint8_t Input::getVttPosition(int port) {
+    if (port < 0 || port >= 2) return 128;
+    return g_vtt.pos[(size_t)port];
+}
+
+void Input::startCapture() {
+    g_captureMode = true;
+}
+
+void Input::stopCapture() {
+    g_captureMode = false;
+    EnterCriticalSection(&g_captureLock);
+    g_captureResult.reset();
+    LeaveCriticalSection(&g_captureLock);
+    g_prevButtonStates.clear();
+}
+
+std::optional<Input::CaptureResult> Input::pollCapture() {
     EnterCriticalSection(&g_captureLock);
     auto r = g_captureResult;
     g_captureResult.reset();
