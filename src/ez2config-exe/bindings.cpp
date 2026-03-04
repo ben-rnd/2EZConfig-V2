@@ -1,0 +1,236 @@
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+#include "bindings.h"
+#include <algorithm>
+#include <cstring>
+
+// ---- Helpers -------------------------------------------------------
+
+// Truncate a UTF-8/ASCII string to maxLen chars for display.
+static std::string truncate(const std::string& s, size_t maxLen) {
+    if (s.size() <= maxLen) return s;
+    return s.substr(0, maxLen);
+}
+
+// Map a virtual key code to a short display string like "A", "F5", "Enter".
+static std::string vkToName(int vk) {
+    UINT scanCode = MapVirtualKeyA(static_cast<UINT>(vk), MAPVK_VK_TO_VSC);
+    if (scanCode == 0) return std::string("VK ") + std::to_string(vk);
+    // Extended keys need bit 24 set in the lParam passed to GetKeyNameTextA.
+    // For simplicity use the extended flag for a subset of known extended keys.
+    bool extended = (vk == VK_INSERT || vk == VK_DELETE ||
+                     vk == VK_HOME   || vk == VK_END    ||
+                     vk == VK_PRIOR  || vk == VK_NEXT   ||
+                     vk == VK_UP     || vk == VK_DOWN   ||
+                     vk == VK_LEFT   || vk == VK_RIGHT  ||
+                     vk == VK_NUMLOCK || vk == VK_RCONTROL || vk == VK_RMENU ||
+                     vk == VK_DIVIDE || vk == VK_SNAPSHOT);
+    LONG lParam = (scanCode << 16) | (extended ? (1 << 24) : 0);
+    char buf[64] = {};
+    int len = GetKeyNameTextA(lParam, buf, (int)sizeof(buf));
+    if (len > 0) return std::string(buf);
+    return std::string("VK ") + std::to_string(vk);
+}
+
+// ---- ButtonBinding implementations ----------------------------------
+
+std::string ButtonBinding::getDisplayString(const InputManager& mgr) const {
+    if (!isSet()) return "(unbound)";
+
+    if (isKeyboard()) {
+        return std::string("Key: ") + vkToName(vk_code);
+    }
+
+    // HID path
+    std::vector<Device> devs = mgr.getDevices();
+    for (const Device& dev : devs) {
+        if (dev.path == device_path) {
+            // Found — get button label
+            std::string label;
+            if (button_idx >= 0 && button_idx < (int)dev.button_caps_names.size()) {
+                label = dev.button_caps_names[button_idx];
+            } else {
+                label = std::string("Button ") + std::to_string(button_idx);
+            }
+            std::string devName = truncate(dev.name, 18);
+            return label + " [" + devName + "]";
+        }
+    }
+    // Device not found — disconnected fallback
+    return std::string("[Disconnected] ") + truncate(device_name, 18);
+}
+
+nlohmann::json ButtonBinding::toJson() const {
+    nlohmann::json j;
+    if (isKeyboard()) {
+        j["type"] = "Keyboard";
+        j["vk_code"] = vk_code;
+    } else {
+        j["type"] = "HidButton";
+        j["device_path"] = device_path;
+        j["device_name"] = device_name;
+        j["button_idx"]  = button_idx;
+    }
+    return j;
+}
+
+/*static*/ ButtonBinding ButtonBinding::fromJson(const nlohmann::json& j) {
+    try {
+        ButtonBinding b;
+        if (!j.is_object()) return b;
+
+        std::string type = j.value("type", "");
+        if (type == "Keyboard") {
+            b.vk_code = j.value("vk_code", 0);
+            return b;
+        }
+        if (type == "HidButton") {
+            // New format requires device_path key. Old format used device_id / vendor_id — skip.
+            if (!j.contains("device_path")) return b;
+            b.device_path  = j.value("device_path", "");
+            b.device_name  = j.value("device_name", "");
+            b.button_idx   = j.value("button_idx", -1);
+            return b;
+        }
+        // Unknown type — return empty binding silently
+        return b;
+    } catch (...) {
+        return ButtonBinding{};
+    }
+}
+
+// ---- AnalogBinding implementations ----------------------------------
+
+std::string AnalogBinding::getDisplayString(const InputManager& mgr) const {
+    if (!isSet()) return "(unbound)";
+
+    std::vector<Device> devs = mgr.getDevices();
+    for (const Device& dev : devs) {
+        if (dev.path == device_path) {
+            std::string axisLabel;
+            if (axis_idx >= 0 && axis_idx < (int)dev.value_caps_names.size()) {
+                axisLabel = dev.value_caps_names[axis_idx];
+            } else {
+                axisLabel = std::string("Axis ") + std::to_string(axis_idx);
+            }
+            return dev.name + " / " + axisLabel;
+        }
+    }
+    // Disconnected fallback
+    return std::string("[Disconnected] ") + device_name;
+}
+
+nlohmann::json AnalogBinding::toJson() const {
+    nlohmann::json j;
+    j["device_path"]  = device_path;
+    j["device_name"]  = device_name;
+    j["axis_idx"]     = axis_idx;
+    j["reverse"]      = reverse;
+    j["sensitivity"]  = sensitivity;
+    j["dead_zone"]    = dead_zone;
+    if (vtt_plus_vk != 0 || vtt_minus_vk != 0) {
+        j["vtt"]["plus_vk"]  = vtt_plus_vk;
+        j["vtt"]["minus_vk"] = vtt_minus_vk;
+        j["vtt"]["step"]     = vtt_step;
+    }
+    return j;
+}
+
+/*static*/ AnalogBinding AnalogBinding::fromJson(const nlohmann::json& j) {
+    try {
+        AnalogBinding a;
+        if (!j.is_object()) return a;
+
+        // New format requires device_path. Old format used device_id key — skip.
+        if (!j.contains("device_path")) return a;
+
+        a.device_path  = j.value("device_path", "");
+        a.device_name  = j.value("device_name", "");
+        a.axis_idx     = j.value("axis_idx", -1);
+        a.reverse      = j.value("reverse", false);
+        a.sensitivity  = j.value("sensitivity", 1.0f);
+        a.dead_zone    = j.value("dead_zone", 0.04f);
+
+        if (j.contains("vtt") && j["vtt"].is_object()) {
+            a.vtt_plus_vk  = j["vtt"].value("plus_vk",  0);
+            a.vtt_minus_vk = j["vtt"].value("minus_vk", 0);
+            a.vtt_step     = j["vtt"].value("step", 3);
+        }
+        return a;
+    } catch (...) {
+        return AnalogBinding{};
+    }
+}
+
+// ---- BindingStore implementations -----------------------------------
+
+void BindingStore::load(SettingsManager& settings,
+                        InputManager& mgr,
+                        const char* const* ioButtonNames, int ioCount,
+                        const char* const* dancerButtonNames, int dancerCount) {
+    nlohmann::json& gs = settings.globalSettings();
+
+    if (gs.contains("button_bindings") && gs["button_bindings"].is_object()) {
+        const auto& bb = gs["button_bindings"];
+        for (int i = 0; i < ioCount && i < BUTTON_COUNT; ++i) {
+            if (bb.contains(ioButtonNames[i])) {
+                buttons[i] = ButtonBinding::fromJson(bb[ioButtonNames[i]]);
+            }
+        }
+        for (int i = 0; i < dancerCount && i < DANCER_COUNT; ++i) {
+            if (bb.contains(dancerButtonNames[i])) {
+                dancerButtons[i] = ButtonBinding::fromJson(bb[dancerButtonNames[i]]);
+            }
+        }
+    }
+
+    if (gs.contains("analog_bindings") && gs["analog_bindings"].is_object()) {
+        const auto& ab = gs["analog_bindings"];
+        for (int p = 0; p < ANALOG_COUNT; ++p) {
+            const char* key = analogPortKey(p);
+            if (ab.contains(key)) {
+                analogs[p] = AnalogBinding::fromJson(ab[key]);
+            }
+        }
+    }
+
+    // Configure VTT in InputManager for each bound analog with VTT keys
+    for (int p = 0; p < ANALOG_COUNT; ++p) {
+        if (analogs[p].hasVtt()) {
+            mgr.setVttKeys(p, analogs[p].vtt_plus_vk, analogs[p].vtt_minus_vk, analogs[p].vtt_step);
+        }
+    }
+}
+
+void BindingStore::save(SettingsManager& settings,
+                        const char* const* ioButtonNames, int ioCount,
+                        const char* const* dancerButtonNames, int dancerCount) const {
+    nlohmann::json& gs = settings.globalSettings();
+
+    gs["button_bindings"] = nlohmann::json::object();
+    for (int i = 0; i < ioCount && i < BUTTON_COUNT; ++i) {
+        if (buttons[i].isSet()) {
+            gs["button_bindings"][ioButtonNames[i]] = buttons[i].toJson();
+        }
+    }
+    for (int i = 0; i < dancerCount && i < DANCER_COUNT; ++i) {
+        if (dancerButtons[i].isSet()) {
+            gs["button_bindings"][dancerButtonNames[i]] = dancerButtons[i].toJson();
+        }
+    }
+
+    gs["analog_bindings"] = nlohmann::json::object();
+    for (int p = 0; p < ANALOG_COUNT; ++p) {
+        if (analogs[p].isSet()) {
+            gs["analog_bindings"][analogPortKey(p)] = analogs[p].toJson();
+        }
+    }
+
+    settings.save();
+}
