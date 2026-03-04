@@ -28,9 +28,25 @@ struct Device {
     std::vector<std::string> button_caps_names;
     std::vector<std::string> value_caps_names;
 
-    // Output cap name arrays — pre-built for Phase 4 lighting. No write path here.
+    // Output cap name arrays — pre-built for light output.
     std::vector<std::string> button_output_caps_names;
     std::vector<std::string> value_output_caps_names;
+
+    // Output cap struct lists — parallel to button_output_caps_names / value_output_caps_names.
+    // Required for HidP_SetButtons / HidP_SetUsageValue in the output flush thread.
+    std::vector<HIDP_BUTTON_CAPS> button_output_caps_list;
+    std::vector<HIDP_VALUE_CAPS>  value_output_caps_list;
+
+    // Output state arrays — flat bool/float indexed same as button_output_caps_names / value_output_caps_names.
+    std::vector<bool>  button_output_states;
+    std::vector<float> value_output_states;
+
+    // Persistent GENERIC_READ|GENERIC_WRITE handle for HidD_SetOutputReport.
+    // INVALID_HANDLE_VALUE if device denied write access (game controllers) — output silently skipped.
+    HANDLE hid_handle = INVALID_HANDLE_VALUE;
+
+    // Signals output flush thread that state has changed.
+    bool output_pending = false;
 
     // Live state — updated under lock by WM_INPUT handler.
     // button_states[i] matches button_caps_names[i] exactly.
@@ -63,6 +79,10 @@ struct Device {
 
     void destroy() {
         if (preparsed) { LocalFree(preparsed); preparsed = nullptr; }
+        if (hid_handle != INVALID_HANDLE_VALUE) {
+            CloseHandle(hid_handle);
+            hid_handle = INVALID_HANDLE_VALUE;
+        }
     }
 };
 
