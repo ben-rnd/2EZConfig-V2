@@ -180,23 +180,79 @@ nlohmann::json AnalogBinding::toJson() const {
     }
 }
 
+// ---- LightBinding implementations -----------------------------------
+
+std::string LightBinding::getDisplayString(const InputManager& mgr) const {
+    if (!isSet()) return "(unbound)";
+    std::vector<Device> devs = mgr.getDevices();
+    for (const auto& dev : devs) {
+        if (dev.path != device_path) continue;
+        int btn_count = (int)dev.button_output_caps_names.size();
+        if (output_idx < btn_count)
+            return dev.button_output_caps_names[output_idx] + " (" + dev.name + ")";
+        int val_idx = output_idx - btn_count;
+        if (val_idx < (int)dev.value_output_caps_names.size())
+            return dev.value_output_caps_names[val_idx] + " (" + dev.name + ")";
+        return "Output " + std::to_string(output_idx) + " (" + dev.name + ")";
+    }
+    return "[Disconnected] " + device_name;
+}
+
+nlohmann::json LightBinding::toJson() const {
+    nlohmann::json j;
+    j["device_path"] = device_path;
+    j["device_name"] = device_name;
+    j["output_idx"]  = output_idx;
+    return j;
+}
+
+/*static*/ LightBinding LightBinding::fromJson(const nlohmann::json& j) {
+    LightBinding b;
+    if (!j.is_object()) return b;
+    b.device_path = j.value("device_path", "");
+    b.device_name = j.value("device_name", "");
+    b.output_idx  = j.value("output_idx", -1);
+    return b;
+}
+
 // ---- BindingStore implementations -----------------------------------
 
 void BindingStore::load(SettingsManager& settings,
                         InputManager& mgr,
                         const char* const* ioButtonNames, int ioCount,
-                        const char* const* dancerButtonNames, int dancerCount) {
+                        const char* const* dancerButtonNames, int dancerCount,
+                        const char* const* lightNames, int lightCount) {
     auto& gs = settings.globalSettings();
     if (gs.contains("button_bindings") && gs["button_bindings"].is_object()) {
         const auto& bb = gs["button_bindings"];
         for (int i = 0; i < ioCount && i < BUTTON_COUNT; ++i) {
-            if (bb.contains(ioButtonNames[i])) {
-                buttons[i] = ButtonBinding::fromJson(bb[ioButtonNames[i]]);
+            if (!bb.contains(ioButtonNames[i])) continue;
+            const auto& val = bb[ioButtonNames[i]];
+            if (val.is_array()) {
+                // New format: index 0 = primary, 1-2 = alternatives
+                if (!val.empty() && !val[0].is_null())
+                    buttons[i] = ButtonBinding::fromJson(val[0]);
+                for (size_t p = 1; p < val.size() && p <= 2; ++p) {
+                    if (!val[p].is_null())
+                        buttons[i].alternatives.push_back(ButtonBinding::fromJson(val[p]));
+                }
+            } else if (val.is_object()) {
+                // Old format: single binding → page 0 only
+                buttons[i] = ButtonBinding::fromJson(val);
             }
         }
         for (int i = 0; i < dancerCount && i < DANCER_COUNT; ++i) {
-            if (bb.contains(dancerButtonNames[i])) {
-                dancerButtons[i] = ButtonBinding::fromJson(bb[dancerButtonNames[i]]);
+            if (!bb.contains(dancerButtonNames[i])) continue;
+            const auto& val = bb[dancerButtonNames[i]];
+            if (val.is_array()) {
+                if (!val.empty() && !val[0].is_null())
+                    dancerButtons[i] = ButtonBinding::fromJson(val[0]);
+                for (size_t p = 1; p < val.size() && p <= 2; ++p) {
+                    if (!val[p].is_null())
+                        dancerButtons[i].alternatives.push_back(ButtonBinding::fromJson(val[p]));
+                }
+            } else if (val.is_object()) {
+                dancerButtons[i] = ButtonBinding::fromJson(val);
             }
         }
     }
@@ -207,6 +263,23 @@ void BindingStore::load(SettingsManager& settings,
             const char* key = analogPortKey(p);
             if (ab.contains(key)) {
                 analogs[p] = AnalogBinding::fromJson(ab[key]);
+            }
+        }
+    }
+
+    // Load light_bindings
+    if (gs.contains("light_bindings") && gs["light_bindings"].is_object()) {
+        const auto& lb = gs["light_bindings"];
+        for (int i = 0; i < lightCount && i < LIGHT_COUNT; ++i) {
+            if (!lb.contains(lightNames[i])) continue;
+            const auto& val = lb[lightNames[i]];
+            if (val.is_array()) {
+                if (!val.empty() && !val[0].is_null())
+                    lights[i] = LightBinding::fromJson(val[0]);
+                for (size_t p = 1; p < val.size() && p <= 2; ++p) {
+                    if (!val[p].is_null())
+                        lights[i].alternatives.push_back(LightBinding::fromJson(val[p]));
+                }
             }
         }
     }
@@ -225,19 +298,29 @@ void BindingStore::load(SettingsManager& settings,
 
 void BindingStore::save(SettingsManager& settings,
                         const char* const* ioButtonNames, int ioCount,
-                        const char* const* dancerButtonNames, int dancerCount) const {
+                        const char* const* dancerButtonNames, int dancerCount,
+                        const char* const* lightNames, int lightCount) const {
     nlohmann::json& gs = settings.globalSettings();
 
     gs["button_bindings"] = nlohmann::json::object();
     for (int i = 0; i < ioCount && i < BUTTON_COUNT; ++i) {
-        if (buttons[i].isSet()) {
-            gs["button_bindings"][ioButtonNames[i]] = buttons[i].toJson();
+        nlohmann::json page_arr = nlohmann::json::array();
+        page_arr.push_back(buttons[i].isSet() ? buttons[i].toJson() : nlohmann::json(nullptr));
+        for (const auto& alt : buttons[i].alternatives) {
+            page_arr.push_back(alt.isSet() ? alt.toJson() : nlohmann::json(nullptr));
         }
+        // Trim trailing nulls for clean JSON
+        while (!page_arr.empty() && page_arr.back().is_null()) page_arr.erase(page_arr.end() - 1);
+        if (!page_arr.empty()) gs["button_bindings"][ioButtonNames[i]] = page_arr;
     }
     for (int i = 0; i < dancerCount && i < DANCER_COUNT; ++i) {
-        if (dancerButtons[i].isSet()) {
-            gs["button_bindings"][dancerButtonNames[i]] = dancerButtons[i].toJson();
+        nlohmann::json page_arr = nlohmann::json::array();
+        page_arr.push_back(dancerButtons[i].isSet() ? dancerButtons[i].toJson() : nlohmann::json(nullptr));
+        for (const auto& alt : dancerButtons[i].alternatives) {
+            page_arr.push_back(alt.isSet() ? alt.toJson() : nlohmann::json(nullptr));
         }
+        while (!page_arr.empty() && page_arr.back().is_null()) page_arr.erase(page_arr.end() - 1);
+        if (!page_arr.empty()) gs["button_bindings"][dancerButtonNames[i]] = page_arr;
     }
 
     gs["analog_bindings"] = nlohmann::json::object();
@@ -246,6 +329,20 @@ void BindingStore::save(SettingsManager& settings,
             gs["analog_bindings"][analogPortKey(p)] = analogs[p].toJson();
         }
     }
+
+    // Serialize light_bindings
+    nlohmann::json lb_obj = nlohmann::json::object();
+    for (int i = 0; i < lightCount && i < LIGHT_COUNT; ++i) {
+        const auto& lb = lights[i];
+        nlohmann::json lb_arr = nlohmann::json::array();
+        lb_arr.push_back(lb.isSet() ? lb.toJson() : nlohmann::json(nullptr));
+        for (const auto& alt : lb.alternatives) {
+            lb_arr.push_back(alt.isSet() ? alt.toJson() : nlohmann::json(nullptr));
+        }
+        while (!lb_arr.empty() && lb_arr.back().is_null()) lb_arr.erase(lb_arr.end() - 1);
+        if (!lb_arr.empty()) lb_obj[lightNames[i]] = lb_arr;
+    }
+    if (!lb_obj.empty()) gs["light_bindings"] = lb_obj;
 
     settings.save();
 }

@@ -27,6 +27,7 @@ static InputManager*              g_input    = nullptr;
 static BindingStore               g_bindings;
 static constexpr int IO_COUNT       = (int)(sizeof(ioButtons)          / sizeof(ioButtons[0]));
 static constexpr int DANCER_COUNT_K = (int)(sizeof(ez2DancerIOButtons) / sizeof(ez2DancerIOButtons[0]));
+static constexpr int LIGHT_COUNT_M  = (int)(sizeof(lights)             / sizeof(lights[0]));
 
 // VTT position state (center=128). Polled from render loop each frame.
 static uint8_t g_vtt_pos[2] = {128, 128};
@@ -65,7 +66,7 @@ int main() {
     g_input = new InputManager();
 
     // Load bindings from settings (passes array pointers — no strings.h dep in binding layer)
-    g_bindings.load(g_settings, *g_input, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+    g_bindings.load(g_settings, *g_input, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
 
     // Initialize game selector state from persisted game_id
     {
@@ -235,7 +236,7 @@ static void renderUI() {
                         auto hit = g_input->pollCapture();
                         if (hit) {
                             bnd = ButtonBinding::fromCapture(*hit);
-                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                             s_state     = BindState::Normal;
                             s_listenIdx = -1;
                         }
@@ -249,7 +250,7 @@ static void renderUI() {
                                     ButtonBinding kb;
                                     kb.vk_code = vk;
                                     bnd = kb;
-                                    g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                    g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                     g_input->stopCapture();
                                     s_state     = BindState::Normal;
                                     s_listenIdx = -1;
@@ -294,7 +295,7 @@ static void renderUI() {
                             ImGui::SameLine();
                             if (ImGui::Button("Clear")) {
                                 bnd.clear();
-                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                             }
                         }
                     }
@@ -369,7 +370,7 @@ static void renderUI() {
                                 if (ImGui::Button("Clear")) {
                                     ab.clear();
                                     g_vtt_pos[p] = 128;
-                                    g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                    g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                 }
                             }
 
@@ -415,7 +416,7 @@ static void renderUI() {
                                     const Device& d = axisDevs[(size_t)(s_devIdx[p] - 1)];
                                     ab.device_path = d.path; ab.device_name = d.name; ab.axis_idx = 0;
                                 } else { ab.clearAxis(); }
-                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                             }
 
                             // Axis combo (value_caps_names[] of selected device)
@@ -426,7 +427,7 @@ static void renderUI() {
                                 for (auto& l : d.value_caps_names) axLabels.push_back(l.c_str());
                                 if (axCount > 0 && ImGui::Combo("Axis", &s_axisIdx[p], axLabels.data(), axCount)) {
                                     ab.axis_idx = s_axisIdx[p];
-                                    g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                    g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                 }
                             } else {
                                 ImGui::TextDisabled("Axis: (select device first)");
@@ -434,7 +435,7 @@ static void renderUI() {
 
                             // Reverse checkbox
                             if (ImGui::Checkbox("Reverse", &ab.reverse))
-                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                             
                             ImGui::Separator();
 
@@ -452,7 +453,7 @@ static void renderUI() {
                                         ab.vtt_minus.device_path = hit->path;
                                         ab.vtt_minus.device_name = hit->device_name;
                                         ab.vtt_minus.button_idx  = hit->button_idx;
-                                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                         g_input->stopCapture();
                                         s_capturingVtt[p][1] = false;
                                     } else {
@@ -463,7 +464,7 @@ static void renderUI() {
                                                 vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
                                                 ab.vtt_minus.clear();
                                                 ab.vtt_minus.vk = vk;
-                                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                                 g_input->stopCapture();
                                                 s_capturingVtt[p][1] = false;
                                                 s_vttPrevKeys[vk] = true;
@@ -485,7 +486,7 @@ static void renderUI() {
                                         ImGui::SameLine();
                                         if (ImGui::Button("Clear##vttm")) {
                                             ab.vtt_minus.clear();
-                                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                         }
                                     }
                                 }
@@ -506,7 +507,7 @@ static void renderUI() {
                                         ab.vtt_plus.device_path = hit->path;
                                         ab.vtt_plus.device_name = hit->device_name;
                                         ab.vtt_plus.button_idx  = hit->button_idx;
-                                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                         g_input->stopCapture();
                                         s_capturingVtt[p][0] = false;
                                     } else {
@@ -517,7 +518,7 @@ static void renderUI() {
                                                 vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
                                                 ab.vtt_plus.clear();
                                                 ab.vtt_plus.vk = vk;
-                                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                                g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                                 g_input->stopCapture();
                                                 s_capturingVtt[p][0] = false;
                                                 s_vttPrevKeys[vk] = true;
@@ -539,7 +540,7 @@ static void renderUI() {
                                         ImGui::SameLine();
                                         if (ImGui::Button("Clear##vttp")) {
                                             ab.vtt_plus.clear();
-                                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                         }
                                     }
                                 }
@@ -548,7 +549,7 @@ static void renderUI() {
 
                             // VTT Step
                             if (ImGui::SliderInt("Virtual TT Step Amount", &ab.vtt_step, 1, 10))
-                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
+                            g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
 
                             ImGui::Separator();
 
