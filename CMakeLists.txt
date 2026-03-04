@@ -45,10 +45,13 @@ endif()
 include(FetchContent)
 
 # GLFW 3.3.x — last version supporting Windows XP
+# PATCH_COMMAND: replace GetModuleHandleExW (Vista+) with runtime detection
+# so the binary loads on XP SP3. See patches/glfw-xp-compat.patch.
 FetchContent_Declare(glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.3.10
     GIT_SHALLOW    TRUE
+    PATCH_COMMAND  ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/patches/apply-glfw-xp-compat.cmake
 )
 set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)

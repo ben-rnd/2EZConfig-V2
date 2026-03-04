@@ -1,0 +1,32 @@
+--- a/src/win32_init.c
++++ b/src/win32_init.c
+@@ -72,11 +72,17 @@
+ //
+ static GLFWbool loadLibraries(void)
+ {
+-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+-                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+-                            (const WCHAR*) &_glfw,
+-                            (HMODULE*) &_glfw.win32.instance))
++    // XP compat: GetModuleHandleExW is Vista+. Try it dynamically,
++    // fall back to GetModuleHandleW(NULL) which works on all NT versions.
++    typedef BOOL (WINAPI *PFN_GetModuleHandleExW)(DWORD, LPCWSTR, HMODULE*);
++    PFN_GetModuleHandleExW pGetModuleHandleExW = (PFN_GetModuleHandleExW)
++        GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetModuleHandleExW");
++
++    if (pGetModuleHandleExW)
+     {
++        pGetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
++                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++                            (const WCHAR*) &_glfw,
++                            (HMODULE*) &_glfw.win32.instance);
++    }
++    else
++    {
++        _glfw.win32.instance = GetModuleHandleW(NULL);
++    }
++
++    if (!_glfw.win32.instance)
+     {
+         _glfwInputErrorWin32(GLFW_PLATFORM_ERROR,
+                              "Win32: Failed to retrieve own module handle");

@@ -13,8 +13,6 @@ target_link_libraries(EZ2Config PRIVATE
     settings
     opengl32
     gdi32
-    dwmapi
     setupapi
     hid
-    version
 )
