@@ -40,6 +40,10 @@ public:
     void stopCapture();
     std::optional<CaptureResult> pollCapture();
 
+    // Set light output. output_idx is flat index: button_output_caps first, then value_output_caps.
+    // value in [0.0, 1.0]. Button outputs: value > 0.5 = on. Value outputs: written as float intensity.
+    void setLight(const std::string& path, int output_idx, float value);
+
 private:
     InputManagerImpl* impl;
 };

@@ -130,13 +130,19 @@ struct InputManagerImpl {
     // Previous button states for edge detection (keyed by device path).
     std::map<std::string, std::vector<bool>> prev_button_states;
 
+    // Output flush thread and its lock.
+    CRITICAL_SECTION output_lock;
+    HANDLE           output_thread = nullptr;
+
     InputManagerImpl() {
         InitializeCriticalSection(&devices_lock);
         InitializeCriticalSection(&capture_lock);
+        InitializeCriticalSection(&output_lock);
     }
     ~InputManagerImpl() {
         DeleteCriticalSection(&devices_lock);
         DeleteCriticalSection(&capture_lock);
+        DeleteCriticalSection(&output_lock);
     }
 };
 
@@ -381,7 +387,7 @@ static void devices_reload(InputManagerImpl* impl) {
         }
 
         // -----------------------------------------------------------------
-        // Output button caps (Phase 4 prep).
+        // Output button caps — store cap structs for flush thread.
         // -----------------------------------------------------------------
         {
             USHORT out_btn_count = caps.NumberOutputButtonCaps;
@@ -398,6 +404,8 @@ static void devices_reload(InputManagerImpl* impl) {
                     }
                     int btn_count = (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
                     if (btn_count <= 0 || btn_count >= 0xffff) continue;
+                    // Store once per cap (not per button).
+                    dev.button_output_caps_list.push_back(bc);
                     for (int b = 0; b < btn_count; b++) {
                         dev.button_output_caps_names.push_back("Button " + std::to_string(out_btn_num++));
                     }
@@ -406,7 +414,7 @@ static void devices_reload(InputManagerImpl* impl) {
         }
 
         // -----------------------------------------------------------------
-        // Output value caps (Phase 4 prep).
+        // Output value caps — store cap structs for flush thread.
         // -----------------------------------------------------------------
         {
             USHORT out_val_count = caps.NumberOutputValueCaps;
@@ -417,10 +425,25 @@ static void devices_reload(InputManagerImpl* impl) {
                 for (int cap_num = 0; cap_num < (int)out_val_count; cap_num++) {
                     auto& vc = out_val_data[cap_num];
                     USAGE usage = vc.IsRange ? vc.Range.UsageMin : vc.NotRange.Usage;
+                    dev.value_output_caps_list.push_back(vc);
                     dev.value_output_caps_names.push_back(axis_label(vc.UsagePage, usage));
                 }
             }
         }
+
+        // Size output state arrays and open persistent RW handle.
+        dev.button_output_states.assign(dev.button_output_caps_names.size(), false);
+        dev.value_output_states.assign(dev.value_output_caps_names.size(), 0.0f);
+        dev.output_pending = false;
+
+        // Open persistent GENERIC_READ|GENERIC_WRITE handle for HidD_SetOutputReport.
+        // INVALID_HANDLE_VALUE if device denied write access (game controllers) — silently skipped.
+        dev.hid_handle = CreateFileA(
+            path.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr, OPEN_EXISTING, 0, nullptr);
+        // INVALID_HANDLE_VALUE is a silent non-output-capable device — no log, no crash.
 
         impl->devices.push_back(std::move(dev));
     }
@@ -749,6 +772,65 @@ static DWORD WINAPI vtt_thread(LPVOID param) {
 }
 
 // ---------------------------------------------------------------------------
+// Output flush thread
+// ---------------------------------------------------------------------------
+
+static DWORD WINAPI output_flush_thread(LPVOID param) {
+    InputManagerImpl* impl = (InputManagerImpl*)param;
+    while (impl->running) {
+        Sleep(1);  // XP-safe polling; 1ms = imperceptible for LED output
+        EnterCriticalSection(&impl->devices_lock);
+        for (auto& dev : impl->devices) {
+            if (!dev.output_pending) continue;
+            if (dev.hid_handle == INVALID_HANDLE_VALUE) { dev.output_pending = false; continue; }
+            USHORT report_size = dev.caps.OutputReportByteLength;
+            if (report_size == 0) { dev.output_pending = false; continue; }
+
+            std::vector<BYTE> report(report_size, 0);
+
+            // Button outputs: gather on-usages per cap, call HidP_SetButtons.
+            int state_offset = 0;
+            for (auto& bc : dev.button_output_caps_list) {
+                if (!bc.IsRange) { bc.Range.UsageMin = bc.NotRange.Usage; bc.Range.UsageMax = bc.NotRange.Usage; }
+                int btn_count = (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
+                std::vector<USAGE> on_usages;
+                for (int b = 0; b < btn_count; b++) {
+                    if (state_offset + b < (int)dev.button_output_states.size() &&
+                        dev.button_output_states[state_offset + b]) {
+                        on_usages.push_back(bc.Range.UsageMin + (USAGE)b);
+                    }
+                }
+                if (!on_usages.empty()) {
+                    ULONG usage_count = (ULONG)on_usages.size();
+                    HidP_SetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+                                    on_usages.data(), &usage_count,
+                                    dev.preparsed, (PCHAR)report.data(), report_size);
+                }
+                state_offset += btn_count;
+            }
+
+            // Value outputs: HidP_SetUsageValue per cap.
+            for (size_t vi = 0; vi < dev.value_output_caps_list.size(); vi++) {
+                auto& vc = dev.value_output_caps_list[vi];
+                if (vi >= dev.value_output_states.size()) break;
+                float norm = dev.value_output_states[vi];
+                LONG lmin = vc.LogicalMin, lmax = vc.LogicalMax;
+                ULONG uval = (lmax > lmin) ? (ULONG)((long)(norm * (float)(lmax - lmin)) + lmin) : 0;
+                USAGE usage = vc.IsRange ? vc.Range.UsageMin : vc.NotRange.Usage;
+                HidP_SetUsageValue(HidP_Output, vc.UsagePage, vc.LinkCollection,
+                                   usage, uval,
+                                   dev.preparsed, (PCHAR)report.data(), report_size);
+            }
+
+            HidD_SetOutputReport(dev.hid_handle, report.data(), report_size);
+            dev.output_pending = false;
+        }
+        LeaveCriticalSection(&impl->devices_lock);
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
 // InputManager constructor / destructor
 // ---------------------------------------------------------------------------
 
@@ -774,6 +856,9 @@ InputManager::InputManager() {
     impl->vtt_pos[1] = (char)128;
     impl->vtt_thread = CreateThread(
         nullptr, 0, vtt_thread, impl, 0, nullptr);
+
+    // Start output flush thread.
+    impl->output_thread = CreateThread(nullptr, 0, output_flush_thread, impl, 0, nullptr);
 }
 
 InputManager::~InputManager() {
@@ -796,7 +881,14 @@ InputManager::~InputManager() {
         impl->vtt_thread = nullptr;
     }
 
-    // Free device preparsed data.
+    // Stop output flush thread.
+    if (impl->output_thread) {
+        WaitForSingleObject(impl->output_thread, 2000);
+        CloseHandle(impl->output_thread);
+        impl->output_thread = nullptr;
+    }
+
+    // Free device preparsed data and close hid_handles.
     for (auto& dev : impl->devices) {
         dev.destroy();
     }
@@ -889,4 +981,24 @@ std::optional<CaptureResult> InputManager::pollCapture() {
     impl->capture_result = std::nullopt;
     LeaveCriticalSection(&impl->capture_lock);
     return result;
+}
+
+void InputManager::setLight(const std::string& path, int output_idx, float value) {
+    EnterCriticalSection(&impl->devices_lock);
+    for (auto& dev : impl->devices) {
+        if (dev.path != path) continue;
+        if (dev.hid_handle == INVALID_HANDLE_VALUE) break;
+        int btn_count = (int)dev.button_output_states.size();
+        if (output_idx < btn_count) {
+            dev.button_output_states[output_idx] = (value > 0.5f);
+        } else {
+            int val_idx = output_idx - btn_count;
+            if (val_idx < (int)dev.value_output_states.size()) {
+                dev.value_output_states[val_idx] = value;
+            }
+        }
+        dev.output_pending = true;
+        break;
+    }
+    LeaveCriticalSection(&impl->devices_lock);
 }
