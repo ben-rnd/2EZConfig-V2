@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <mmsystem.h>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -69,6 +70,10 @@ static LONG WINAPI CombinedIOHandler(PEXCEPTION_POINTERS ex) {
 }
 
 static DWORD WINAPI InitThread(void*) {
+    // Set system timer resolution to 1ms so Sleep(1) actually sleeps ~1ms
+    // instead of the default ~15.6ms. Critical for polling thread accuracy.
+    timeBeginPeriod(1);
+
     // Brief yield for game to stabilize.
     Sleep(10);
 
