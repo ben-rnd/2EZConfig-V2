@@ -81,6 +81,18 @@ static std::string axis_label(USAGE usage_page, USAGE usage) {
     return ss.str();
 }
 
+// Human-readable label for HID output channels.
+// Page 0x08 = LED, Page 0x0A = Ordinal (common for game light hardware).
+static std::string output_label(USAGE usage_page, USAGE usage) {
+    if (usage_page == 0x08) return "LED " + std::to_string(usage);
+    if (usage_page == 0x0A) return "Output " + std::to_string(usage);
+    if (usage_page == 0x01) return axis_label(usage_page, usage);
+    std::ostringstream ss;
+    ss << "Page 0x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << usage_page
+       << " Usage 0x" << std::setw(2) << std::setfill('0') << usage;
+    return ss.str();
+}
+
 // DPad direction names indexed 0-7 (0=Up, clockwise).
 static const char* DPAD_NAMES[8] = {
     "DPad Up",
@@ -215,6 +227,13 @@ static void devices_reload(InputManagerImpl* impl) {
             continue;
         }
 
+        // Skip vendor-specific top-level collections (usage page 0xFF**).
+        // These cause slow enumeration on some devices (e.g. Corsair keyboards).
+        if ((caps.UsagePage >> 8) == 0xFF) {
+            LocalFree(preparsed);
+            continue;
+        }
+
         Device dev;
         dev.path       = path;
         dev.raw_handle = entry.hDevice;
@@ -222,39 +241,34 @@ static void devices_reload(InputManagerImpl* impl) {
         dev.caps       = caps;
 
         // -----------------------------------------------------------------
-        // Device name: try CreateFileA for product string.
+        // Open persistent handle — GENERIC_READ|GENERIC_WRITE for output
+        // sending (HidD_SetOutputReport) and HidD_GetIndexedString lookups.
+        // Stored in dev.hid_handle; flush thread skips if INVALID_HANDLE_VALUE.
+        // -----------------------------------------------------------------
+        dev.hid_handle = CreateFileA(
+            path.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr, OPEN_EXISTING, 0, nullptr);
+
+        // -----------------------------------------------------------------
+        // Device name from product/manufacturer string.
         // -----------------------------------------------------------------
         {
-            HANDLE hid_handle = CreateFileA(
-                path.c_str(),
-                GENERIC_READ,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                nullptr,
-                OPEN_EXISTING,
-                0,
-                nullptr);
-
             bool got_name = false;
-            if (hid_handle != INVALID_HANDLE_VALUE) {
+            if (dev.hid_handle != INVALID_HANDLE_VALUE) {
                 wchar_t wbuf[256] = {};
-                if (HidD_GetProductString(hid_handle, wbuf, sizeof(wbuf))) {
+                if (HidD_GetProductString(dev.hid_handle, wbuf, sizeof(wbuf))) {
                     std::string s = wide_to_utf8(wbuf);
-                    if (!s.empty()) {
-                        dev.name  = s;
-                        got_name  = true;
-                    }
+                    if (!s.empty()) { dev.name = s; got_name = true; }
                 }
                 if (!got_name) {
                     wchar_t mbuf[256] = {};
-                    if (HidD_GetManufacturerString(hid_handle, mbuf, sizeof(mbuf))) {
+                    if (HidD_GetManufacturerString(dev.hid_handle, mbuf, sizeof(mbuf))) {
                         std::string s = wide_to_utf8(mbuf);
-                        if (!s.empty()) {
-                            dev.name = s;
-                            got_name = true;
-                        }
+                        if (!s.empty()) { dev.name = s; got_name = true; }
                     }
                 }
-                CloseHandle(hid_handle);
             }
             if (!got_name) {
                 dev.name = vid_pid_from_path(path);
@@ -307,6 +321,10 @@ static void devices_reload(InputManagerImpl* impl) {
                     // (Hat value caps are handled in the value cap section below.)
                     continue;
                 }
+
+                // Skip vendor-specific usage pages.
+                if ((bc.UsagePage >> 8) == 0xFF)
+                    continue;
 
                 // Regular button cap.
                 dev.button_caps_list.push_back(bc);
@@ -379,6 +397,10 @@ static void devices_reload(InputManagerImpl* impl) {
                     vc.LogicalMax &= (LONG)mask;
                 }
 
+                // Skip vendor-specific usage pages.
+                if ((vc.UsagePage >> 8) == 0xFF)
+                    continue;
+
                 dev.value_caps_list.push_back(vc);
                 dev.value_caps_names.push_back(axis_label(vc.UsagePage, usage));
                 dev.value_states.push_back(0.5f);
@@ -404,10 +426,27 @@ static void devices_reload(InputManagerImpl* impl) {
                     }
                     int btn_count = (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
                     if (btn_count <= 0 || btn_count >= 0xffff) continue;
+                    // Skip vendor-specific usage pages.
+                    if ((bc.UsagePage >> 8) == 0xFF) continue;
                     // Store once per cap (not per button).
                     dev.button_output_caps_list.push_back(bc);
                     for (int b = 0; b < btn_count; b++) {
-                        dev.button_output_caps_names.push_back("Button " + std::to_string(out_btn_num++));
+                        USAGE usg = bc.Range.UsageMin + (USAGE)b;
+                        // Try device-provided string descriptor first.
+                        ULONG str_idx = 0;
+                        if (bc.IsStringRange && bc.Range.StringMin != 0)
+                            str_idx = (ULONG)bc.Range.StringMin + (ULONG)b;
+                        else if (!bc.IsRange && bc.NotRange.StringIndex != 0)
+                            str_idx = bc.NotRange.StringIndex;
+                        wchar_t wbuf[256] = {};
+                        if (str_idx > 0 && dev.hid_handle != INVALID_HANDLE_VALUE
+                            && HidD_GetIndexedString(dev.hid_handle, str_idx, wbuf, sizeof(wbuf))
+                            && wbuf[0] != L'\0') {
+                            dev.button_output_caps_names.push_back(wide_to_utf8(wbuf));
+                        } else {
+                            dev.button_output_caps_names.push_back(output_label(bc.UsagePage, usg));
+                        }
+                        out_btn_num++;
                     }
                 }
             }
@@ -424,26 +463,59 @@ static void devices_reload(InputManagerImpl* impl) {
             {
                 for (int cap_num = 0; cap_num < (int)out_val_count; cap_num++) {
                     auto& vc = out_val_data[cap_num];
-                    USAGE usage = vc.IsRange ? vc.Range.UsageMin : vc.NotRange.Usage;
-                    dev.value_output_caps_list.push_back(vc);
-                    dev.value_output_caps_names.push_back(axis_label(vc.UsagePage, usage));
+
+                    // Apply the same sign-extension fix as input value caps.
+                    // The HID parser can produce incorrect LogicalMin/Max when
+                    // BitSize < 32 and the value spans the full unsigned range
+                    // (e.g. 0x00–0xFF reported as LogicalMin=0, LogicalMax=-1).
+                    // Without this, lmax ends up negative and our lmax>lmin guard
+                    // returns 0 for every write — lights never turn on.
+                    if (vc.BitSize > 0 && vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
+                        auto shift_size = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
+                        auto mask = ((uint64_t)1 << vc.BitSize) - 1;
+                        vc.LogicalMin &= (LONG)mask;
+                        vc.LogicalMin <<= shift_size;
+                        vc.LogicalMin >>= shift_size;
+                        vc.LogicalMax &= (LONG)mask;
+                    }
+
+                    if (!vc.IsRange) {
+                        vc.Range.UsageMin = vc.NotRange.Usage;
+                        vc.Range.UsageMax = vc.NotRange.Usage;
+                    }
+                    int range_count = (int)(vc.Range.UsageMax - vc.Range.UsageMin + 1);
+                    if (range_count <= 0 || range_count >= 0xffff) continue;
+                    // Skip vendor-specific usage pages.
+                    if ((vc.UsagePage >> 8) == 0xFF) continue;
+                    // Expand range: one entry per usage so each output is independently addressable.
+                    for (int u = 0; u < range_count; u++) {
+                        USAGE specific = vc.Range.UsageMin + (USAGE)u;
+                        dev.value_output_caps_list.push_back(vc);
+                        dev.value_output_usages.push_back(specific);
+                        // Try device-provided string descriptor first.
+                        ULONG str_idx = 0;
+                        if (vc.IsStringRange && vc.Range.StringMin != 0)
+                            str_idx = (ULONG)vc.Range.StringMin + (ULONG)u;
+                        else if (!vc.IsRange && vc.NotRange.StringIndex != 0)
+                            str_idx = vc.NotRange.StringIndex;
+                        wchar_t wbuf[256] = {};
+                        if (str_idx > 0 && dev.hid_handle != INVALID_HANDLE_VALUE
+                            && HidD_GetIndexedString(dev.hid_handle, str_idx, wbuf, sizeof(wbuf))
+                            && wbuf[0] != L'\0') {
+                            dev.value_output_caps_names.push_back(wide_to_utf8(wbuf));
+                        } else {
+                            dev.value_output_caps_names.push_back(output_label(vc.UsagePage, specific));
+                        }
+                    }
                 }
             }
         }
 
-        // Size output state arrays and open persistent RW handle.
+        // Size output state arrays.
         dev.button_output_states.assign(dev.button_output_caps_names.size(), false);
         dev.value_output_states.assign(dev.value_output_caps_names.size(), 0.0f);
         dev.output_pending = false;
-
-        // Open persistent GENERIC_READ|GENERIC_WRITE handle for HidD_SetOutputReport.
-        // INVALID_HANDLE_VALUE if device denied write access (game controllers) — silently skipped.
-        dev.hid_handle = CreateFileA(
-            path.c_str(),
-            GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            nullptr, OPEN_EXISTING, 0, nullptr);
-        // INVALID_HANDLE_VALUE is a silent non-output-capable device — no log, no crash.
+        // dev.hid_handle already set above — used for both string lookups and output sending.
 
         impl->devices.push_back(std::move(dev));
     }
@@ -603,7 +675,9 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
         LONG raw_val = (LONG)raw_ulong;
 
         // Sign-extension fix (spice2x lines 1791-1797).
-        if (vc.LogicalMin < 0 && vc.BitSize > 0 && vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
+        if (vc.LogicalMin < 0 &&
+                vc.BitSize > 0 &&
+                vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
             auto shift_size = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
             raw_val <<= shift_size;
             raw_val >>= shift_size;
@@ -611,28 +685,19 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
 
         dev->value_states_raw[cap_i] = raw_val;
 
+        // Auto-calibration (spice2x lines 1812-1822): expand range on the fly
+        // if the value falls outside the declared min/max. Handles controllers
+        // that report a wider range than their HID descriptor declares.
+        if (raw_val < vc.LogicalMin) vc.LogicalMin = raw_val;
+        if (raw_val > vc.LogicalMax) vc.LogicalMax = raw_val;
+
         LONG lmin = vc.LogicalMin;
         LONG lmax = vc.LogicalMax;
-        float normalized;
-
-        if (vc.IsAbsolute) {
-            if (lmax > lmin) {
-                normalized = (float)(raw_val - lmin) / (float)(lmax - lmin);
-            } else {
-                normalized = 0.5f;
-            }
-            // Clamp to [0, 1].
-            if (normalized < 0.0f) normalized = 0.0f;
-            if (normalized > 1.0f) normalized = 1.0f;
-        } else {
-            // Relative axis: accumulate and wrap.
-            float range = (lmax > lmin) ? (float)(lmax - lmin) : 1.0f;
-            float delta = (float)raw_val / range;
-            float cur = dev->value_states[cap_i];
-            cur += delta;
-            cur -= floorf(cur); // wrap to [0, 1)
-            normalized = cur;
-        }
+        float normalized = (lmax > lmin)
+            ? (float)(raw_val - lmin) / (float)(lmax - lmin)
+            : 0.5f;
+        if (normalized < 0.0f) normalized = 0.0f;
+        if (normalized > 1.0f) normalized = 1.0f;
 
         dev->value_states[cap_i] = normalized;
     }
@@ -775,20 +840,32 @@ static DWORD WINAPI vtt_thread(LPVOID param) {
 // Output flush thread
 // ---------------------------------------------------------------------------
 
+// Pending write built under devices_lock, sent outside it to avoid blocking the UI thread.
+struct PendingWrite {
+    HANDLE handle;
+    std::vector<std::vector<BYTE>> reports; // one per report-ID flush + final
+};
+
 static DWORD WINAPI output_flush_thread(LPVOID param) {
     InputManagerImpl* impl = (InputManagerImpl*)param;
     while (impl->running) {
-        Sleep(1);  // XP-safe polling; 1ms = imperceptible for LED output
+        Sleep(1);
+
+        // ---- Build reports under lock (HidP_* are pure in-memory, non-blocking) ----
+        std::vector<PendingWrite> writes;
         EnterCriticalSection(&impl->devices_lock);
         for (auto& dev : impl->devices) {
             if (!dev.output_pending) continue;
-            if (dev.hid_handle == INVALID_HANDLE_VALUE) { dev.output_pending = false; continue; }
+            dev.output_pending = false;
+            if (dev.hid_handle == INVALID_HANDLE_VALUE) continue;
             USHORT report_size = dev.caps.OutputReportByteLength;
-            if (report_size == 0) { dev.output_pending = false; continue; }
+            if (report_size == 0) continue;
 
+            PendingWrite pw;
+            pw.handle = dev.hid_handle;
             std::vector<BYTE> report(report_size, 0);
 
-            // Button outputs: gather on-usages per cap, call HidP_SetButtons.
+            // Button outputs.
             int state_offset = 0;
             for (auto& bc : dev.button_output_caps_list) {
                 if (!bc.IsRange) { bc.Range.UsageMin = bc.NotRange.Usage; bc.Range.UsageMax = bc.NotRange.Usage; }
@@ -802,30 +879,53 @@ static DWORD WINAPI output_flush_thread(LPVOID param) {
                 }
                 if (!on_usages.empty()) {
                     ULONG usage_count = (ULONG)on_usages.size();
-                    HidP_SetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
-                                    on_usages.data(), &usage_count,
-                                    dev.preparsed, (PCHAR)report.data(), report_size);
+                    // HIDP_STATUS_INCOMPATIBLE_REPORT_ID: device uses multiple report IDs.
+                    // Flush current report and retry with a fresh buffer.
+                    while (HidP_SetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+                                           on_usages.data(), &usage_count,
+                                           dev.preparsed, (PCHAR)report.data(), report_size)
+                           == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
+                        pw.reports.push_back(report);
+                        report.assign(report_size, 0);
+                    }
                 }
                 state_offset += btn_count;
             }
 
-            // Value outputs: HidP_SetUsageValue per cap.
+            // Value outputs.
             for (size_t vi = 0; vi < dev.value_output_caps_list.size(); vi++) {
                 auto& vc = dev.value_output_caps_list[vi];
-                if (vi >= dev.value_output_states.size()) break;
+                if (vi >= dev.value_output_states.size() || vi >= dev.value_output_usages.size()) break;
                 float norm = dev.value_output_states[vi];
                 LONG lmin = vc.LogicalMin, lmax = vc.LogicalMax;
-                ULONG uval = (lmax > lmin) ? (ULONG)((long)(norm * (float)(lmax - lmin)) + lmin) : 0;
-                USAGE usage = vc.IsRange ? vc.Range.UsageMin : vc.NotRange.Usage;
-                HidP_SetUsageValue(HidP_Output, vc.UsagePage, vc.LinkCollection,
-                                   usage, uval,
-                                   dev.preparsed, (PCHAR)report.data(), report_size);
+                // Intermediate as LONG (spice2x pattern) so negative lmin doesn't
+                // corrupt the result when cast to ULONG.
+                LONG lval = (lmax > lmin)
+                    ? lmin + (LONG)lroundf((float)(lmax - lmin) * norm) : lmin;
+                if (lval > lmax) lval = lmax;
+                if (lval < lmin) lval = lmin;
+                ULONG uval = (ULONG)lval;
+                while (HidP_SetUsageValue(HidP_Output, vc.UsagePage, vc.LinkCollection,
+                                          dev.value_output_usages[vi], uval,
+                                          dev.preparsed, (PCHAR)report.data(), report_size)
+                       == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
+                    pw.reports.push_back(report);
+                    report.assign(report_size, 0);
+                }
             }
 
-            HidD_SetOutputReport(dev.hid_handle, report.data(), report_size);
-            dev.output_pending = false;
+            pw.reports.push_back(std::move(report)); // final report
+            writes.push_back(std::move(pw));
         }
         LeaveCriticalSection(&impl->devices_lock);
+
+        // ---- Send outside lock — WriteFile may block; must not hold devices_lock ----
+        for (auto& pw : writes) {
+            for (auto& rpt : pw.reports) {
+                DWORD written = 0;
+                WriteFile(pw.handle, rpt.data(), (DWORD)rpt.size(), &written, nullptr);
+            }
+        }
     }
     return 0;
 }

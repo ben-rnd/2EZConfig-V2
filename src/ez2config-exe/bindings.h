@@ -28,7 +28,6 @@ struct ButtonBinding {
     int         button_idx = -1;
     int         vk_code    = 0;
     std::string device_name;    // informational: for [Disconnected] display fallback
-    std::vector<ButtonBinding> alternatives;  // max 2 entries (pages 2 and 3)
 
     bool isSet()      const { return (!device_path.empty() && button_idx >= 0) || vk_code != 0; }
     bool isKeyboard() const { return vk_code != 0; }
@@ -166,7 +165,6 @@ struct LightBinding {
     std::string device_path;   // full Windows device path (same as ButtonBinding)
     int         output_idx = -1;   // flat index: button_output_caps first, value_output_caps after
     std::string device_name;   // informational; for [Disconnected] fallback display
-    std::vector<LightBinding> alternatives;  // max 2 entries (pages 2 and 3)
 
     bool isSet() const { return !device_path.empty() && output_idx >= 0; }
 
@@ -174,7 +172,6 @@ struct LightBinding {
         device_path.clear();
         output_idx = -1;
         device_name.clear();
-        // Does NOT clear alternatives — caller decides per page
     }
 
     // Returns: "Button 3 (LED Controller)" or "[Disconnected] LED Controller" or "(unbound)"

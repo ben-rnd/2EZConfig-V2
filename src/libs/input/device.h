@@ -36,6 +36,9 @@ struct Device {
     // Required for HidP_SetButtons / HidP_SetUsageValue in the output flush thread.
     std::vector<HIDP_BUTTON_CAPS> button_output_caps_list;
     std::vector<HIDP_VALUE_CAPS>  value_output_caps_list;
+    // Specific HID usage for each value_output_caps_list entry.
+    // Range caps are expanded so each entry has exactly one usage here.
+    std::vector<USAGE> value_output_usages;
 
     // Output state arrays — flat bool/float indexed same as button_output_caps_names / value_output_caps_names.
     std::vector<bool>  button_output_states;
