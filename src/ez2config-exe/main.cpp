@@ -7,6 +7,8 @@
 #pragma GCC diagnostic ignored "-Wnarrowing"
 #include "strings.h"
 #pragma GCC diagnostic pop
+#include "../libs/input/input_manager.h"
+#include "bindings.h"
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include <string>
@@ -20,6 +22,11 @@ static void setTheme();
 static SettingsManager g_settings;
 static int  g_gameIdx  = 0;     // index into flat combo list (DJ games first, then Dancer)
 static bool g_isDancer = false; // derived from g_gameIdx
+
+static InputManager*              g_input    = nullptr;
+static BindingStore               g_bindings;
+static constexpr int IO_COUNT       = (int)(sizeof(ioButtons)          / sizeof(ioButtons[0]));
+static constexpr int DANCER_COUNT_K = (int)(sizeof(ez2DancerIOButtons) / sizeof(ez2DancerIOButtons[0]));
 
 int main() {
     glfwSetErrorCallback([](int e, const char* d) { fprintf(stderr, "GLFW error %d: %s\n", e, d); });
@@ -41,6 +48,12 @@ int main() {
 
     // Load settings from exe directory
     g_settings.load(".", ".");
+
+    // Start input subsystem
+    g_input = new InputManager();
+
+    // Load bindings from settings (passes array pointers — no strings.h dep in binding layer)
+    g_bindings.load(g_settings, *g_input, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K);
 
     // Initialize game selector state from persisted game_id
     {
@@ -84,6 +97,9 @@ int main() {
     ImGui::DestroyContext();
     glfwDestroyWindow(window);
     glfwTerminate();
+
+    delete g_input;
+    g_input = nullptr;
 
     return 0;
 }
