@@ -205,7 +205,8 @@ static void renderUI() {
             const char** actionList  = g_isDancer ? ez2DancerIOButtons : ioButtons;
             const int    actionCount = g_isDancer ? DANCER_COUNT_K : IO_COUNT;
             
-            ImGui::BeginChild("##buttonsScroll", ImVec2(0, ImGui::GetWindowHeight() - 85), false);
+            static int s_buttonPage = 0;  // 0=primary, 1=alternatives[0], 2=alternatives[1]
+            ImGui::BeginChild("##buttonsScroll", ImVec2(0, ImGui::GetWindowHeight() - 110), false);
             // 3-column table: [name | binding | Edit button]
             if (ImGui::BeginTable("##buttonable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
                 ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 60.0f);
@@ -217,6 +218,16 @@ static void renderUI() {
                     ImGui::PushID(i);
                     ImGui::TableNextRow();
                     ButtonBinding& bnd = g_isDancer ? g_bindings.dancerButtons[i] : g_bindings.buttons[i];
+
+                    // Resolve page-appropriate binding slot (pointer; null = slot not yet allocated)
+                    ButtonBinding* pageSlot = nullptr;
+                    if (s_buttonPage == 0) {
+                        pageSlot = &bnd;
+                    } else if (s_buttonPage == 1) {
+                        if (bnd.alternatives.size() > 0) pageSlot = &bnd.alternatives[0];
+                    } else {
+                        if (bnd.alternatives.size() > 1) pageSlot = &bnd.alternatives[1];
+                    }
 
                     if (s_state == BindState::Listening && s_listenIdx == i) {
                         ImGui::TableSetColumnIndex(0);
@@ -232,10 +243,28 @@ static void renderUI() {
                             s_listenIdx = -1;
                         }
 
+                        // Helper: save captured binding into page-appropriate slot
+                        auto applyCapture = [&](ButtonBinding captured) {
+                            if (s_buttonPage == 0) {
+                                bnd = captured;
+                            } else if (s_buttonPage == 1) {
+                                if (bnd.alternatives.size() < 1)
+                                    bnd.alternatives.push_back(captured);
+                                else
+                                    bnd.alternatives[0] = captured;
+                            } else {
+                                if (bnd.alternatives.size() < 1) bnd.alternatives.emplace_back();
+                                if (bnd.alternatives.size() < 2)
+                                    bnd.alternatives.push_back(captured);
+                                else
+                                    bnd.alternatives[1] = captured;
+                            }
+                        };
+
                         // Poll HID capture
                         auto hit = g_input->pollCapture();
                         if (hit) {
-                            bnd = ButtonBinding::fromCapture(*hit);
+                            applyCapture(ButtonBinding::fromCapture(*hit));
                             g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                             s_state     = BindState::Normal;
                             s_listenIdx = -1;
@@ -249,7 +278,7 @@ static void renderUI() {
                                     vk != VK_LBUTTON && vk != VK_RBUTTON && vk != VK_MBUTTON) {
                                     ButtonBinding kb;
                                     kb.vk_code = vk;
-                                    bnd = kb;
+                                    applyCapture(kb);
                                     g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                                     g_input->stopCapture();
                                     s_state     = BindState::Normal;
@@ -268,12 +297,19 @@ static void renderUI() {
                             s_state = BindState::Normal;
                         }
                     } else {
-                        // Normal row
+                        // Normal row: display page-appropriate binding
                         ImGui::TableSetColumnIndex(0);
-                        std::string label = bnd.getDisplayString(*g_input);
-                        bool active = bnd.isSet() && (bnd.isKeyboard()
-                            ? (GetAsyncKeyState(bnd.vk_code) & 0x8000) != 0
-                            : g_input->getButtonState(bnd.device_path, bnd.button_idx));
+                        std::string label = pageSlot ? pageSlot->getDisplayString(*g_input) : "(unbound)";
+
+                        // Active highlight: check primary + all alternatives for any pressed state
+                        auto isPressed = [&](const ButtonBinding& b) -> bool {
+                            if (!b.isSet()) return false;
+                            return b.isKeyboard()
+                                ? (GetAsyncKeyState(b.vk_code) & 0x8000) != 0
+                                : g_input->getButtonState(b.device_path, b.button_idx);
+                        };
+                        bool active = isPressed(bnd);
+                        for (auto& alt : bnd.alternatives) active = active || isPressed(alt);
 
                         ImGui::Text("%s:", actionList[i]);
                         ImGui::TableSetColumnIndex(1);
@@ -291,10 +327,16 @@ static void renderUI() {
                             for (int vk = 0; vk < 256; vk++)
                                 s_prevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
                         }
-                        if (bnd.isSet()) {
+                        if (pageSlot && pageSlot->isSet()) {
                             ImGui::SameLine();
                             if (ImGui::Button("Clear")) {
-                                bnd.clear();
+                                if (s_buttonPage == 0) {
+                                    bnd.clear();
+                                } else if (s_buttonPage == 1 && bnd.alternatives.size() > 0) {
+                                    bnd.alternatives[0].clear();
+                                } else if (s_buttonPage == 2 && bnd.alternatives.size() > 1) {
+                                    bnd.alternatives[1].clear();
+                                }
                                 g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K, lights, LIGHT_COUNT_M);
                             }
                         }
@@ -305,6 +347,18 @@ static void renderUI() {
             }
             ImGui::EndTable();
             ImGui::EndChild();
+
+            // Buttons tab paging footer
+            {
+                float footerWidth = 200.0f;
+                ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - footerWidth);
+                if (ImGui::ArrowButton("##bprev", ImGuiDir_Left) && s_buttonPage > 0) s_buttonPage--;
+                ImGui::SameLine();
+                ImGui::Text("Binding Set %d / 3", s_buttonPage + 1);
+                ImGui::SameLine();
+                if (ImGui::ArrowButton("##bnext", ImGuiDir_Right) && s_buttonPage < 2) s_buttonPage++;
+            }
+
             ImGui::EndTabItem();
         }
 
@@ -590,7 +644,188 @@ static void renderUI() {
         }
     
 
-        if (ImGui::BeginTabItem("Lights"))   { ImGui::EndTabItem(); }
+        // ---- Lights Tab ----
+        if (!g_isDancer && ImGui::BeginTabItem("Lights")) {
+            static int   s_lightPage      = 0;        // independent from s_buttonPage
+            static int   s_bindLightIdx   = -1;       // which lights[] row is being bound
+            static bool  s_openLightPopup = false;
+            static int   s_lightDevIdx    = 0;        // combo index (0 = "(none)")
+            static int   s_lightOutIdx    = -1;       // flat output index
+            static float s_testTimer      = 0.0f;
+            static std::string s_testPath;
+            static int   s_testOutIdx     = -1;
+
+            // Advance test timer — auto-turn-off after 1 second
+            if (s_testTimer > 0.0f) {
+                s_testTimer -= ImGui::GetIO().DeltaTime;
+                if (s_testTimer <= 0.0f && !s_testPath.empty()) {
+                    g_input->setLight(s_testPath, s_testOutIdx, 0.0f);
+                }
+            }
+
+            // Get output-capable devices for bind popup
+            std::vector<Device> allDevs = g_input->getDevices();
+            std::vector<Device> outputDevs;
+            for (auto& d : allDevs) {
+                if (!d.button_output_caps_names.empty() || !d.value_output_caps_names.empty())
+                    outputDevs.push_back(d);
+            }
+
+            // Table: 23 light channels
+            ImGui::BeginChild("##lightsScroll", ImVec2(0, ImGui::GetWindowHeight() - 110), false);
+            if (ImGui::BeginTable("##lighttable", 4,
+                    ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("Light",   ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                ImGui::TableSetupColumn("Binding", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Bind",    ImGuiTableColumnFlags_WidthFixed, 50.0f);
+                ImGui::TableSetupColumn("Clear",   ImGuiTableColumnFlags_WidthFixed, 50.0f);
+                ImGui::TableHeadersRow();
+
+                for (int i = 0; i < LIGHT_COUNT_M; i++) {
+                    ImGui::PushID(i);
+                    ImGui::TableNextRow();
+
+                    // Select binding slot for current page
+                    LightBinding* slot = nullptr;
+                    LightBinding& primary = g_bindings.lights[i];
+                    if (s_lightPage == 0) {
+                        slot = &primary;
+                    } else if (s_lightPage == 1) {
+                        if (primary.alternatives.size() > 0) slot = &primary.alternatives[0];
+                    } else {
+                        if (primary.alternatives.size() > 1) slot = &primary.alternatives[1];
+                    }
+
+                    std::string lightLabel = slot ? slot->getDisplayString(*g_input) : "(unbound)";
+                    bool isTestActive = (s_testTimer > 0.0f && slot && slot->isSet()
+                                        && s_testPath == slot->device_path
+                                        && s_testOutIdx == slot->output_idx);
+
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(lights[i]);
+
+                    ImGui::TableSetColumnIndex(1);
+                    if (isTestActive)
+                        ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s", lightLabel.c_str());
+                    else
+                        ImGui::TextUnformatted(lightLabel.c_str());
+
+                    ImGui::TableSetColumnIndex(2);
+                    if (ImGui::Button("Bind")) {
+                        s_bindLightIdx   = i;
+                        s_lightDevIdx    = 0;
+                        s_lightOutIdx    = -1;
+                        s_openLightPopup = true;
+                    }
+
+                    ImGui::TableSetColumnIndex(3);
+                    if (ImGui::Button("Clear")) {
+                        if (s_lightPage == 0) {
+                            primary.clear();
+                        } else if (s_lightPage == 1 && primary.alternatives.size() > 0) {
+                            primary.alternatives[0].clear();
+                        } else if (s_lightPage == 2 && primary.alternatives.size() > 1) {
+                            primary.alternatives[1].clear();
+                        }
+                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K,
+                                        lights, LIGHT_COUNT_M);
+                    }
+
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            ImGui::EndChild();
+
+            // Lights tab paging footer
+            {
+                float footerWidth = 200.0f;
+                ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - footerWidth);
+                if (ImGui::ArrowButton("##lprev", ImGuiDir_Left) && s_lightPage > 0) s_lightPage--;
+                ImGui::SameLine();
+                ImGui::Text("Binding Set %d / 3", s_lightPage + 1);
+                ImGui::SameLine();
+                if (ImGui::ArrowButton("##lnext", ImGuiDir_Right) && s_lightPage < 2) s_lightPage++;
+            }
+
+            // Bind popup
+            if (s_openLightPopup) { ImGui::OpenPopup("BindLight"); s_openLightPopup = false; }
+            if (ImGui::BeginPopupModal("BindLight", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("Bind Light: %s", (s_bindLightIdx >= 0 ? lights[s_bindLightIdx] : "?"));
+                ImGui::Separator();
+
+                // Device combo — output-capable devices only
+                std::vector<const char*> devLabels;
+                devLabels.push_back("(none)");
+                for (auto& d : outputDevs) devLabels.push_back(d.name.c_str());
+                ImGui::Combo("Device", &s_lightDevIdx, devLabels.data(), (int)devLabels.size());
+
+                // Output combo — flat: button_output_caps_names then value_output_caps_names
+                if (s_lightDevIdx > 0) {
+                    const Device& selDev = outputDevs[s_lightDevIdx - 1];
+                    std::vector<const char*> outLabels;
+                    for (auto& n : selDev.button_output_caps_names) outLabels.push_back(n.c_str());
+                    for (auto& n : selDev.value_output_caps_names)  outLabels.push_back(n.c_str());
+                    if (!outLabels.empty()) {
+                        if (s_lightOutIdx < 0) s_lightOutIdx = 0;  // auto-select first
+                        ImGui::Combo("Output", &s_lightOutIdx, outLabels.data(), (int)outLabels.size());
+                    }
+                } else {
+                    s_lightOutIdx = -1;
+                }
+
+                ImGui::Separator();
+
+                // Test button — pulses light for 1 second then auto-off
+                bool canTest = s_lightDevIdx > 0 && s_lightOutIdx >= 0;
+                if (!canTest) ImGui::BeginDisabled();
+                if (ImGui::Button("Test")) {
+                    s_testPath   = outputDevs[s_lightDevIdx - 1].path;
+                    s_testOutIdx = s_lightOutIdx;
+                    g_input->setLight(s_testPath, s_testOutIdx, 1.0f);
+                    s_testTimer  = 1.0f;
+                }
+                if (!canTest) ImGui::EndDisabled();
+
+                ImGui::SameLine();
+
+                // Save button
+                if (!canTest) ImGui::BeginDisabled();
+                if (ImGui::Button("Save")) {
+                    if (s_bindLightIdx >= 0) {
+                        LightBinding newBind;
+                        newBind.device_path = outputDevs[s_lightDevIdx - 1].path;
+                        newBind.device_name = outputDevs[s_lightDevIdx - 1].name;
+                        newBind.output_idx  = s_lightOutIdx;
+
+                        LightBinding& primary2 = g_bindings.lights[s_bindLightIdx];
+                        if (s_lightPage == 0) {
+                            primary2 = newBind;
+                        } else if (s_lightPage == 1) {
+                            if (primary2.alternatives.empty()) primary2.alternatives.push_back(newBind);
+                            else primary2.alternatives[0] = newBind;
+                        } else if (s_lightPage == 2) {
+                            // Ensure slot 0 exists first
+                            if (primary2.alternatives.size() < 1) primary2.alternatives.emplace_back();
+                            if (primary2.alternatives.size() < 2) primary2.alternatives.push_back(newBind);
+                            else primary2.alternatives[1] = newBind;
+                        }
+                        g_bindings.save(g_settings, ioButtons, IO_COUNT, ez2DancerIOButtons, DANCER_COUNT_K,
+                                        lights, LIGHT_COUNT_M);
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                if (!canTest) ImGui::EndDisabled();
+
+                ImGui::SameLine();
+                if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+
+                ImGui::EndPopup();
+            }
+
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 

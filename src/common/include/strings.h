@@ -129,6 +129,13 @@ static const char* lights[] = { "Effector 1",
                                 "Blue Lamp L", 
                                 "Blue Lamp R" };
 
+// EZ2Dancer light channel stubs — exact port+bit mapping researched in Phase 3.
+static const char* ez2DancerLights[] = {
+    "Stage 1",
+    "Stage 2",
+    "Stage 3",
+    "Stage 4"
+};
 
 //FINAL SHIT
 static const char* noteSkins[] = { "Default", "2nd", "1st SE", "Simple", "Steel","3S","3S RB","Circle", "Disc", "Star", "Turtle", "Gem" };
