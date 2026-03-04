@@ -1,4 +1,6 @@
-add_library(input STATIC)
+add_library(input STATIC
+    input_placeholder.cpp
+)
 
 target_include_directories(input
     PUBLIC
