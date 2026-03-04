@@ -6,6 +6,9 @@
 #include <cstdint>
 #include <string>
 
+// Forward declaration — defined only in input_manager.cpp
+struct InputManagerImpl;
+
 class InputManager {
 public:
     InputManager();
@@ -38,7 +41,5 @@ public:
     std::optional<CaptureResult> pollCapture();
 
 private:
-    // Forward declare internals — defined in input_manager.cpp
-    struct Impl;
-    Impl* impl;
+    InputManagerImpl* impl;
 };

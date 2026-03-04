@@ -1,5 +1,5 @@
 add_library(input STATIC
-    input_placeholder.cpp
+    input_manager.cpp
 )
 
 target_include_directories(input
