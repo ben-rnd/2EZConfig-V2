@@ -132,12 +132,10 @@ nlohmann::json AnalogBinding::toJson() const {
     j["device_name"]  = device_name;
     j["axis_idx"]     = axis_idx;
     j["reverse"]      = reverse;
-    j["sensitivity"]  = sensitivity;
-    j["dead_zone"]    = dead_zone;
-    if (vtt_plus_vk != 0 || vtt_minus_vk != 0) {
-        j["vtt"]["plus_vk"]  = vtt_plus_vk;
-        j["vtt"]["minus_vk"] = vtt_minus_vk;
-        j["vtt"]["step"]     = vtt_step;
+    if (vtt_plus.isSet() || vtt_minus.isSet()) {
+        j["vtt"]["plus"]  = vtt_plus.toJson();
+        j["vtt"]["minus"] = vtt_minus.toJson();
+        j["vtt"]["step"]  = vtt_step;
     }
     return j;
 }
@@ -154,13 +152,27 @@ nlohmann::json AnalogBinding::toJson() const {
         a.device_name  = j.value("device_name", "");
         a.axis_idx     = j.value("axis_idx", -1);
         a.reverse      = j.value("reverse", false);
-        a.sensitivity  = j.value("sensitivity", 1.0f);
-        a.dead_zone    = j.value("dead_zone", 0.04f);
 
         if (j.contains("vtt") && j["vtt"].is_object()) {
-            a.vtt_plus_vk  = j["vtt"].value("plus_vk",  0);
-            a.vtt_minus_vk = j["vtt"].value("minus_vk", 0);
-            a.vtt_step     = j["vtt"].value("step", 3);
+            const auto& vtt = j["vtt"];
+            a.vtt_step = vtt.value("step", 3);
+
+            // New format: "plus" and "minus" are VttKey objects
+            if (vtt.contains("plus") && vtt["plus"].is_object()) {
+                a.vtt_plus = VttKey::fromJson(vtt["plus"]);
+            }
+            if (vtt.contains("minus") && vtt["minus"].is_object()) {
+                a.vtt_minus = VttKey::fromJson(vtt["minus"]);
+            }
+            // Backwards compat: old format had "plus_vk"/"minus_vk" as ints
+            if (a.vtt_plus.vk == 0 && !a.vtt_plus.isSet()) {
+                int old_plus = vtt.value("plus_vk", 0);
+                if (old_plus != 0) a.vtt_plus.vk = old_plus;
+            }
+            if (a.vtt_minus.vk == 0 && !a.vtt_minus.isSet()) {
+                int old_minus = vtt.value("minus_vk", 0);
+                if (old_minus != 0) a.vtt_minus.vk = old_minus;
+            }
         }
         return a;
     } catch (...) {
@@ -200,10 +212,14 @@ void BindingStore::load(SettingsManager& settings,
         }
     }
 
-    // Configure VTT in InputManager for each bound analog with VTT keys
+    // Configure VTT in InputManager for keyboard-only VTT bindings.
+    // HID-button VTT is polled in main.cpp render loop each frame instead.
     for (int p = 0; p < ANALOG_COUNT; ++p) {
-        if (analogs[p].hasVtt()) {
-            mgr.setVttKeys(p, analogs[p].vtt_plus_vk, analogs[p].vtt_minus_vk, analogs[p].vtt_step);
+        if (analogs[p].vtt_plus.vk != 0 || analogs[p].vtt_minus.vk != 0) {
+            mgr.setVttKeys(p,
+                analogs[p].vtt_plus.vk,
+                analogs[p].vtt_minus.vk,
+                analogs[p].vtt_step);
         }
     }
 }

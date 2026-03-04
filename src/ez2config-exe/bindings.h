@@ -1,4 +1,11 @@
 #pragma once
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include "../libs/input/input_manager.h"  // InputManager, Device, CaptureResult
 #include "../libs/settings/settings.h"    // SettingsManager
 #include <nlohmann/json.hpp>
@@ -48,6 +55,66 @@ struct ButtonBinding {
     }
 };
 
+// ---- VttKey --------------------------------------------------------------
+// Represents a single VTT direction binding: either a keyboard VK or an HID
+// controller button. Exactly one of (vk != 0) or (device_path non-empty) is set.
+
+struct VttKey {
+    int         vk          = 0;    // keyboard virtual key code
+    std::string device_path;        // HID device path (non-empty = controller binding)
+    int         button_idx  = -1;   // HID button index within device
+    std::string device_name;        // informational display fallback
+
+    bool isSet() const { return vk != 0 || (!device_path.empty() && button_idx >= 0); }
+
+    void clear() {
+        vk = 0;
+        device_path.clear();
+        button_idx = -1;
+        device_name.clear();
+    }
+
+    std::string getLabel() const {
+        if (vk != 0) {
+            UINT scanCode = MapVirtualKeyA(static_cast<UINT>(vk), MAPVK_VK_TO_VSC);
+            bool extended = (vk == VK_INSERT || vk == VK_DELETE ||
+                             vk == VK_HOME   || vk == VK_END    ||
+                             vk == VK_PRIOR  || vk == VK_NEXT   ||
+                             vk == VK_UP     || vk == VK_DOWN   ||
+                             vk == VK_LEFT   || vk == VK_RIGHT);
+            LONG lParam = (LONG)((scanCode << 16) | (extended ? (1 << 24) : 0));
+            char buf[64] = {};
+            if (GetKeyNameTextA(lParam, buf, sizeof(buf)) > 0)
+                return std::string(buf);
+            return "Key " + std::to_string(vk);
+        }
+        if (!device_path.empty() && button_idx >= 0)
+            return "Btn " + std::to_string(button_idx + 1);
+        return "(unbound)";
+    }
+
+    nlohmann::json toJson() const {
+        nlohmann::json j;
+        j["vk"]          = vk;
+        j["device_path"] = device_path;
+        j["device_name"] = device_name;
+        j["button_idx"]  = button_idx;
+        return j;
+    }
+
+    static VttKey fromJson(const nlohmann::json& j) {
+        VttKey k;
+        if (!j.is_object()) return k;
+        k.vk          = j.value("vk", 0);
+        k.device_path = j.value("device_path", "");
+        k.device_name = j.value("device_name", "");
+        k.button_idx  = j.value("button_idx", -1);
+        // Backwards compat: old format had "plus_vk"/"minus_vk" as direct int
+        // (handled in AnalogBinding::fromJson)
+        return k;
+    }
+};
+
 // ---- AnalogBinding -------------------------------------------------------
 
 struct AnalogBinding {
@@ -55,25 +122,21 @@ struct AnalogBinding {
     int         axis_idx    = -1;
     std::string device_name;
     bool        reverse     = false;
-    float       sensitivity = 1.0f;
-    float       dead_zone   = 0.04f;
-    int         vtt_plus_vk  = 0;
-    int         vtt_minus_vk = 0;
-    int         vtt_step     = 3;
+    VttKey      vtt_plus;
+    VttKey      vtt_minus;
+    int         vtt_step    = 3;
 
     bool isSet()   const { return !device_path.empty() && axis_idx >= 0; }
-    bool hasVtt()  const { return vtt_plus_vk != 0 || vtt_minus_vk != 0; }
+    bool hasVtt()  const { return vtt_plus.isSet() || vtt_minus.isSet(); }
 
     void clear() {
         device_path.clear();
         axis_idx = -1;
         device_name.clear();
         reverse = false;
-        sensitivity = 1.0f;
-        dead_zone   = 0.04f;
-        vtt_plus_vk  = 0;
-        vtt_minus_vk = 0;
-        vtt_step     = 3;
+        vtt_plus.clear();
+        vtt_minus.clear();
+        vtt_step = 3;
     }
 
     void clearAxis() {
