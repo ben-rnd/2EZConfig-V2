@@ -4,28 +4,28 @@
 #include <windows.h>
 
 // Light indices into BindingStore::lights[] — matches s_lightNames[] order.
-enum Light {
-    EFF1, EFF2, EFF3, EFF4,
-    P1_START, P2_START,
-    P1_TT,
-    P1_1, P1_2, P1_3, P1_4, P1_5,
-    P2_TT,
-    P2_1, P2_2, P2_3, P2_4, P2_5,
-    NEONS,
-    RED_L, RED_R, BLUE_L, BLUE_R
+enum LightChannel {
+    LIGHT_EFFECTOR_1, LIGHT_EFFECTOR_2, LIGHT_EFFECTOR_3, LIGHT_EFFECTOR_4,
+    LIGHT_P1_START, LIGHT_P2_START,
+    LIGHT_P1_TURNTABLE,
+    LIGHT_P1_1, LIGHT_P1_2, LIGHT_P1_3, LIGHT_P1_4, LIGHT_P1_5,
+    LIGHT_P2_TURNTABLE,
+    LIGHT_P2_1, LIGHT_P2_2, LIGHT_P2_3, LIGHT_P2_4, LIGHT_P2_5,
+    LIGHT_NEONS,
+    LIGHT_RED_LAMP_L, LIGHT_RED_LAMP_R, LIGHT_BLUE_LAMP_L, LIGHT_BLUE_LAMP_R
 };
 
 // DJ OUT port bit-to-light mapping. Ports 0x100–0x103, 8 bits each.
 // -1 = unused bit (no light on that position).
 static const int s_djOutMap[4][8] = {
     // Port 0x100: Lamps + Neons
-    { RED_L,    RED_R,    BLUE_L,   BLUE_R,   NEONS,    -1, -1, -1 },
+    { LIGHT_RED_LAMP_L,  LIGHT_RED_LAMP_R,  LIGHT_BLUE_LAMP_L, LIGHT_BLUE_LAMP_R, LIGHT_NEONS,        -1, -1, -1 },
     // Port 0x101: Starts + Effectors
-    { P1_START, P2_START, EFF1,     EFF2,     EFF3,     EFF4, -1, -1 },
+    { LIGHT_P1_START,    LIGHT_P2_START,    LIGHT_EFFECTOR_1,  LIGHT_EFFECTOR_2,  LIGHT_EFFECTOR_3,   LIGHT_EFFECTOR_4, -1, -1 },
     // Port 0x102: P1 Buttons + P1 Turntable
-    { P1_1,     P1_2,     P1_3,     P1_4,     P1_5,     P1_TT, -1, -1 },
+    { LIGHT_P1_1,        LIGHT_P1_2,        LIGHT_P1_3,        LIGHT_P1_4,        LIGHT_P1_5,         LIGHT_P1_TURNTABLE, -1, -1 },
     // Port 0x103: P2 Buttons + P2 Turntable
-    { P2_1,     P2_2,     P2_3,     P2_4,     P2_5,     P2_TT, -1, -1 },
+    { LIGHT_P2_1,        LIGHT_P2_2,        LIGHT_P2_3,        LIGHT_P2_4,        LIGHT_P2_5,         LIGHT_P2_TURNTABLE, -1, -1 },
 };
 
 static volatile float s_lightState[BindingStore::LIGHT_COUNT] = {};
@@ -46,8 +46,6 @@ void handleDJOut(uint16_t port, uint8_t value, const BindingStore& bs) {
 void handleDancerOut(uint16_t port, uint8_t value, const BindingStore& bs) {
     (void)port; (void)value; (void)bs;
 }
-
-// Flush thread — forwards buffered light state to InputManager at ~1ms.
 
 struct LightFlushArgs {
     const BindingStore* bs;
