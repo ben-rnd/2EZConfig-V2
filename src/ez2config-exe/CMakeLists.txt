@@ -1,5 +1,5 @@
 # EZ2Config.exe
-add_executable(EZ2Config WIN32 main.cpp bindings.cpp app.rc)
+add_executable(EZ2Config WIN32 main.cpp app.rc)
 
 target_include_directories(EZ2Config PRIVATE
     ${CMAKE_SOURCE_DIR}/src/common/include
@@ -7,10 +7,9 @@ target_include_directories(EZ2Config PRIVATE
 )
 
 target_link_libraries(EZ2Config PRIVATE
+    bindings
     injector
     imgui
-    input
-    settings
     opengl32
     gdi32
     setupapi

@@ -1,95 +1,20 @@
 #include "dll_input.h"
 #include "bindings.h"
 #include "input_manager.h"
+#include "strings.h"
 #include <windows.h>
-// Hat switch increment: 8 directions mapped to float range [0, 1].
-// HS_UP=0/7, HS_UP_RIGHT=1/7, ..., HS_UP_LEFT=7/7.
+
 static const float HAT_SWITCH_INCREMENT = 1.0f / 7.0f;
-
-// Name arrays — must match strings.h exactly (these are JSON keys).
-
-const char* const s_ioButtonNames[] = {
-    "Test", "Service",
-    "Effector 1", "Effector 2", "Effector 3", "Effector 4",
-    "P1 Start", "P2 Start",
-    "P1 1", "P1 2", "P1 3", "P1 4", "P1 5", "P1 Pedal",
-    "P2 1", "P2 2", "P2 3", "P2 4", "P2 5", "P2 Pedal"
-};
-const int IO_BUTTON_COUNT = 20;
-
-const char* const s_dancerButtonNames[] = {
-    "Test", "Service",
-    "P1 Left", "P1 Centre", "P1 Right",
-    "P2 Left", "P2 Centre", "P2 Right",
-    "P1 L Sensor Top", "P1 L Sesor Bottom",
-    "P1 R Sensor Top", "P1 R Sesor Bottom",
-    "P2 L Sensor Top", "P2 L Sesor Bottom",
-    "P2 R Sensor Top", "P2 R Sesor Bottom"
-};
-const int DANCER_BUTTON_COUNT = 16;
-
-const char* const s_lightNames[] = {
-    "Effector 1", "Effector 2", "Effector 3", "Effector 4",
-    "P1 Start", "P2 Start",
-    "P1 Turntable",
-    "P1 1", "P1 2", "P1 3", "P1 4", "P1 5",
-    "P2 Turntable",
-    "P2 1", "P2 2", "P2 3", "P2 4", "P2 5",
-    "Neons", "Red Lamp L", "Red Lamp R", "Blue Lamp L", "Blue Lamp R"
-};
-const int LIGHT_NAME_COUNT = 23;
-
-// DJ button indices into BindingStore::buttons[] — matches s_ioButtonNames[].
-enum DJButton {
-    DJ_TEST, DJ_SERVICE,
-    DJ_EFFECTOR_1, DJ_EFFECTOR_2, DJ_EFFECTOR_3, DJ_EFFECTOR_4,
-    DJ_P1_START, DJ_P2_START,
-    DJ_P1_1, DJ_P1_2, DJ_P1_3, DJ_P1_4, DJ_P1_5, DJ_P1_PEDAL,
-    DJ_P2_1, DJ_P2_2, DJ_P2_3, DJ_P2_4, DJ_P2_5, DJ_P2_PEDAL
-};
-
-// Dancer button indices into BindingStore::dancerButtons[] — matches s_dancerButtonNames[].
-enum DancerButton {
-    DANCER_TEST, DANCER_SERVICE,
-    DANCER_P1_LEFT, DANCER_P1_CENTRE, DANCER_P1_RIGHT,
-    DANCER_P2_LEFT, DANCER_P2_CENTRE, DANCER_P2_RIGHT,
-    DANCER_P1_L_SENSOR_TOP, DANCER_P1_L_SENSOR_BOTTOM,
-    DANCER_P1_R_SENSOR_TOP, DANCER_P1_R_SENSOR_BOTTOM,
-    DANCER_P2_L_SENSOR_TOP, DANCER_P2_L_SENSOR_BOTTOM,
-    DANCER_P2_R_SENSOR_TOP, DANCER_P2_R_SENSOR_BOTTOM
-};
-
-// DJ IN button ports — bit-to-button mapping (active-low).
-// -1 = unused bit (stays high / released).
-static const int s_djInMap[3][8] = {
-    // Port 0x101
-    { DJ_P1_START, DJ_P2_START, DJ_EFFECTOR_1, DJ_EFFECTOR_2, DJ_EFFECTOR_3, DJ_EFFECTOR_4, DJ_SERVICE, DJ_TEST },
-    // Port 0x102
-    { DJ_P1_1, DJ_P1_2, DJ_P1_3, DJ_P1_4, DJ_P1_5, -1, -1, DJ_P1_PEDAL },
-    // Port 0x106
-    { DJ_P2_1, DJ_P2_2, DJ_P2_3, DJ_P2_4, DJ_P2_5, -1, -1, DJ_P2_PEDAL },
-};
-
-// Dancer foot panels per port — 3 panels, each clears a 4-bit nibble.
-static const int s_dancerFeetP1[] = { DANCER_P1_LEFT, DANCER_P1_CENTRE, DANCER_P1_RIGHT };
-static const int s_dancerFeetP2[] = { DANCER_P2_LEFT, DANCER_P2_CENTRE, DANCER_P2_RIGHT };
-
-// Dancer hand sensors — maps sensor index to bit position in port 0x306.
-static const int s_handSensorBit[8] = { 11, 12, 10, 13, 9, 14, 8, 15 };
 
 // Pre-computed port cache. VEH handler reads from here (single volatile read).
 volatile uint8_t  s_djPortCache[7]     = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
 volatile uint16_t s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
 
-// Returns true if the given hat direction is active for the current hat value.
-// Diagonal hat positions activate both adjacent cardinal directions (match spice2x).
-// Tolerance: within half an increment handles exact match + adjacency.
 static bool isHatDirectionActive(float hat_val, ButtonAnalogType dir) {
-    if (hat_val < 0.0f) return false;  // neutral — no direction active
-    int dir_idx = (int)dir - (int)ButtonAnalogType::HS_UP;  // 0-7
+    if (hat_val < 0.0f) return false;
+    int dir_idx = (int)dir - (int)ButtonAnalogType::HS_UP;
     float target = dir_idx * HAT_SWITCH_INCREMENT;
     float diff = hat_val - target;
-    // Wrap-around: HS_UP_LEFT (7/7) is adjacent to HS_UP (0/7)
     if (diff > 0.5f) diff -= 1.0f;
     if (diff < -0.5f) diff += 1.0f;
     return (diff >= -HAT_SWITCH_INCREMENT * 0.5f - 0.001f &&
@@ -100,75 +25,100 @@ static bool isPressed(const ButtonBinding& b, InputManager& mgr) {
     if (!b.isSet()) return false;
     if (b.isKeyboard()) return (GetAsyncKeyState(b.vk_code) & 0x8000) != 0;
     if (b.analog_type != ButtonAnalogType::NONE) {
-        // Hat-as-button: button_idx holds the axis index into value_states
         float hat_val = mgr.getAxisValue(b.device_path, b.button_idx);
         return isHatDirectionActive(hat_val, b.analog_type);
     }
     return mgr.getButtonState(b.device_path, b.button_idx);
 }
 
-static bool isActionPressed(const ButtonBinding& primary, InputManager& mgr) {
-    if (isPressed(primary, mgr)) return true;
-    for (const auto& alt : primary.alternatives) {
-        if (isPressed(alt, mgr)) return true;
-    }
-    return false;
+// --- DJ port computation ----------------------------------------------------
+// BindingStore::buttons[] indices match ioButtons[] in strings.h:
+//  0=Test  1=Service  2=Eff1  3=Eff2  4=Eff3  5=Eff4
+//  6=P1Start  7=P2Start
+//  8=P1-1  9=P1-2  10=P1-3  11=P1-4  12=P1-5  13=P1Pedal
+// 14=P2-1 15=P2-2  16=P2-3  17=P2-4  18=P2-5  19=P2Pedal
+
+static uint8_t computePort0x101(const BindingStore& bs, InputManager& mgr) {
+    uint8_t r = 0xFF;
+    if (isPressed(bs.buttons[6],  mgr)) r &= ~0x01;  // P1 Start
+    if (isPressed(bs.buttons[7],  mgr)) r &= ~0x02;  // P2 Start
+    if (isPressed(bs.buttons[2],  mgr)) r &= ~0x04;  // Effector 1
+    if (isPressed(bs.buttons[3],  mgr)) r &= ~0x08;  // Effector 2
+    if (isPressed(bs.buttons[4],  mgr)) r &= ~0x10;  // Effector 3
+    if (isPressed(bs.buttons[5],  mgr)) r &= ~0x20;  // Effector 4
+    if (isPressed(bs.buttons[1],  mgr)) r &= ~0x40;  // Service
+    if (isPressed(bs.buttons[0],  mgr)) r &= ~0x80;  // Test
+    return r;
 }
 
-static uint8_t computeButtonPort(const int map[8], const BindingStore& bs, InputManager& mgr) {
-    uint8_t result = 0xFF;
-    for (int bit = 0; bit < 8; ++bit) {
-        if (map[bit] >= 0 && isActionPressed(bs.buttons[map[bit]], mgr))
-            result &= ~(1 << bit);
-    }
-    return result;
+static uint8_t computePort0x102(const BindingStore& bs, InputManager& mgr) {
+    uint8_t r = 0xFF;
+    if (isPressed(bs.buttons[8],  mgr)) r &= ~0x01;  // P1 1
+    if (isPressed(bs.buttons[9],  mgr)) r &= ~0x02;  // P1 2
+    if (isPressed(bs.buttons[10], mgr)) r &= ~0x04;  // P1 3
+    if (isPressed(bs.buttons[11], mgr)) r &= ~0x08;  // P1 4
+    if (isPressed(bs.buttons[12], mgr)) r &= ~0x10;  // P1 5
+    // bits 5-6 unused
+    if (isPressed(bs.buttons[13], mgr)) r &= ~0x80;  // P1 Pedal
+    return r;
 }
 
-static uint16_t computeFeetPort(const int panels[3], const BindingStore& bs, InputManager& mgr) {
-    uint16_t output = 0x0FFF;
-    for (int i = 0; i < 3; ++i) {
-        if (isActionPressed(bs.dancerButtons[panels[i]], mgr))
-            output &= ~(0xF << (i * 4));
-    }
-    return static_cast<uint16_t>(~output);
+static uint8_t computePort0x106(const BindingStore& bs, InputManager& mgr) {
+    uint8_t r = 0xFF;
+    if (isPressed(bs.buttons[14], mgr)) r &= ~0x01;  // P2 1
+    if (isPressed(bs.buttons[15], mgr)) r &= ~0x02;  // P2 2
+    if (isPressed(bs.buttons[16], mgr)) r &= ~0x04;  // P2 3
+    if (isPressed(bs.buttons[17], mgr)) r &= ~0x08;  // P2 4
+    if (isPressed(bs.buttons[18], mgr)) r &= ~0x10;  // P2 5
+    // bits 5-6 unused
+    if (isPressed(bs.buttons[19], mgr)) r &= ~0x80;  // P2 Pedal
+    return r;
 }
 
-static uint16_t computeHandsPort(const BindingStore& bs, InputManager& mgr) {
-    uint16_t output = 0xFFFF;
+// --- Dancer port computation ------------------------------------------------
+// BindingStore::dancerButtons[] indices match ez2DancerIOButtons[] in strings.h:
+//  0=Test  1=Service
+//  2=P1Left  3=P1Centre  4=P1Right
+//  5=P2Left  6=P2Centre  7=P2Right
+//  8=P1LSensorTop   9=P1LSensorBot
+// 10=P1RSensorTop  11=P1RSensorBot
+// 12=P2LSensorTop  13=P2LSensorBot
+// 14=P2RSensorTop  15=P2RSensorBot
 
-    for (int i = 0; i < 8; ++i) {
-        if (isActionPressed(bs.dancerButtons[DANCER_P1_L_SENSOR_TOP + i], mgr))
-            output &= ~(1 << s_handSensorBit[i]);
-    }
-
-    static const uint16_t TEST_MASK    = 0xFF00 | (1 << 5);
-    static const uint16_t SERVICE_MASK = 0xFF00 | (1 << 4);
-    if (isActionPressed(bs.dancerButtons[DANCER_TEST],    mgr)) output &= TEST_MASK;
-    if (isActionPressed(bs.dancerButtons[DANCER_SERVICE], mgr)) output &= SERVICE_MASK;
-
-    return output ^ 0xFF00;
+// Foot ports: each panel press clears a 4-bit nibble, result is inverted.
+static uint16_t computePort0x300(const BindingStore& bs, InputManager& mgr) {
+    uint16_t r = 0x0FFF;
+    if (isPressed(bs.dancerButtons[2], mgr)) r &= ~0x00F;  // P1 Left
+    if (isPressed(bs.dancerButtons[3], mgr)) r &= ~0x0F0;  // P1 Centre
+    if (isPressed(bs.dancerButtons[4], mgr)) r &= ~0xF00;  // P1 Right
+    return static_cast<uint16_t>(~r);
 }
 
-static uint8_t computeDJPortByte(uint16_t port, const BindingStore& bs, InputManager& mgr) {
-    switch (port) {
-        case 0x101: return computeButtonPort(s_djInMap[0], bs, mgr);
-        case 0x102: return computeButtonPort(s_djInMap[1], bs, mgr);
-        case 0x106: return computeButtonPort(s_djInMap[2], bs, mgr);
-        case 0x103: return bs.analogs[0].getPosition(mgr, mgr.getVttPosition(0));
-        case 0x104: return bs.analogs[1].getPosition(mgr, mgr.getVttPosition(1));
-        default:    return 0xFF;
-    }
+static uint16_t computePort0x302(const BindingStore& bs, InputManager& mgr) {
+    uint16_t r = 0x0FFF;
+    if (isPressed(bs.dancerButtons[5], mgr)) r &= ~0x00F;  // P2 Left
+    if (isPressed(bs.dancerButtons[6], mgr)) r &= ~0x0F0;  // P2 Centre
+    if (isPressed(bs.dancerButtons[7], mgr)) r &= ~0xF00;  // P2 Right
+    return static_cast<uint16_t>(~r);
 }
 
-static uint16_t computeDancerPortWord(uint16_t port, const BindingStore& bs, InputManager& mgr) {
-    switch (port) {
-        case 0x300: return computeFeetPort(s_dancerFeetP1, bs, mgr);
-        case 0x302: return computeFeetPort(s_dancerFeetP2, bs, mgr);
-        case 0x304: return 0x0000;
-        case 0x306: return computeHandsPort(bs, mgr);
-        default:    return 0xFFFF;
-    }
+// Hand sensor port (0x306): active-high, test/service in low byte.
+static uint16_t computePort0x306(const BindingStore& bs, InputManager& mgr) {
+    uint16_t r = 0xFFFF;
+    if (isPressed(bs.dancerButtons[8],  mgr)) r &= ~(1 << 11);  // P1 L Sensor Top
+    if (isPressed(bs.dancerButtons[9],  mgr)) r &= ~(1 << 12);  // P1 L Sensor Bot
+    if (isPressed(bs.dancerButtons[10], mgr)) r &= ~(1 << 10);  // P1 R Sensor Top
+    if (isPressed(bs.dancerButtons[11], mgr)) r &= ~(1 << 13);  // P1 R Sensor Bot
+    if (isPressed(bs.dancerButtons[12], mgr)) r &= ~(1 <<  9);  // P2 L Sensor Top
+    if (isPressed(bs.dancerButtons[13], mgr)) r &= ~(1 << 14);  // P2 L Sensor Bot
+    if (isPressed(bs.dancerButtons[14], mgr)) r &= ~(1 <<  8);  // P2 R Sensor Top
+    if (isPressed(bs.dancerButtons[15], mgr)) r &= ~(1 << 15);  // P2 R Sensor Bot
+    if (isPressed(bs.dancerButtons[0],  mgr)) r &= 0xFF00 | (1 << 5);  // Test
+    if (isPressed(bs.dancerButtons[1],  mgr)) r &= 0xFF00 | (1 << 4);  // Service
+    return r ^ 0xFF00;
 }
+
+// --- Polling thread ---------------------------------------------------------
 
 struct InputPollArgs {
     const BindingStore* bs;
@@ -180,18 +130,22 @@ static DWORD WINAPI inputPollingThread(void* arg) {
     const BindingStore& bs = *ctx->bs;
     InputManager& mgr = *ctx->mgr;
 
-    for (;;) {
+    while (true) {
         Sleep(1);
 
-        s_djPortCache[1] = computeDJPortByte(0x101, bs, mgr);
-        s_djPortCache[2] = computeDJPortByte(0x102, bs, mgr);
-        s_djPortCache[3] = computeDJPortByte(0x103, bs, mgr);
-        s_djPortCache[4] = computeDJPortByte(0x104, bs, mgr);
-        s_djPortCache[6] = computeDJPortByte(0x106, bs, mgr);
+        // DJ button ports
+        s_djPortCache[1] = computePort0x101(bs, mgr);
+        s_djPortCache[2] = computePort0x102(bs, mgr);
+        s_djPortCache[6] = computePort0x106(bs, mgr);
 
-        s_dancerPortCache[0] = computeDancerPortWord(0x300, bs, mgr);
-        s_dancerPortCache[1] = computeDancerPortWord(0x302, bs, mgr);
-        s_dancerPortCache[3] = computeDancerPortWord(0x306, bs, mgr);
+        // DJ analog ports (turntables)
+        s_djPortCache[3] = bs.analogs[0].getPosition(mgr, mgr.getVttPosition(0));
+        s_djPortCache[4] = bs.analogs[1].getPosition(mgr, mgr.getVttPosition(1));
+
+        // Dancer ports
+        s_dancerPortCache[0] = computePort0x300(bs, mgr);
+        s_dancerPortCache[1] = computePort0x302(bs, mgr);
+        s_dancerPortCache[3] = computePort0x306(bs, mgr);
     }
     return 0;
 }

@@ -9,64 +9,75 @@
 #include "bindings.h"
 #include "input_manager.h"
 #include "settings.h"
+#include "strings.h"
 
 static HMODULE       s_dllModule   = nullptr;
 static InputManager* s_mgr         = nullptr;
 static BindingStore  s_bindings;
-static volatile bool s_initialized = false;
 
-// Combined VEH handler dispatching DJ (0xEC/0xEE) and Dancer (0x66+0xED/0x66+0xEF) opcodes.
-// IN reads come from pre-computed volatile cache — zero function calls on game thread.
-// OUT writes go to shadow buffers — flushed by background threads.
+// VEH handler — intercepts privileged IN/OUT instructions.
+// Opcodes: 0xEC = IN AL,DX (DJ)  0xEE = OUT DX,AL (DJ)
+//          0x66 0xED = IN AX,DX (Dancer)  0x66 0xEF = OUT DX,AX (Dancer)
 static LONG WINAPI CombinedIOHandler(PEXCEPTION_POINTERS ex) {
     if (ex->ExceptionRecord->ExceptionCode != EXCEPTION_PRIV_INSTRUCTION)
         return EXCEPTION_CONTINUE_SEARCH;
 
-    if (!s_initialized)
-        return EXCEPTION_CONTINUE_SEARCH;
+    auto* ctx      = ex->ContextRecord;
+    uint8_t* eip   = reinterpret_cast<uint8_t*>(ctx->Eip);
+    uint16_t port  = static_cast<uint16_t>(ctx->Edx & 0xFFFF);
+    uint8_t opcode = eip[0];
+    int instrLen   = 1;
 
-    uint8_t* eip   = reinterpret_cast<uint8_t*>(ex->ContextRecord->Eip);
-    uint16_t port  = static_cast<uint16_t>(ex->ContextRecord->Edx & 0xFFFF);
-
-    if (eip[0] == 0x66) {
-        if (eip[1] == 0xED) {
-            // IN AX, DX — Dancer IN: read from pre-computed cache
-            uint16_t result;
-            if (port >= 0x300 && port <= 0x306 && ((port & 1) == 0)) {
-                result = s_dancerPortCache[(port - 0x300) >> 1];
-            } else {
-                result = 0xFFFF;
-            }
-            ex->ContextRecord->Eax = (ex->ContextRecord->Eax & 0xFFFF0000) | result;
-            ex->ContextRecord->Eip += 2;
-            return EXCEPTION_CONTINUE_EXECUTION;
-        } else if (eip[1] == 0xEF) {
-            // OUT DX, AX — Dancer OUT: write to shadow buffer
-            uint8_t value = static_cast<uint8_t>(ex->ContextRecord->Eax & 0xFF);
-            handleDancerOut(port, value, s_bindings);
-            ex->ContextRecord->Eip += 2;
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-    } else if (eip[0] == 0xEC) {
-        // IN AL, DX — DJ IN: read from pre-computed cache
-        uint8_t result;
-        if (port >= 0x100 && port <= 0x106) {
-            result = s_djPortCache[port & 0x07];
-        } else {
-            result = 0xFF;
-        }
-        ex->ContextRecord->Eax = (ex->ContextRecord->Eax & 0xFFFFFF00) | result;
-        ex->ContextRecord->Eip += 1;
-        return EXCEPTION_CONTINUE_EXECUTION;
-    } else if (eip[0] == 0xEE) {
-        // OUT DX, AL — DJ OUT: write to shadow buffer
-        uint8_t value = static_cast<uint8_t>(ex->ContextRecord->Eax & 0xFF);
-        handleDJOut(port, value, s_bindings);
-        ex->ContextRecord->Eip += 1;
-        return EXCEPTION_CONTINUE_EXECUTION;
+    // 0x66 prefix = 16-bit operand (Dancer)
+    if (opcode == 0x66) {
+        opcode = eip[1];
+        instrLen = 2;
     }
 
-    return EXCEPTION_CONTINUE_SEARCH;
+    switch (opcode) {
+
+        case 0xEC: // IN AL, DX — DJ read (8-bit)
+            switch (port) {
+                //buttons
+                case 0x101: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[1]; break;
+                case 0x102: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[2]; break;
+                case 0x106: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[6]; break;
+
+                //analogs
+                case 0x103: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[3]; break;  // P1 turntable
+                case 0x104: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[4]; break;  // P2 turntable
+
+                //fall through
+                default:    ctx->Eax = (ctx->Eax & 0xFFFFFF00) | 0xFF; break;
+            }
+            ctx->Eip += instrLen;
+            return EXCEPTION_CONTINUE_EXECUTION;
+
+        case 0xED: // IN AX, DX — Dancer read (16-bit)
+            switch (port) {
+                case 0x300: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[0]; break;
+                case 0x302: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[1]; break;
+                case 0x304: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[2]; break;
+                case 0x306: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[3]; break;
+
+                default:    ctx->Eax = (ctx->Eax & 0xFFFF0000) | 0xFFFF; break;
+            }
+            ctx->Eip += instrLen;
+            return EXCEPTION_CONTINUE_EXECUTION;
+
+        case 0xEE: // OUT DX, AL — DJ write (8-bit)
+            handleDJOut(port, static_cast<uint8_t>(ctx->Eax & 0xFF), s_bindings);
+            ctx->Eip += instrLen;
+            return EXCEPTION_CONTINUE_EXECUTION;
+
+        case 0xEF: // OUT DX, AX — Dancer write (16-bit)
+            handleDancerOut(port, static_cast<uint8_t>(ctx->Eax & 0xFF), s_bindings);
+            ctx->Eip += instrLen;
+            return EXCEPTION_CONTINUE_EXECUTION;
+
+        default:
+            return EXCEPTION_CONTINUE_SEARCH;
+    }
 }
 
 static DWORD WINAPI InitThread(void*) {
@@ -106,10 +117,13 @@ static DWORD WINAPI InitThread(void*) {
     // Load bindings from settings if available.
     if (settingsLoaded) {
         try {
+            static const int IO_COUNT      = (int)(sizeof(ioButtons)          / sizeof(ioButtons[0]));
+            static const int DANCER_COUNT  = (int)(sizeof(ez2DancerIOButtons) / sizeof(ez2DancerIOButtons[0]));
+            static const int LIGHT_COUNT   = (int)(sizeof(lights)             / sizeof(lights[0]));
             s_bindings.load(settings, *s_mgr,
-                            s_ioButtonNames,      IO_BUTTON_COUNT,
-                            s_dancerButtonNames,  DANCER_BUTTON_COUNT,
-                            s_lightNames,         LIGHT_NAME_COUNT);
+                            ioButtons,            IO_COUNT,
+                            ez2DancerIOButtons,   DANCER_COUNT,
+                            lights,               LIGHT_COUNT);
         } catch (...) {
             // Fall through to all-released state (no crash).
         }
@@ -122,7 +136,6 @@ static DWORD WINAPI InitThread(void*) {
 
     // Register VEH handler LAST — after all threads and caches are ready.
     AddVectoredExceptionHandler(1, CombinedIOHandler);
-    s_initialized = true;
 
     return 0;
 }

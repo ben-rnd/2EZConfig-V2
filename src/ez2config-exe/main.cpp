@@ -3,13 +3,12 @@
 #include "imgui_impl_opengl2.h"
 #include "injector.h"
 #include "settings.h"
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnarrowing"
 #include "strings.h"
-#pragma GCC diagnostic pop
-#include "../libs/input/input_manager.h"
+#include "input_manager.h"
 #include "bindings.h"
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -23,6 +22,7 @@ static SettingsManager g_settings;
 static int  g_gameIdx  = 0;     // index into flat combo list (DJ games first, then Dancer)
 static bool g_isDancer = false; // derived from g_gameIdx
 
+static GLFWwindow*                g_window   = nullptr;
 static InputManager*              g_input    = nullptr;
 static BindingStore               g_bindings;
 static constexpr int IO_COUNT       = (int)(sizeof(ioButtons)          / sizeof(ioButtons[0]));
@@ -45,16 +45,22 @@ int main() {
     glfwSetErrorCallback([](int e, const char* d) { fprintf(stderr, "GLFW error %d: %s\n", e, d); });
     if (!glfwInit()) return 1;
 
-    GLFWwindow* window = glfwCreateWindow(640, 480, "2EZConfig", nullptr, nullptr);
-    if (!window) { glfwTerminate(); return 1; }
-    glfwMakeContextCurrent(window);
+    g_window = glfwCreateWindow(640, 480, "2EZConfig", nullptr, nullptr);
+    if (!g_window) { glfwTerminate(); return 1; }
+    glfwMakeContextCurrent(g_window);
     glfwSwapInterval(1);
+
+    // Set window icon from embedded resource
+    HWND hwnd = glfwGetWin32Window(g_window);
+    HICON icon = LoadIconA(GetModuleHandleA(nullptr), "IDI_ICON1");
+    SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)icon);
+    SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)icon);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;
 
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplGlfw_InitForOpenGL(g_window, true);
     ImGui_ImplOpenGL2_Init();
 
     setTheme();
@@ -86,7 +92,7 @@ int main() {
         if (!found && gid == "ez2dancer") { g_gameIdx = DJ_COUNT_M; g_isDancer = true; }
     }
 
-    while (!glfwWindowShouldClose(window)) {
+    while (!glfwWindowShouldClose(g_window)) {
         glfwPollEvents();
 
         ImGui_ImplOpenGL2_NewFrame();
@@ -97,18 +103,18 @@ int main() {
 
         ImGui::Render();
         int w, h;
-        glfwGetFramebufferSize(window, &w, &h);
+        glfwGetFramebufferSize(g_window, &w, &h);
         glViewport(0, 0, w, h);
         glClearColor(0.09f, 0.09f, 0.09f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(window);
+        glfwSwapBuffers(g_window);
     }
 
     ImGui_ImplOpenGL2_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
-    glfwDestroyWindow(window);
+    glfwDestroyWindow(g_window);
     glfwTerminate();
 
     delete g_input;
@@ -150,6 +156,7 @@ static void renderUI() {
         const char* tbExeName = (g_gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_gameIdx].defaultExeName;
         if (ImGui::Button("Play EZ2", ImVec2(btnWidth, 0))) {
             Injector::LaunchAndInject(tbExeName);
+            glfwSetWindowShouldClose(g_window, GLFW_TRUE);
         }
     }
     ImGui::Separator();
