@@ -8,6 +8,7 @@
 #include "dll_output.h"
 #include "bindings.h"
 #include "input_manager.h"
+#include "patch_store.h"
 #include "settings.h"
 #include "strings.h"
 
@@ -149,6 +150,15 @@ static DWORD WINAPI InitThread(void*) {
         }
     }
 
+    // Apply early patches (after bindings load, before VEH registration).
+    // Per CONTEXT.md apply order step 4: early patches fire here so they are
+    // active before the VEH handler intercepts game I/O (e.g. keyboard re-enable).
+    if (settingsLoaded) {
+        std::string gameId = settings.gameSettings().value("game_id", "");
+        if (!gameId.empty())
+            settings.patchStore().applyPatches(gameId, /*applyEarly=*/true);
+    }
+
     // Start background threads for input polling and light flushing.
     // VEH handler reads/writes only volatile caches — zero blocking on game thread.
     startInputPollingThread(s_bindings, *s_mgr);
@@ -156,6 +166,18 @@ static DWORD WINAPI InitThread(void*) {
 
     // Register VEH handler LAST — after all threads and caches are ready.
     AddVectoredExceptionHandler(1, CombinedIOHandler);
+
+    // Wait for game init, then apply normal patches.
+    int patchDelayMs = 2000;
+    if (settingsLoaded)
+        patchDelayMs = settings.globalSettings().value("patch_delay_ms", 2000);
+    Sleep(patchDelayMs);
+
+    if (settingsLoaded) {
+        std::string gameId = settings.gameSettings().value("game_id", "");
+        if (!gameId.empty())
+            settings.patchStore().applyPatches(gameId, /*applyEarly=*/false);
+    }
 
     return 0;
 }

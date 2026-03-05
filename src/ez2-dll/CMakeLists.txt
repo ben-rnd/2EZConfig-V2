@@ -12,7 +12,9 @@ target_include_directories(2EZ PRIVATE
 
 target_link_libraries(2EZ PRIVATE
     bindings
+    patches
     kernel32
     user32
     winmm
+    psapi
 )
