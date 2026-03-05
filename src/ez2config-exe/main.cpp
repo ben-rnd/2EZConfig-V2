@@ -631,6 +631,7 @@ static void renderUI() {
                 s_testTimer -= ImGui::GetIO().DeltaTime;
                 if (s_testTimer <= 0.0f && !s_testPath.empty()) {
                     g_input->setLight(s_testPath, s_testOutIdx, 0.0f);
+                    g_input->disableOutput(s_testPath);
                 }
             }
 
@@ -677,6 +678,16 @@ static void renderUI() {
                         s_bindLightIdx   = i;
                         s_lightDevIdx    = 0;
                         s_lightOutIdx    = -1;
+                        // Populate from current binding if set
+                        if (lb.isSet()) {
+                            for (int d = 0; d < (int)outputDevs.size(); d++) {
+                                if (outputDevs[d].path == lb.device_path) {
+                                    s_lightDevIdx = d + 1;  // +1 for "(none)" entry
+                                    s_lightOutIdx = lb.output_idx;
+                                    break;
+                                }
+                            }
+                        }
                         s_openLightPopup = true;
                     }
 
@@ -744,7 +755,7 @@ static void renderUI() {
                     s_testPath   = outputDevs[s_lightDevIdx - 1].path;
                     s_testOutIdx = s_lightOutIdx;
                     g_input->setLight(s_testPath, s_testOutIdx, 1.0f);
-                    s_testTimer  = 1.0f;
+                    s_testTimer  = 0.5f;
                 }
                 if (!canTest) ImGui::EndDisabled();
 

@@ -42,7 +42,11 @@ public:
 
     // Set light output. output_idx is flat index: button_output_caps first, then value_output_caps.
     // value in [0.0, 1.0]. Button outputs: value > 0.5 = on. Value outputs: written as float intensity.
+    // Automatically enables output for the device on first call.
     void setLight(const std::string& path, int output_idx, float value);
+
+    // Disable output for a device — stops flush thread from sending reports.
+    void disableOutput(const std::string& path);
 
 private:
     InputManagerImpl* impl;

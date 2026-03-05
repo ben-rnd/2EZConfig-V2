@@ -607,9 +607,9 @@ static void devices_reload(InputManagerImpl* impl) {
         InitializeCriticalSection(&dev.cs_input);
         InitializeCriticalSection(&dev.cs_output);
 
-        // Set output_enabled: device must have a valid write handle and non-zero output report length.
-        dev.output_enabled = (dev.hid->hid_handle != INVALID_HANDLE_VALUE &&
-                              dev.hid->caps.OutputReportByteLength > 0);
+        // Output starts disabled — enabled on first setLight() call for this device.
+        // This prevents sending all-zero reports to devices without light bindings.
+        dev.output_enabled = false;
 
         impl->devices.push_back(std::move(dev));
     }
@@ -1239,9 +1239,11 @@ void InputManager::setLight(const std::string& path, int output_idx, float value
         if (dev.path != path) continue;
         LeaveCriticalSection(&impl->devices_lock);
 
-        if (!dev.hid || dev.hid->hid_handle == INVALID_HANDLE_VALUE) return;
+        if (!dev.hid || dev.hid->hid_handle == INVALID_HANDLE_VALUE ||
+            dev.hid->caps.OutputReportByteLength == 0) return;
 
         EnterCriticalSection(&dev.cs_output);
+        dev.output_enabled = true;
         int btn_count = (int)dev.hid->button_output_states.size();
         if (output_idx < btn_count) {
             dev.hid->button_output_states[output_idx] = (value > 0.5f);
@@ -1256,6 +1258,19 @@ void InputManager::setLight(const std::string& path, int output_idx, float value
 
         // Signal output thread.
         SetEvent(impl->output_event);
+        return;
+    }
+    LeaveCriticalSection(&impl->devices_lock);
+}
+
+void InputManager::disableOutput(const std::string& path) {
+    EnterCriticalSection(&impl->devices_lock);
+    for (auto& dev : impl->devices) {
+        if (dev.path != path) continue;
+        LeaveCriticalSection(&impl->devices_lock);
+        EnterCriticalSection(&dev.cs_output);
+        dev.output_enabled = false;
+        LeaveCriticalSection(&dev.cs_output);
         return;
     }
     LeaveCriticalSection(&impl->devices_lock);
