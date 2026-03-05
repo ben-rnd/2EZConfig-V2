@@ -17,10 +17,10 @@ static InputManager* s_mgr                = nullptr;
 static BindingStore  s_bindings;
 static DWORD         s_originalRefreshRate = 0;
 
-// VEH handler — intercepts privileged IN/OUT instructions.
+// All Important IO handler — intercepts IN/OUT instructions.
 // Opcodes: 0xEC = IN AL,DX (DJ)  0xEE = OUT DX,AL (DJ)
 //          0x66 0xED = IN AX,DX (Dancer)  0x66 0xEF = OUT DX,AX (Dancer)
-static LONG WINAPI CombinedIOHandler(PEXCEPTION_POINTERS ex) {
+static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
     if (ex->ExceptionRecord->ExceptionCode != EXCEPTION_PRIV_INSTRUCTION)
         return EXCEPTION_CONTINUE_SEARCH;
 
@@ -113,26 +113,26 @@ static DWORD WINAPI InitThread(void*) {
         }
     }
 
-    // Force 60Hz refresh rate if enabled in global settings.
-    if (settingsLoaded && settings.globalSettings().value("force_60hz", false)) {
-        DEVMODEA dm = {};
-        dm.dmSize = sizeof(dm);
-        if (EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &dm)) {
-            s_originalRefreshRate = dm.dmDisplayFrequency;
-            if (dm.dmDisplayFrequency != 60) {
-                dm.dmDisplayFrequency = 60;
-                dm.dmFields = DM_DISPLAYFREQUENCY;
-                ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
+    if(settingsLoaded){
+        if(settings.globalSettings().value("force_60hz", false)){
+            DEVMODEA dm = {};
+            dm.dmSize = sizeof(dm);
+            if (EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &dm)) {
+                s_originalRefreshRate = dm.dmDisplayFrequency;
+                if (dm.dmDisplayFrequency != 60) {
+                    dm.dmDisplayFrequency = 60;
+                    dm.dmFields = DM_DISPLAYFREQUENCY;
+                    ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
+                }
             }
         }
+
+        if(settings.globalSettings().value("high_priority", false)) {
+            SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+        }
+
     }
 
-    // Set high priority if enabled in global settings.
-    if (settingsLoaded && settings.globalSettings().value("high_priority", false)) {
-        SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-    }
-
-    // Create InputManager — constructor waits for HWND to be ready (up to 500ms).
     s_mgr = new InputManager();
 
     // Load bindings from settings if available.
@@ -148,32 +148,26 @@ static DWORD WINAPI InitThread(void*) {
         } catch (...) {
             // Fall through to all-released state (no crash).
         }
-    }
 
-    // Apply early patches (after bindings load, before VEH registration).
-    // Per CONTEXT.md apply order step 4: early patches fire here so they are
-    // active before the VEH handler intercepts game I/O (e.g. keyboard re-enable).
-    if (settingsLoaded) {
+        // Apply early patches (e.g. keyboard re-enable) after bindings load, before VEH.
         std::string gameId = settings.gameSettings().value("game_id", "");
         if (!gameId.empty())
             settings.patchStore().applyPatches(gameId, /*applyEarly=*/true);
     }
 
-    // Start background threads for input polling and light flushing.
-    // VEH handler reads/writes only volatile caches — zero blocking on game thread.
+    // Start background threads for input polling and lights
     startInputPollingThread(s_bindings, *s_mgr);
     startLightFlushThread(s_bindings, *s_mgr);
 
-    // Register VEH handler LAST — after all threads and caches are ready.
-    AddVectoredExceptionHandler(1, CombinedIOHandler);
+    AddVectoredExceptionHandler(1, IOHandler);
 
     // Wait for game init, then apply normal patches.
     int patchDelayMs = 2000;
-    if (settingsLoaded)
+    if (settingsLoaded){
         patchDelayMs = settings.globalSettings().value("patch_delay_ms", 2000);
-    Sleep(patchDelayMs);
-
-    if (settingsLoaded) {
+        Sleep(patchDelayMs);
+        
+        //apply patches for real
         std::string gameId = settings.gameSettings().value("game_id", "");
         if (!gameId.empty())
             settings.patchStore().applyPatches(gameId, /*applyEarly=*/false);
