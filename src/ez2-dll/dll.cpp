@@ -81,97 +81,73 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
 }
 
 static DWORD WINAPI InitThread(void*) {
-    // Set system timer resolution to 1ms so Sleep(1) actually sleeps ~1ms
-    // instead of the default ~15.6ms. Critical for polling thread accuracy.
     timeBeginPeriod(1);
-
-    // Brief yield for game to stabilize.
-    Sleep(10);
 
     // Resolve DLL directory from the DLL's own module handle.
     char dir[MAX_PATH] = {};
     GetModuleFileNameA(s_dllModule, dir, MAX_PATH);
-    // Strip filename — keep directory path.
     char* lastSlash = strrchr(dir, '\\');
     if (lastSlash) *lastSlash = '\0';
 
-    // Check if global-settings.json exists in DLL directory.
+    // Exit early if no settings file — nothing to configure.
     std::string settingsPath = std::string(dir) + "\\global-settings.json";
-    bool settingsFound = (GetFileAttributesA(settingsPath.c_str()) != INVALID_FILE_ATTRIBUTES);
+    if (GetFileAttributesA(settingsPath.c_str()) == INVALID_FILE_ATTRIBUTES)
+        return 0;
 
-    // Load settings and bindings if settings file exists.
-    bool settingsLoaded = false;
     SettingsManager settings;
-    if (settingsFound) {
-        try {
-            settings.load(dir, dir);
-            settingsLoaded = true;
-        } catch (...) {
-            // Fall through to all-released state (no crash).
-        }
+    try {
+        settings.load(dir, dir);
+    } catch (...) {
+        return 0;
     }
 
-    if(settingsLoaded){
-        if(settings.globalSettings().value("io_emu", true))
-            AddVectoredExceptionHandler(1, IOHandler);
+    Sleep(settings.globalSettings().value("shim_delay", 10));
 
-        if(settings.globalSettings().value("force_60hz", false)){
-            DEVMODEA dm = {};
-            dm.dmSize = sizeof(dm);
-            if (EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &dm)) {
-                s_originalRefreshRate = dm.dmDisplayFrequency;
-                if (dm.dmDisplayFrequency != 60) {
-                    dm.dmDisplayFrequency = 60;
-                    dm.dmFields = DM_DISPLAYFREQUENCY;
-                    ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
-                }
+    if (settings.globalSettings().value("io_emu", true))
+        AddVectoredExceptionHandler(1, IOHandler);
+
+    if (settings.globalSettings().value("force_60hz", false)) {
+        DEVMODEA dm = {};
+        dm.dmSize = sizeof(dm);
+        if (EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &dm)) {
+            s_originalRefreshRate = dm.dmDisplayFrequency;
+            if (dm.dmDisplayFrequency != 60) {
+                dm.dmDisplayFrequency = 60;
+                dm.dmFields = DM_DISPLAYFREQUENCY;
+                ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
             }
         }
-
-        if(settings.globalSettings().value("high_priority", false)) {
-            SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-        }
-
-        std::string gameId = settings.gameSettings().value("game_id", "");
-        if (!gameId.empty())
-            settings.patchStore().applyPatches(gameId, /*applyEarly=*/true);
     }
+
+    if (settings.globalSettings().value("high_priority", false))
+        SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+
+    std::string gameId = settings.gameSettings().value("game_id", "");
+
+    // Apply early patches before VEH starts processing IO.
+    if (!gameId.empty())
+        settings.patchStore().applyPatches(gameId, /*applyEarly=*/true);
 
     s_mgr = new InputManager();
 
-    // Load bindings from settings if available.
-    if (settingsLoaded) {
-        try {
-            static const int IO_COUNT      = (int)(sizeof(ioButtons)          / sizeof(ioButtons[0]));
-            static const int DANCER_COUNT  = (int)(sizeof(ez2DancerIOButtons) / sizeof(ez2DancerIOButtons[0]));
-            static const int LIGHT_COUNT   = (int)(sizeof(lights)             / sizeof(lights[0]));
-            s_bindings.load(settings, *s_mgr,
-                            ioButtons,            IO_COUNT,
-                            ez2DancerIOButtons,   DANCER_COUNT,
-                            lights,               LIGHT_COUNT);
-        } catch (...) {
-            // Fall through to all-released state (no crash).
-        }
-    }
+    static const int IO_COUNT     = (int)(sizeof(ioButtons)          / sizeof(ioButtons[0]));
+    static const int DANCER_COUNT = (int)(sizeof(ez2DancerIOButtons) / sizeof(ez2DancerIOButtons[0]));
+    static const int LIGHT_COUNT  = (int)(sizeof(lights)             / sizeof(lights[0]));
+    try {
+        s_bindings.load(settings, *s_mgr,
+                        ioButtons,          IO_COUNT,
+                        ez2DancerIOButtons, DANCER_COUNT,
+                        lights,             LIGHT_COUNT);
+    } catch (...) {}
 
-    // Start background threads for input polling and lights
     startInputPollingThread(s_bindings, *s_mgr);
     startLightFlushThread(s_bindings, *s_mgr);
 
     // Wait for game init, then apply patches.
-    int patchDelayMs = 2000;
-    if (settingsLoaded){
-        patchDelayMs = settings.globalSettings().value("patch_delay_ms", 2000);
-        Sleep(patchDelayMs);
-
-        // Always brand the game's test menu version string.
-        settings.patchStore().applyVersionPatch("EZ2Config 1.00");
-
-        // Apply user-configured patches.
-        std::string gameId = settings.gameSettings().value("game_id", "");
-        if (!gameId.empty())
-            settings.patchStore().applyPatches(gameId, /*applyEarly=*/false);
-    }
+    Sleep(settings.globalSettings().value("patch_delay_ms", 2000));
+    settings.patchStore().applyVersionPatch("EZ2Config 1.00");
+    if (!gameId.empty())
+        settings.patchStore().applyPatches(gameId, /*applyEarly=*/false);
 
     return 0;
 }
