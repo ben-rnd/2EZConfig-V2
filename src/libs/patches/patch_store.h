@@ -60,8 +60,8 @@ public:
     nlohmann::json saveState() const;
 
     // Apply all enabled patches for gameId to process memory.
-    // applyEarly=true  -> apply only apply:"early" patches
-    // applyEarly=false -> apply only apply:"normal" patches
+    void applyEarlyPatches(const std::string& gameId);
+    void applyPatches(const std::string& gameId);
     void applyPatches(const std::string& gameId, bool applyEarly);
 
     // Always applies the version string patch unconditionally (not controlled by patch state).

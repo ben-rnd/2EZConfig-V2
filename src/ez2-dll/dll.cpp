@@ -81,6 +81,7 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
 }
 
 static DWORD WINAPI InitThread(void*) {
+    // Fix innacurate sleep()
     timeBeginPeriod(1);
 
     // Resolve DLL directory from the DLL's own module handle.
@@ -89,7 +90,7 @@ static DWORD WINAPI InitThread(void*) {
     char* lastSlash = strrchr(dir, '\\');
     if (lastSlash) *lastSlash = '\0';
 
-    // Exit early if no settings file — nothing to configure.
+    // Exit early if no settings file — obviously broken install if settings arent found.
     std::string settingsPath = std::string(dir) + "\\global-settings.json";
     if (GetFileAttributesA(settingsPath.c_str()) == INVALID_FILE_ATTRIBUTES)
         return 0;
@@ -101,8 +102,17 @@ static DWORD WINAPI InitThread(void*) {
         return 0;
     }
 
+    //Short sleep to fix crash when using legitimate data with dongles.
     Sleep(settings.globalSettings().value("shim_delay", 10));
+ 
+    //Get game ID for patches
+    std::string gameId = settings.gameSettings().value("game_id", "");
 
+    // Apply early patches that a time critical.
+    if (!gameId.empty())
+        settings.patchStore().applyEarlyPatches(gameId);
+
+    //Apply global Settings 
     if (settings.globalSettings().value("io_emu", true))
         AddVectoredExceptionHandler(1, IOHandler);
 
@@ -122,12 +132,7 @@ static DWORD WINAPI InitThread(void*) {
     if (settings.globalSettings().value("high_priority", false))
         SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
-    std::string gameId = settings.gameSettings().value("game_id", "");
-
-    // Apply early patches before VEH starts processing IO.
-    if (!gameId.empty())
-        settings.patchStore().applyPatches(gameId, /*applyEarly=*/true);
-
+    //Setup Input manager and load bindings
     s_mgr = new InputManager();
 
     static const int IO_COUNT     = (int)(sizeof(ioButtons)          / sizeof(ioButtons[0]));
@@ -143,11 +148,11 @@ static DWORD WINAPI InitThread(void*) {
     startInputPollingThread(s_bindings, *s_mgr);
     startLightFlushThread(s_bindings, *s_mgr);
 
-    // Wait for game init, then apply patches.
+    // Wait for game init, then apply standard patches.
     Sleep(settings.globalSettings().value("patch_delay_ms", 2000));
     settings.patchStore().applyVersionPatch("EZ2Config 1.00");
     if (!gameId.empty())
-        settings.patchStore().applyPatches(gameId, /*applyEarly=*/false);
+        settings.patchStore().applyPatches(gameId);
 
     return 0;
 }
