@@ -2,7 +2,9 @@
 #include "bindings.h"
 #include "input_manager.h"
 #include <windows.h>
-#include <type_traits>
+// Hat switch increment: 8 directions mapped to float range [0, 1].
+// HS_UP=0/7, HS_UP_RIGHT=1/7, ..., HS_UP_LEFT=7/7.
+static const float HAT_SWITCH_INCREMENT = 1.0f / 7.0f;
 
 // Name arrays — must match strings.h exactly (these are JSON keys).
 
@@ -79,25 +81,36 @@ static const int s_handSensorBit[8] = { 11, 12, 10, 13, 9, 14, 8, 15 };
 volatile uint8_t  s_djPortCache[7]     = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
 volatile uint16_t s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
 
-// SFINAE: detect if ButtonBinding has an 'alternatives' member (added by Phase 2.1).
-template<typename T, typename = void>
-struct has_alternatives : std::false_type {};
-template<typename T>
-struct has_alternatives<T, std::void_t<decltype(std::declval<T>().alternatives)>> : std::true_type {};
+// Returns true if the given hat direction is active for the current hat value.
+// Diagonal hat positions activate both adjacent cardinal directions (match spice2x).
+// Tolerance: within half an increment handles exact match + adjacency.
+static bool isHatDirectionActive(float hat_val, ButtonAnalogType dir) {
+    if (hat_val < 0.0f) return false;  // neutral — no direction active
+    int dir_idx = (int)dir - (int)ButtonAnalogType::HS_UP;  // 0-7
+    float target = dir_idx * HAT_SWITCH_INCREMENT;
+    float diff = hat_val - target;
+    // Wrap-around: HS_UP_LEFT (7/7) is adjacent to HS_UP (0/7)
+    if (diff > 0.5f) diff -= 1.0f;
+    if (diff < -0.5f) diff += 1.0f;
+    return (diff >= -HAT_SWITCH_INCREMENT * 0.5f - 0.001f &&
+            diff <=  HAT_SWITCH_INCREMENT * 0.5f + 0.001f);
+}
 
 static bool isPressed(const ButtonBinding& b, InputManager& mgr) {
     if (!b.isSet()) return false;
     if (b.isKeyboard()) return (GetAsyncKeyState(b.vk_code) & 0x8000) != 0;
+    if (b.analog_type != ButtonAnalogType::NONE) {
+        // Hat-as-button: button_idx holds the axis index into value_states
+        float hat_val = mgr.getAxisValue(b.device_path, b.button_idx);
+        return isHatDirectionActive(hat_val, b.analog_type);
+    }
     return mgr.getButtonState(b.device_path, b.button_idx);
 }
 
-template<typename B = ButtonBinding>
-static bool isActionPressed(const B& primary, InputManager& mgr) {
+static bool isActionPressed(const ButtonBinding& primary, InputManager& mgr) {
     if (isPressed(primary, mgr)) return true;
-    if constexpr (has_alternatives<B>::value) {
-        for (const auto& alt : primary.alternatives) {
-            if (isPressed(alt, mgr)) return true;
-        }
+    for (const auto& alt : primary.alternatives) {
+        if (isPressed(alt, mgr)) return true;
     }
     return false;
 }
