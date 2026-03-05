@@ -8,4 +8,5 @@ target_include_directories(settings
 target_link_libraries(settings
     PUBLIC
         nlohmann_json::nlohmann_json
+        patches
 )
