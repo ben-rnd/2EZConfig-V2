@@ -18,8 +18,6 @@ static BindingStore  s_bindings;
 static DWORD         s_originalRefreshRate = 0;
 
 // All Important IO handler — intercepts IN/OUT instructions.
-// Opcodes: 0xEC = IN AL,DX (DJ)  0xEE = OUT DX,AL (DJ)
-//          0x66 0xED = IN AX,DX (Dancer)  0x66 0xEF = OUT DX,AX (Dancer)
 static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
     if (ex->ExceptionRecord->ExceptionCode != EXCEPTION_PRIV_INSTRUCTION)
         return EXCEPTION_CONTINUE_SEARCH;
@@ -114,6 +112,9 @@ static DWORD WINAPI InitThread(void*) {
     }
 
     if(settingsLoaded){
+        if(settings.globalSettings().value("io_emu", true))
+            AddVectoredExceptionHandler(1, IOHandler);
+
         if(settings.globalSettings().value("force_60hz", false)){
             DEVMODEA dm = {};
             dm.dmSize = sizeof(dm);
@@ -131,6 +132,9 @@ static DWORD WINAPI InitThread(void*) {
             SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
         }
 
+        std::string gameId = settings.gameSettings().value("game_id", "");
+        if (!gameId.empty())
+            settings.patchStore().applyPatches(gameId, /*applyEarly=*/true);
     }
 
     s_mgr = new InputManager();
@@ -148,26 +152,22 @@ static DWORD WINAPI InitThread(void*) {
         } catch (...) {
             // Fall through to all-released state (no crash).
         }
-
-        // Apply early patches (e.g. keyboard re-enable) after bindings load, before VEH.
-        std::string gameId = settings.gameSettings().value("game_id", "");
-        if (!gameId.empty())
-            settings.patchStore().applyPatches(gameId, /*applyEarly=*/true);
     }
 
     // Start background threads for input polling and lights
     startInputPollingThread(s_bindings, *s_mgr);
     startLightFlushThread(s_bindings, *s_mgr);
 
-    AddVectoredExceptionHandler(1, IOHandler);
-
-    // Wait for game init, then apply normal patches.
+    // Wait for game init, then apply patches.
     int patchDelayMs = 2000;
     if (settingsLoaded){
         patchDelayMs = settings.globalSettings().value("patch_delay_ms", 2000);
         Sleep(patchDelayMs);
-        
-        //apply patches for real
+
+        // Always brand the game's test menu version string.
+        settings.patchStore().applyVersionPatch("EZ2Config 1.00");
+
+        // Apply user-configured patches.
         std::string gameId = settings.gameSettings().value("game_id", "");
         if (!gameId.empty())
             settings.patchStore().applyPatches(gameId, /*applyEarly=*/false);

@@ -122,14 +122,6 @@
           { "offset": "0x00000000", "bytes": "00" }
         ]
       },
-      {
-        "id": "version_string",
-        "name": "Version String",
-        "description": "Replaces the game version string with EZ2Config branding.",
-        "type": "pattern",
-        "pattern": "Version %d.%02d",
-        "replacement": "EZ2Config 1.00"
-      }
     ]
   },
   "ez2ac_fn": {
@@ -245,14 +237,6 @@
           { "offset": "0x00000000", "bytes": "00" }
         ]
       },
-      {
-        "id": "version_string",
-        "name": "Version String",
-        "description": "Replaces the game version string with EZ2Config branding.",
-        "type": "pattern",
-        "pattern": "Version %d.%02d",
-        "replacement": "EZ2Config 1.00"
-      }
     ]
   },
   "ez2ac_nt": {
@@ -294,14 +278,6 @@
           { "offset": "0x00000000", "bytes": "00" }
         ]
       },
-      {
-        "id": "version_string",
-        "name": "Version String",
-        "description": "Replaces the game version string with EZ2Config branding.",
-        "type": "pattern",
-        "pattern": "Version %d.%02d",
-        "replacement": "EZ2Config 1.00"
-      }
     ]
   },
   "ez2ac_ev": {
@@ -337,14 +313,6 @@
           { "offset": "0x00000000", "bytes": "00" }
         ]
       },
-      {
-        "id": "version_string",
-        "name": "Version String",
-        "description": "Replaces the game version string with EZ2Config branding.",
-        "type": "pattern",
-        "pattern": "Version %d.%02d",
-        "replacement": "EZ2Config 1.00"
-      }
     ]
   }
 }

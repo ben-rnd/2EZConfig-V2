@@ -289,6 +289,14 @@ void PatchStore::applyPatch(const Patch& p) {
     }
 }
 
+void PatchStore::applyVersionPatch(const std::string& replacement) {
+    Patch p;
+    p.type        = PatchType::Pattern;
+    p.pattern     = "Version %d.%02d";
+    p.replacement = replacement;
+    applyPatternPatch(p);
+}
+
 void PatchStore::applyPatches(const std::string& gameId, bool applyEarly) {
     const auto& patches = patchesForGame(gameId);
     PatchApply  target  = applyEarly ? PatchApply::Early : PatchApply::Normal;

@@ -64,6 +64,10 @@ public:
     // applyEarly=false -> apply only apply:"normal" patches
     void applyPatches(const std::string& gameId, bool applyEarly);
 
+    // Always applies the version string patch unconditionally (not controlled by patch state).
+    // Replaces "Version %d.%02d" with replacement in the loaded module image.
+    void applyVersionPatch(const std::string& replacement);
+
 private:
     std::map<std::string, std::vector<Patch>> m_patches;
 
