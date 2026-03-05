@@ -142,7 +142,7 @@ static void renderPatchesTab() {
         return;
     }
 
-    ImGui::BeginChild("##patchScroll", ImVec2(0, ImGui::GetWindowHeight() - 85.0f), false);
+    ImGui::BeginChild("##patchScroll", ImVec2(0, 0), false);
     for (auto& patch : patches) {
         ImGui::PushID(patch.id.c_str());
         renderPatchRow(patch, g_settings, true);
@@ -253,9 +253,17 @@ static void renderUI() {
                 g_settings.gameSettings()["game_id"] = gameId;
                 g_settings.save();
             }
+
+
             ImGui::Separator();
             ImGui::TextUnformatted("Global Settings");
             ImGui::Separator();
+            static bool ioEmu = g_settings.globalSettings().value("io_emu", true);
+            if (ImGui::Checkbox("Enable IO Emulation", &ioEmu)) {
+                g_settings.globalSettings()["io_emu"] = ioEmu;
+                g_settings.save();
+            }
+
             static bool force60hz = g_settings.globalSettings().value("force_60hz", false);
             if (ImGui::Checkbox("Force 60Hz", &force60hz)) {
                 g_settings.globalSettings()["force_60hz"] = force60hz;
@@ -267,6 +275,11 @@ static void renderUI() {
                 g_settings.globalSettings()["high_priority"] = highPriority;
                 g_settings.save();
             }
+
+            ImGui::Separator();
+            ImGui::TextUnformatted("Game Patches");
+            ImGui::Separator();
+            renderPatchesTab();
 
             ImGui::EndTabItem();
         }
@@ -834,12 +847,6 @@ static void renderUI() {
                 ImGui::EndPopup();
             }
 
-            ImGui::EndTabItem();
-        }
-
-        // ---- Patches Tab ----
-        if (!g_isDancer && ImGui::BeginTabItem("Patches")) {
-            renderPatchesTab();
             ImGui::EndTabItem();
         }
 
