@@ -77,6 +77,18 @@ nlohmann::json ButtonBinding::toJson() const {
         j["device_name"] = device_name;
         j["button_idx"]  = button_idx;
     }
+    // Serialize analog_type only when non-default (keeps JSON clean for regular buttons).
+    if (analog_type != ButtonAnalogType::NONE) {
+        j["analog_type"] = (int)analog_type;
+    }
+    // Serialize alternatives only when non-empty.
+    if (!alternatives.empty()) {
+        nlohmann::json alts = nlohmann::json::array();
+        for (const auto& alt : alternatives) {
+            alts.push_back(alt.toJson());
+        }
+        j["alternatives"] = alts;
+    }
     return j;
 }
 
@@ -88,17 +100,27 @@ nlohmann::json ButtonBinding::toJson() const {
         std::string type = j.value("type", "");
         if (type == "Keyboard") {
             b.vk_code = j.value("vk_code", 0);
-            return b;
-        }
-        if (type == "HidButton") {
+        } else if (type == "HidButton") {
             // New format requires device_path key. Old format used device_id / vendor_id — skip.
             if (!j.contains("device_path")) return b;
             b.device_path  = j.value("device_path", "");
             b.device_name  = j.value("device_name", "");
             b.button_idx   = j.value("button_idx", -1);
+        } else {
+            // Unknown type — return empty binding silently
             return b;
         }
-        // Unknown type — return empty binding silently
+
+        // Deserialize analog_type (default NONE if missing — backward compat).
+        b.analog_type = (ButtonAnalogType)j.value("analog_type", 0);
+
+        // Deserialize alternatives (default empty if missing — backward compat).
+        if (j.contains("alternatives") && j["alternatives"].is_array()) {
+            for (const auto& alt_j : j["alternatives"]) {
+                b.alternatives.push_back(ButtonBinding::fromJson(alt_j));
+            }
+        }
+
         return b;
     } catch (...) {
         return ButtonBinding{};

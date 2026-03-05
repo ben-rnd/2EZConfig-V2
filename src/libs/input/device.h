@@ -15,25 +15,43 @@ extern "C" {
 #include <vector>
 #include <cstdint>
 
-// One entry per connected HID device.
-// path = full Windows device path from GetRawInputDeviceInfo(RIDI_DEVICENAME).
-// This is the stable opaque key used for device lookup by the binding layer.
-struct Device {
-    std::string path;   // e.g. "\\?\HID#VID_0810&PID_E501#9&2fc2c90&0&0000#{...}"
-    std::string name;   // product string or "VID_XXXX:PID_XXXX" fallback
+// Analog type for hat-as-button bindings.
+// Regular digital buttons use NONE. Hat switch directions use HS_* values.
+// Matches spice2x ButtonAnalogType.
+enum class ButtonAnalogType {
+    NONE = 0,
+    HS_UP,
+    HS_UP_RIGHT,
+    HS_RIGHT,
+    HS_DOWN_RIGHT,
+    HS_DOWN,
+    HS_DOWN_LEFT,
+    HS_LEFT,
+    HS_UP_LEFT,
+};
 
-    // Pre-built name arrays — index IS the button_idx / axis_idx used in bindings.
-    // button_caps_names[] includes DPad directions from hat switch caps (8 per hat).
-    // value_caps_names[] includes only non-hat value caps (hat is promoted to buttons).
-    std::vector<std::string> button_caps_names;
-    std::vector<std::string> value_caps_names;
+// HID-specific data for a device. Heap-allocated, owned by Device.
+// Null if device has no usable HID caps (keyboard, mouse, vendor-specific).
+// Matches spice2x DeviceHIDInfo pattern.
+struct DeviceHIDInfo {
+    PHIDP_PREPARSED_DATA preparsed  = nullptr;
+    HIDP_CAPS            caps       = {};
+    HANDLE               hid_handle = INVALID_HANDLE_VALUE;
 
-    // Output cap name arrays — pre-built for light output.
-    std::vector<std::string> button_output_caps_names;
-    std::vector<std::string> value_output_caps_names;
+    // Input cap lists for WM_INPUT parsing.
+    std::vector<HIDP_BUTTON_CAPS> button_caps_list;
+    std::vector<HIDP_VALUE_CAPS>  value_caps_list;  // includes hat switch caps
 
-    // Output cap struct lists — parallel to button_output_caps_names / value_output_caps_names.
-    // Required for HidP_SetButtons / HidP_SetUsageValue in the output flush thread.
+    // Live input state — updated under cs_input by WM_INPUT handler.
+    // button_states[i] matches button_caps_names[i].
+    std::vector<bool>  button_states;
+    // value_states[i] is float. For regular axes: [0.0, 1.0] normalized.
+    // For hat switches: -1.0f = neutral, 0.0-1.0 = direction scaled from LogicalMin..LogicalMax.
+    std::vector<float> value_states;
+    // value_states_raw[i] is the raw LONG from HidP_GetUsageValue after sign-extension fix.
+    std::vector<LONG>  value_states_raw;
+
+    // Output cap lists for output report building.
     std::vector<HIDP_BUTTON_CAPS> button_output_caps_list;
     std::vector<HIDP_VALUE_CAPS>  value_output_caps_list;
     // Specific HID usage for each value_output_caps_list entry.
@@ -43,55 +61,63 @@ struct Device {
     // Output state arrays — flat bool/float indexed same as button_output_caps_names / value_output_caps_names.
     std::vector<bool>  button_output_states;
     std::vector<float> value_output_states;
+};
 
-    // Persistent GENERIC_READ|GENERIC_WRITE handle for HidD_SetOutputReport.
-    // INVALID_HANDLE_VALUE if device denied write access (game controllers) — output silently skipped.
-    HANDLE hid_handle = INVALID_HANDLE_VALUE;
+// One entry per connected HID device.
+// path = full Windows device path from GetRawInputDeviceInfo(RIDI_DEVICENAME).
+// This is the stable opaque key used for device lookup by the binding layer.
+struct Device {
+    std::string path;   // e.g. "\\?\HID#VID_0810&PID_E501#9&2fc2c90&0&0000#{...}"
+    std::string name;   // product string or "VID_XXXX:PID_XXXX" fallback
 
-    // Signals output flush thread that state has changed.
+    // Pre-built name arrays — index IS the button_idx / axis_idx used in bindings.
+    // Hat switch caps appear in value_caps_names (not promoted to buttons).
+    std::vector<std::string> button_caps_names;
+    // value_caps_names[] includes hat switch caps (named "Hat Switch").
+    std::vector<std::string> value_caps_names;
+
+    // Output cap name arrays — pre-built for light output.
+    std::vector<std::string> button_output_caps_names;
+    std::vector<std::string> value_output_caps_names;
+
+    // Per-device locks (inline, not heap-allocated).
+    CRITICAL_SECTION cs_input;   // protects DeviceHIDInfo button_states, value_states
+    CRITICAL_SECTION cs_output;  // protects DeviceHIDInfo output_states, output_pending, output_enabled
+
+    // Device must opt-in to receive light writes.
+    // Set true when hid_handle != INVALID_HANDLE_VALUE && OutputReportByteLength > 0.
+    bool output_enabled = false;
+
+    // Signals output thread that state has changed.
     bool output_pending = false;
 
-    // Live state — updated under lock by WM_INPUT handler.
-    // button_states[i] matches button_caps_names[i] exactly.
-    std::vector<bool>  button_states;
-    // value_states[i] is normalized float [0.0, 1.0]. 0.5 = center.
-    // Relative axes accumulate into value_states; absolute axes normalize directly.
-    std::vector<float> value_states;
-    // value_states_raw[i] is the raw LONG from HidP_GetUsageValue after sign-extension fix.
-    std::vector<LONG>  value_states_raw;
+    // HID-specific data. Null if device has no usable HID caps.
+    DeviceHIDInfo* hid = nullptr;
 
     // Internal: Raw Input kernel handle (from GetRawInputDeviceList, NOT CreateFile).
     HANDLE raw_handle = nullptr;
 
-    // Internal: Preparsed HID data (from RIDI_PREPARSEDDATA, freed with LocalFree).
-    PHIDP_PREPARSED_DATA preparsed = nullptr;
-    HIDP_CAPS caps = {};
-
-    // Internal: cap lists for WM_INPUT parsing.
-    std::vector<HIDP_BUTTON_CAPS> button_caps_list;  // excludes hat caps
-    std::vector<HIDP_VALUE_CAPS>  value_caps_list;   // excludes hat caps (hat->buttons)
-
-    // hat_cap_offsets[i] = starting button_states[] index for hat cap i.
-    // Length == number of hat caps found.
-    std::vector<int> hat_cap_offsets;
-
-    // Internal: hat HIDP_VALUE_CAPS entries (used in WM_INPUT handler).
-    std::vector<HIDP_VALUE_CAPS> hat_caps_list;
-
-    bool isValid() const { return raw_handle != nullptr && preparsed != nullptr; }
+    bool isValid() const { return raw_handle != nullptr && hid != nullptr; }
 
     void destroy() {
-        if (preparsed) { LocalFree(preparsed); preparsed = nullptr; }
-        if (hid_handle != INVALID_HANDLE_VALUE) {
-            CloseHandle(hid_handle);
-            hid_handle = INVALID_HANDLE_VALUE;
+        if (hid) {
+            if (hid->preparsed) { LocalFree(hid->preparsed); hid->preparsed = nullptr; }
+            if (hid->hid_handle != INVALID_HANDLE_VALUE) {
+                CloseHandle(hid->hid_handle);
+                hid->hid_handle = INVALID_HANDLE_VALUE;
+            }
+            delete hid;
+            hid = nullptr;
         }
+        DeleteCriticalSection(&cs_input);
+        DeleteCriticalSection(&cs_output);
     }
 };
 
 // Result returned by InputManager::pollCapture().
 struct CaptureResult {
-    std::string path;        // full device path — same as Device::path
-    int         button_idx;  // flat index into button_caps_names[] and button_states[]
-    std::string device_name; // same as Device::name
+    std::string     path;         // full device path — same as Device::path
+    int             button_idx;   // flat index into button_caps_names[]/button_states[] or value_states[] for hats
+    std::string     device_name;  // same as Device::name
+    ButtonAnalogType analog_type = ButtonAnalogType::NONE;  // non-NONE for hat direction captures
 };

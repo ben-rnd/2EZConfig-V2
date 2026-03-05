@@ -24,10 +24,15 @@ struct ButtonBinding {
     // HID button: device_path + button_idx (device_path non-empty, vk_code==0)
     // Keyboard:   vk_code != 0 (device_path empty)
     // Unbound:    device_path empty AND vk_code == 0
-    std::string device_path;    // full Windows device path from InputManager::getDevices()[i].path
-    int         button_idx = -1;
-    int         vk_code    = 0;
-    std::string device_name;    // informational: for [Disconnected] display fallback
+    std::string      device_path;    // full Windows device path from InputManager::getDevices()[i].path
+    int              button_idx = -1;
+    int              vk_code    = 0;
+    std::string      device_name;    // informational: for [Disconnected] display fallback
+    ButtonAnalogType analog_type = ButtonAnalogType::NONE;  // hat-as-button direction
+
+    // Alternative bindings for multi-binding support (Phase 2.1).
+    // SFINAE removal in dll_input.cpp uses this directly.
+    std::vector<ButtonBinding> alternatives;
 
     bool isSet()      const { return (!device_path.empty() && button_idx >= 0) || vk_code != 0; }
     bool isKeyboard() const { return vk_code != 0; }
@@ -37,6 +42,8 @@ struct ButtonBinding {
         button_idx = -1;
         vk_code    = 0;
         device_name.clear();
+        analog_type = ButtonAnalogType::NONE;
+        alternatives.clear();
     }
 
     // Returns: "Button 3 [EZ2CATCH USB]" or "[Disconnected] EZ2CATCH USB" or "Key: A" or "(unbound)"
@@ -51,6 +58,7 @@ struct ButtonBinding {
         b.device_path  = r.path;
         b.button_idx   = r.button_idx;
         b.device_name  = r.device_name;
+        b.analog_type  = r.analog_type;
         return b;
     }
 };

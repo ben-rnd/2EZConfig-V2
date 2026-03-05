@@ -336,7 +336,7 @@ static void renderUI() {
                     std::vector<Device> devs = g_input->getDevices();
                     std::vector<Device> axisDevs;
                     for (auto& d : devs)
-                        if (!d.value_caps_names.empty() && d.caps.UsagePage == 0x01)
+                        if (!d.value_caps_names.empty() && d.hid && d.hid->caps.UsagePage == 0x01)
                             axisDevs.push_back(d);
 
                     // 3-column table: [name | binding | Edit button]
