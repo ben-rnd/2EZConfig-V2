@@ -210,14 +210,20 @@ void PatchStore::saveStateHelper(const std::vector<Patch>& patches, json& out) c
 
 void PatchStore::loadState(const json& patchState) {
     for (auto& [gameId, patches] : m_patches) {
-        loadStateHelper(patches, patchState);
+        // patchState is scoped by game_id: { "ez2ac_fn_ex": { "patch_id": {...} } }
+        if (patchState.contains(gameId) && patchState[gameId].is_object()) {
+            loadStateHelper(patches, patchState[gameId]);
+        }
     }
 }
 
 json PatchStore::saveState() const {
     json out = json::object();
     for (const auto& [gameId, patches] : m_patches) {
-        saveStateHelper(patches, out);
+        // Save per game_id so same-named patches across games don't collide.
+        json gameOut = json::object();
+        saveStateHelper(patches, gameOut);
+        out[gameId] = gameOut;
     }
     return out;
 }
