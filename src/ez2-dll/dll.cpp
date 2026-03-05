@@ -11,9 +11,10 @@
 #include "settings.h"
 #include "strings.h"
 
-static HMODULE       s_dllModule   = nullptr;
-static InputManager* s_mgr         = nullptr;
+static HMODULE       s_dllModule          = nullptr;
+static InputManager* s_mgr                = nullptr;
 static BindingStore  s_bindings;
+static DWORD         s_originalRefreshRate = 0;
 
 // VEH handler — intercepts privileged IN/OUT instructions.
 // Opcodes: 0xEC = IN AL,DX (DJ)  0xEE = OUT DX,AL (DJ)
@@ -111,6 +112,20 @@ static DWORD WINAPI InitThread(void*) {
         }
     }
 
+    // Force 60Hz refresh rate if enabled in game settings.
+    if (settingsLoaded && settings.globalSettings().value("force_60hz", false)) {
+        DEVMODEA dm = {};
+        dm.dmSize = sizeof(dm);
+        if (EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &dm)) {
+            s_originalRefreshRate = dm.dmDisplayFrequency;
+            if (dm.dmDisplayFrequency != 60) {
+                dm.dmDisplayFrequency = 60;
+                dm.dmFields = DM_DISPLAYFREQUENCY;
+                ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
+            }
+        }
+    }
+
     // Create InputManager — constructor waits for HWND to be ready (up to 500ms).
     s_mgr = new InputManager();
 
@@ -144,6 +159,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         s_dllModule = hModule;
         CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
+    }
+    if (reason == DLL_PROCESS_DETACH) {
+        // Restore original refresh rate if we changed it.
+        if (s_originalRefreshRate != 0 && s_originalRefreshRate != 60) {
+            DEVMODEA dm = {};
+            dm.dmSize = sizeof(dm);
+            dm.dmDisplayFrequency = s_originalRefreshRate;
+            dm.dmFields = DM_DISPLAYFREQUENCY;
+            ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
+        }
     }
     return TRUE;
 }
