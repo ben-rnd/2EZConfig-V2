@@ -4,7 +4,7 @@
 #include <windows.h>
 #include <type_traits>
 
-// ---- Name arrays (must match strings.h exactly — these are JSON keys) ----
+// Name arrays — must match strings.h exactly (these are JSON keys).
 
 const char* const s_ioButtonNames[] = {
     "Test", "Service",
@@ -37,28 +37,58 @@ const char* const s_lightNames[] = {
 };
 const int LIGHT_NAME_COUNT = 23;
 
-// ---- Pre-computed port cache ----
-// VEH handler reads these directly — single volatile read, zero function calls.
-// Background polling thread updates at ~1ms.
+// DJ button indices into BindingStore::buttons[] — matches s_ioButtonNames[].
+enum DJButton {
+    DJ_TEST, DJ_SERVICE,
+    DJ_EFF1, DJ_EFF2, DJ_EFF3, DJ_EFF4,
+    DJ_P1_START, DJ_P2_START,
+    DJ_P1_1, DJ_P1_2, DJ_P1_3, DJ_P1_4, DJ_P1_5, DJ_P1_PEDAL,
+    DJ_P2_1, DJ_P2_2, DJ_P2_3, DJ_P2_4, DJ_P2_5, DJ_P2_PEDAL
+};
 
-volatile uint8_t  s_djPortCache[7]     = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
+// Dancer button indices into BindingStore::dancerButtons[] — matches s_dancerButtonNames[].
+enum DancerButton {
+    DN_TEST, DN_SERVICE,
+    DN_P1_LEFT, DN_P1_CENTRE, DN_P1_RIGHT,
+    DN_P2_LEFT, DN_P2_CENTRE, DN_P2_RIGHT,
+    DN_P1_L_TOP, DN_P1_L_BOT, DN_P1_R_TOP, DN_P1_R_BOT,
+    DN_P2_L_TOP, DN_P2_L_BOT, DN_P2_R_TOP, DN_P2_R_BOT
+};
+
+// DJ IN button ports — bit-to-button mapping (active-low).
+// -1 = unused bit (stays high / released).
+static const int s_djInMap[3][8] = {
+    // Port 0x101: Starts + Effectors + Service/Test
+    { DJ_P1_START, DJ_P2_START, DJ_EFF1, DJ_EFF2, DJ_EFF3, DJ_EFF4, DJ_SERVICE, DJ_TEST },
+    // Port 0x102: P1 keys + pedal
+    { DJ_P1_1, DJ_P1_2, DJ_P1_3, DJ_P1_4, DJ_P1_5, -1, -1, DJ_P1_PEDAL },
+    // Port 0x106: P2 keys + pedal
+    { DJ_P2_1, DJ_P2_2, DJ_P2_3, DJ_P2_4, DJ_P2_5, -1, -1, DJ_P2_PEDAL },
+};
+
+// Dancer foot panels per port — 3 panels, each clears a 4-bit nibble.
+static const int s_dancerFeetP1[] = { DN_P1_LEFT, DN_P1_CENTRE, DN_P1_RIGHT };
+static const int s_dancerFeetP2[] = { DN_P2_LEFT, DN_P2_CENTRE, DN_P2_RIGHT };
+
+// Dancer hand sensors — maps sensor index to bit position in port 0x306.
+static const int s_handSensorBit[8] = { 11, 12, 10, 13, 9, 14, 8, 15 };
+
+// Pre-computed port cache. VEH handler reads from here (single volatile read).
+volatile uint8_t  s_djPortCache[7]    = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
 volatile uint16_t s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
 
-// ---- SFINAE helper: detect if ButtonBinding has an 'alternatives' member ----
-
+// SFINAE: detect if ButtonBinding has an 'alternatives' member (added by Phase 2.1).
 template<typename T, typename = void>
 struct has_alternatives : std::false_type {};
 template<typename T>
 struct has_alternatives<T, std::void_t<decltype(std::declval<T>().alternatives)>> : std::true_type {};
 
-// ---- Returns true if a single ButtonBinding is currently pressed ----
 static bool isPressed(const ButtonBinding& b, InputManager& mgr) {
     if (!b.isSet()) return false;
     if (b.isKeyboard()) return (GetAsyncKeyState(b.vk_code) & 0x8000) != 0;
     return mgr.getButtonState(b.device_path, b.button_idx);
 }
 
-// ---- Returns true if primary OR any alternative binding is pressed ----
 template<typename B = ButtonBinding>
 static bool isActionPressed(const B& primary, InputManager& mgr) {
     if (isPressed(primary, mgr)) return true;
@@ -70,88 +100,65 @@ static bool isActionPressed(const B& primary, InputManager& mgr) {
     return false;
 }
 
-// ---- Port computation (called by polling thread, NOT by VEH handler) ----
+// Compute active-low button byte from a bit-to-button map.
+static uint8_t computeButtonPort(const int map[8], const BindingStore& bs, InputManager& mgr) {
+    uint8_t result = 0xFF;
+    for (int bit = 0; bit < 8; ++bit) {
+        if (map[bit] >= 0 && isActionPressed(bs.buttons[map[bit]], mgr))
+            result &= ~(1 << bit);
+    }
+    return result;
+}
+
+// Compute dancer foot port — 3 panels, each clears a 4-bit nibble. Result inverted.
+static uint16_t computeFeetPort(const int panels[3], const BindingStore& bs, InputManager& mgr) {
+    uint16_t output = 0x0FFF;
+    for (int i = 0; i < 3; ++i) {
+        if (isActionPressed(bs.dancerButtons[panels[i]], mgr))
+            output &= ~(0xF << (i * 4));
+    }
+    return static_cast<uint16_t>(~output);
+}
+
+// Compute dancer hand sensor + test/service port. AND masks then XOR 0xFF00.
+static uint16_t computeHandsPort(const BindingStore& bs, InputManager& mgr) {
+    uint16_t output = 0xFFFF;
+
+    for (int i = 0; i < 8; ++i) {
+        if (isActionPressed(bs.dancerButtons[DN_P1_L_TOP + i], mgr))
+            output &= ~(1 << s_handSensorBit[i]);
+    }
+
+    static const uint16_t TEST_MASK    = 0xFF00 | (1 << 5);
+    static const uint16_t SERVICE_MASK = 0xFF00 | (1 << 4);
+    if (isActionPressed(bs.dancerButtons[DN_TEST],    mgr)) output &= TEST_MASK;
+    if (isActionPressed(bs.dancerButtons[DN_SERVICE], mgr)) output &= SERVICE_MASK;
+
+    return output ^ 0xFF00;
+}
 
 static uint8_t computeDJPortByte(uint16_t port, const BindingStore& bs, InputManager& mgr) {
-    uint8_t result = 0xFF;
     switch (port) {
-        case 0x101:
-            if (isActionPressed(bs.buttons[6],  mgr)) result &= ~(1 << 0);  // P1 Start
-            if (isActionPressed(bs.buttons[7],  mgr)) result &= ~(1 << 1);  // P2 Start
-            if (isActionPressed(bs.buttons[2],  mgr)) result &= ~(1 << 2);  // Effector 1
-            if (isActionPressed(bs.buttons[3],  mgr)) result &= ~(1 << 3);  // Effector 2
-            if (isActionPressed(bs.buttons[4],  mgr)) result &= ~(1 << 4);  // Effector 3
-            if (isActionPressed(bs.buttons[5],  mgr)) result &= ~(1 << 5);  // Effector 4
-            if (isActionPressed(bs.buttons[1],  mgr)) result &= ~(1 << 6);  // Service
-            if (isActionPressed(bs.buttons[0],  mgr)) result &= ~(1 << 7);  // Test
-            return result;
-        case 0x102:
-            if (isActionPressed(bs.buttons[8],  mgr)) result &= ~(1 << 0);  // P1 1
-            if (isActionPressed(bs.buttons[9],  mgr)) result &= ~(1 << 1);  // P1 2
-            if (isActionPressed(bs.buttons[10], mgr)) result &= ~(1 << 2);  // P1 3
-            if (isActionPressed(bs.buttons[11], mgr)) result &= ~(1 << 3);  // P1 4
-            if (isActionPressed(bs.buttons[12], mgr)) result &= ~(1 << 4);  // P1 5
-            // bits 5,6: unused — remain 1 per ISA spec
-            if (isActionPressed(bs.buttons[13], mgr)) result &= ~(1 << 7);  // P1 Pedal
-            return result;
-        case 0x106:
-            if (isActionPressed(bs.buttons[14], mgr)) result &= ~(1 << 0);  // P2 1
-            if (isActionPressed(bs.buttons[15], mgr)) result &= ~(1 << 1);  // P2 2
-            if (isActionPressed(bs.buttons[16], mgr)) result &= ~(1 << 2);  // P2 3
-            if (isActionPressed(bs.buttons[17], mgr)) result &= ~(1 << 3);  // P2 4
-            if (isActionPressed(bs.buttons[18], mgr)) result &= ~(1 << 4);  // P2 5
-            // bits 5,6: unused — remain 1 per ISA spec
-            if (isActionPressed(bs.buttons[19], mgr)) result &= ~(1 << 7);  // P2 Pedal
-            return result;
-        case 0x103:  // P1 Turntable
-            return bs.analogs[0].getPosition(mgr, mgr.getVttPosition(0));
-        case 0x104:  // P2 Turntable
-            return bs.analogs[1].getPosition(mgr, mgr.getVttPosition(1));
-        default:
-            return 0xFF;
+        case 0x101: return computeButtonPort(s_djInMap[0], bs, mgr);
+        case 0x102: return computeButtonPort(s_djInMap[1], bs, mgr);
+        case 0x106: return computeButtonPort(s_djInMap[2], bs, mgr);
+        case 0x103: return bs.analogs[0].getPosition(mgr, mgr.getVttPosition(0));
+        case 0x104: return bs.analogs[1].getPosition(mgr, mgr.getVttPosition(1));
+        default:    return 0xFF;
     }
 }
 
 static uint16_t computeDancerPortWord(uint16_t port, const BindingStore& bs, InputManager& mgr) {
     switch (port) {
-        case 0x300: {
-            uint16_t output = 0x0FFF;
-            if (isActionPressed(bs.dancerButtons[2],  mgr)) output &= 0x0FF0;  // P1 Left
-            if (isActionPressed(bs.dancerButtons[3],  mgr)) output &= 0x0F0F;  // P1 Centre
-            if (isActionPressed(bs.dancerButtons[4],  mgr)) output &= 0x00FF;  // P1 Right
-            return static_cast<uint16_t>(~output);
-        }
-        case 0x302: {
-            uint16_t output = 0x0FFF;
-            if (isActionPressed(bs.dancerButtons[5],  mgr)) output &= 0x0FF0;  // P2 Left
-            if (isActionPressed(bs.dancerButtons[6],  mgr)) output &= 0x0F0F;  // P2 Centre
-            if (isActionPressed(bs.dancerButtons[7],  mgr)) output &= 0x00FF;  // P2 Right
-            return static_cast<uint16_t>(~output);
-        }
-        case 0x304:
-            return 0x0000;
-        case 0x306: {
-            uint16_t output = 0xFFFF;
-            if (isActionPressed(bs.dancerButtons[8],  mgr)) output &= 0xF7FF;  // P1 L Top
-            if (isActionPressed(bs.dancerButtons[9],  mgr)) output &= 0xEFFF;  // P1 L Bottom
-            if (isActionPressed(bs.dancerButtons[10], mgr)) output &= 0xFBFF;  // P1 R Top
-            if (isActionPressed(bs.dancerButtons[11], mgr)) output &= 0xDFFF;  // P1 R Bottom
-            if (isActionPressed(bs.dancerButtons[12], mgr)) output &= 0xFDFF;  // P2 L Top
-            if (isActionPressed(bs.dancerButtons[13], mgr)) output &= 0xBFFF;  // P2 L Bottom
-            if (isActionPressed(bs.dancerButtons[14], mgr)) output &= 0xFEFF;  // P2 R Top
-            if (isActionPressed(bs.dancerButtons[15], mgr)) output &= 0x7FFF;  // P2 R Bottom
-            if (isActionPressed(bs.dancerButtons[0],  mgr)) output &= 0xFF20;  // Test
-            if (isActionPressed(bs.dancerButtons[1],  mgr)) output &= 0xFF10;  // Service
-            return output ^ 0xFF00;
-        }
-        default:
-            return 0xFFFF;
+        case 0x300: return computeFeetPort(s_dancerFeetP1, bs, mgr);
+        case 0x302: return computeFeetPort(s_dancerFeetP2, bs, mgr);
+        case 0x304: return 0x0000;
+        case 0x306: return computeHandsPort(bs, mgr);
+        default:    return 0xFFFF;
     }
 }
 
-// ---- Background input polling thread ----
-// Pre-computes all port values at ~1ms intervals.
-// VEH handler becomes a single volatile array read.
+// Polling thread — pre-computes all port values at ~1ms.
 
 struct InputPollArgs {
     const BindingStore* bs;
@@ -166,17 +173,14 @@ static DWORD WINAPI inputPollingThread(void* arg) {
     for (;;) {
         Sleep(1);
 
-        // DJ ports
         s_djPortCache[1] = computeDJPortByte(0x101, bs, mgr);
         s_djPortCache[2] = computeDJPortByte(0x102, bs, mgr);
-        s_djPortCache[3] = computeDJPortByte(0x103, bs, mgr);  // P1 TT
-        s_djPortCache[4] = computeDJPortByte(0x104, bs, mgr);  // P2 TT
+        s_djPortCache[3] = computeDJPortByte(0x103, bs, mgr);
+        s_djPortCache[4] = computeDJPortByte(0x104, bs, mgr);
         s_djPortCache[6] = computeDJPortByte(0x106, bs, mgr);
 
-        // Dancer ports
         s_dancerPortCache[0] = computeDancerPortWord(0x300, bs, mgr);
         s_dancerPortCache[1] = computeDancerPortWord(0x302, bs, mgr);
-        // s_dancerPortCache[2] = 0x0000 always (port 0x304)
         s_dancerPortCache[3] = computeDancerPortWord(0x306, bs, mgr);
     }
     return 0;
