@@ -70,6 +70,7 @@ static std::string axis_label(USAGE usage_page, USAGE usage) {
             case 0x36: return "Slider";
             case 0x37: return "Dial";
             case 0x38: return "Wheel";
+            case 0x39: return "Hat Switch";
         }
         std::ostringstream ss;
         ss << "Axis 0x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << usage;
@@ -93,17 +94,50 @@ static std::string output_label(USAGE usage_page, USAGE usage) {
     return ss.str();
 }
 
-// DPad direction names indexed 0-7 (0=Up, clockwise).
-static const char* DPAD_NAMES[8] = {
-    "DPad Up",
-    "DPad Up-Right",
-    "DPad Right",
-    "DPad Down-Right",
-    "DPad Down",
-    "DPad Down-Left",
-    "DPad Left",
-    "DPad Up-Left"
-};
+// ---------------------------------------------------------------------------
+// Hat direction helpers (spice2x HAT_SWITCH_INCREMENT pattern)
+// ---------------------------------------------------------------------------
+
+static const float HAT_SWITCH_INCREMENT = 1.0f / 7.0f;
+
+// Get the primary ButtonAnalogType for a hat float value.
+// Returns NONE if hat_val is neutral (-1.0f).
+static ButtonAnalogType getHatDirection(float hat_val) {
+    if (hat_val < 0.0f) return ButtonAnalogType::NONE;
+    // 8 directions: 0/7, 1/7, ..., 7/7
+    // Find closest direction index.
+    float pos = hat_val / HAT_SWITCH_INCREMENT;
+    int dir = (int)(pos + 0.5f);
+    if (dir < 0) dir = 0;
+    if (dir > 7) dir = 7;
+    // Map dir index to ButtonAnalogType: 0=UP, 1=UP_RIGHT, ..., 7=UP_LEFT
+    return (ButtonAnalogType)(dir + 1);  // +1 because NONE=0, HS_UP=1
+}
+
+// Check if a hat float value matches a specific direction.
+// Diagonals activate both adjacent cardinal directions.
+// Uses +/- 0.5 * HAT_SWITCH_INCREMENT tolerance.
+static bool isHatDirectionActive(float hat_val, ButtonAnalogType dir) {
+    if (hat_val < 0.0f || dir == ButtonAnalogType::NONE) return false;
+    int dir_idx = (int)dir - 1;  // 0=UP, 1=UP_RIGHT, ..., 7=UP_LEFT
+    float dir_center = (float)dir_idx * HAT_SWITCH_INCREMENT;
+    float tolerance = HAT_SWITCH_INCREMENT * 0.5f;
+
+    // Check exact match with tolerance
+    float diff = hat_val - dir_center;
+    if (diff >= -tolerance && diff <= tolerance) return true;
+
+    // Handle wrap-around (UP_LEFT at 7/7 is adjacent to UP at 0/7)
+    float diff_wrap_pos = (hat_val + 1.0f + HAT_SWITCH_INCREMENT) - dir_center;
+    float diff_wrap_neg = hat_val - (dir_center + 1.0f + HAT_SWITCH_INCREMENT);
+    if (diff_wrap_pos >= -tolerance && diff_wrap_pos <= tolerance) return true;
+    if (diff_wrap_neg >= -tolerance && diff_wrap_neg <= tolerance) return true;
+
+    // For cardinal directions, check if a diagonal is active that includes this cardinal.
+    // E.g., UP is active when UP_RIGHT (1/7) or UP_LEFT (7/7) is the hat value.
+    // This is handled by the tolerance check above for adjacent directions.
+    return false;
+}
 
 // ---------------------------------------------------------------------------
 // VTT binding
@@ -141,40 +175,135 @@ struct InputManagerImpl {
 
     // Previous button states for edge detection (keyed by device path).
     std::map<std::string, std::vector<bool>> prev_button_states;
+    // Previous hat value states for capture edge detection (keyed by device path).
+    std::map<std::string, std::vector<float>> prev_hat_states;
 
-    // Output flush thread and its lock.
-    CRITICAL_SECTION output_lock;
-    HANDLE           output_thread = nullptr;
+    // Output event (auto-reset) — signals output thread on setLight().
+    HANDLE output_event   = nullptr;
+    // Output thread — wakes on event, processes pending devices.
+    HANDLE output_thread  = nullptr;
+    // Flush thread — periodic 500ms writes for all output-enabled devices.
+    HANDLE flush_thread   = nullptr;
 
     InputManagerImpl() {
         InitializeCriticalSection(&devices_lock);
         InitializeCriticalSection(&capture_lock);
-        InitializeCriticalSection(&output_lock);
     }
     ~InputManagerImpl() {
         DeleteCriticalSection(&devices_lock);
         DeleteCriticalSection(&capture_lock);
-        DeleteCriticalSection(&output_lock);
     }
 };
 
 // ---------------------------------------------------------------------------
-// Static Impl pointer for WndProc (one instance assumed)
+// Device output writing (Pattern 5 — spice2x device_write_output)
 // ---------------------------------------------------------------------------
 
-static InputManagerImpl* g_impl = nullptr;
+// Caller must hold dev.cs_output. Builds and writes one HID output report.
+static void device_write_output(Device& dev) {
+    if (!dev.hid || dev.hid->hid_handle == INVALID_HANDLE_VALUE) return;
+    USHORT report_size = dev.hid->caps.OutputReportByteLength;
+    if (report_size == 0) return;
+
+    CHAR* report = new CHAR[report_size]();  // zero-initialized
+
+    // Button outputs — build ON and OFF usage lists.
+    int state_offset = 0;
+    for (auto& bc : dev.hid->button_output_caps_list) {
+        int btn_count = (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
+        if (btn_count <= 0) { continue; }
+
+        std::vector<USAGE> on_usages, off_usages;
+        for (int b = 0; b < btn_count; b++) {
+            USAGE usg = bc.Range.UsageMin + (USAGE)b;
+            if (state_offset + b < (int)dev.hid->button_output_states.size() &&
+                dev.hid->button_output_states[state_offset + b]) {
+                on_usages.push_back(usg);
+            } else {
+                off_usages.push_back(usg);
+            }
+        }
+
+        // HidP_SetButtons for ON usages.
+        if (!on_usages.empty()) {
+            ULONG usage_count = (ULONG)on_usages.size();
+            NTSTATUS st = HidP_SetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+                                           on_usages.data(), &usage_count,
+                                           dev.hid->preparsed, report, report_size);
+            if (st == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
+                // Flush intermediate report via HidD_SetOutputReport, start fresh.
+                HidD_SetOutputReport(dev.hid->hid_handle, report, report_size);
+                delete[] report;
+                report = new CHAR[report_size]();
+                usage_count = (ULONG)on_usages.size();
+                HidP_SetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+                                on_usages.data(), &usage_count,
+                                dev.hid->preparsed, report, report_size);
+            }
+        }
+
+        // HidP_UnsetButtons for OFF usages — explicitly clear lights.
+        if (!off_usages.empty()) {
+            ULONG usage_count = (ULONG)off_usages.size();
+            NTSTATUS st = HidP_UnsetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+                                             off_usages.data(), &usage_count,
+                                             dev.hid->preparsed, report, report_size);
+            if (st == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
+                HidD_SetOutputReport(dev.hid->hid_handle, report, report_size);
+                delete[] report;
+                report = new CHAR[report_size]();
+                usage_count = (ULONG)off_usages.size();
+                HidP_UnsetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+                                  off_usages.data(), &usage_count,
+                                  dev.hid->preparsed, report, report_size);
+            }
+        }
+
+        state_offset += btn_count;
+    }
+
+    // Value outputs — HidP_SetUsageValue per entry.
+    for (size_t vi = 0; vi < dev.hid->value_output_caps_list.size(); vi++) {
+        auto& vc = dev.hid->value_output_caps_list[vi];
+        if (vi >= dev.hid->value_output_states.size() || vi >= dev.hid->value_output_usages.size()) break;
+        float norm = dev.hid->value_output_states[vi];
+        LONG lmin = vc.LogicalMin, lmax = vc.LogicalMax;
+        LONG lval = (lmax > lmin)
+            ? lmin + (LONG)lroundf((float)(lmax - lmin) * norm) : lmin;
+        if (lval > lmax) lval = lmax;
+        if (lval < lmin) lval = lmin;
+        ULONG uval = (ULONG)lval;
+        NTSTATUS st = HidP_SetUsageValue(HidP_Output, vc.UsagePage, vc.LinkCollection,
+                                          dev.hid->value_output_usages[vi], uval,
+                                          dev.hid->preparsed, report, report_size);
+        if (st == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
+            HidD_SetOutputReport(dev.hid->hid_handle, report, report_size);
+            delete[] report;
+            report = new CHAR[report_size]();
+            HidP_SetUsageValue(HidP_Output, vc.UsagePage, vc.LinkCollection,
+                               dev.hid->value_output_usages[vi], uval,
+                               dev.hid->preparsed, report, report_size);
+        }
+    }
+
+    // Final report — WriteFile.
+    DWORD written = 0;
+    WriteFile(dev.hid->hid_handle, report, report_size, &written, nullptr);
+    delete[] report;
+}
 
 // ---------------------------------------------------------------------------
 // Device enumeration
 // ---------------------------------------------------------------------------
 
 static void devices_reload(InputManagerImpl* impl) {
-    // Free old preparsed data.
+    // Free old devices.
     for (auto& dev : impl->devices) {
         dev.destroy();
     }
     impl->devices.clear();
     impl->prev_button_states.clear();
+    impl->prev_hat_states.clear();
 
     UINT device_count = 0;
     if (GetRawInputDeviceList(nullptr, &device_count, sizeof(RAWINPUTDEVICELIST)) == (UINT)-1)
@@ -228,7 +357,6 @@ static void devices_reload(InputManagerImpl* impl) {
         }
 
         // Skip vendor-specific top-level collections (usage page 0xFF**).
-        // These cause slow enumeration on some devices (e.g. Corsair keyboards).
         if ((caps.UsagePage >> 8) == 0xFF) {
             LocalFree(preparsed);
             continue;
@@ -237,15 +365,17 @@ static void devices_reload(InputManagerImpl* impl) {
         Device dev;
         dev.path       = path;
         dev.raw_handle = entry.hDevice;
-        dev.preparsed  = preparsed;
-        dev.caps       = caps;
+
+        // Allocate DeviceHIDInfo sub-struct.
+        dev.hid = new DeviceHIDInfo();
+        dev.hid->preparsed = preparsed;
+        dev.hid->caps      = caps;
 
         // -----------------------------------------------------------------
         // Open persistent handle — GENERIC_READ|GENERIC_WRITE for output
         // sending (HidD_SetOutputReport) and HidD_GetIndexedString lookups.
-        // Stored in dev.hid_handle; flush thread skips if INVALID_HANDLE_VALUE.
         // -----------------------------------------------------------------
-        dev.hid_handle = CreateFileA(
+        dev.hid->hid_handle = CreateFileA(
             path.c_str(),
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -256,15 +386,15 @@ static void devices_reload(InputManagerImpl* impl) {
         // -----------------------------------------------------------------
         {
             bool got_name = false;
-            if (dev.hid_handle != INVALID_HANDLE_VALUE) {
+            if (dev.hid->hid_handle != INVALID_HANDLE_VALUE) {
                 wchar_t wbuf[256] = {};
-                if (HidD_GetProductString(dev.hid_handle, wbuf, sizeof(wbuf))) {
+                if (HidD_GetProductString(dev.hid->hid_handle, wbuf, sizeof(wbuf))) {
                     std::string s = wide_to_utf8(wbuf);
                     if (!s.empty()) { dev.name = s; got_name = true; }
                 }
                 if (!got_name) {
                     wchar_t mbuf[256] = {};
-                    if (HidD_GetManufacturerString(dev.hid_handle, mbuf, sizeof(mbuf))) {
+                    if (HidD_GetManufacturerString(dev.hid->hid_handle, mbuf, sizeof(mbuf))) {
                         std::string s = wide_to_utf8(mbuf);
                         if (!s.empty()) { dev.name = s; got_name = true; }
                     }
@@ -284,14 +414,15 @@ static void devices_reload(InputManagerImpl* impl) {
             if (btn_cap_count > 0 &&
                 HidP_GetButtonCaps(HidP_Input, btn_cap_data.data(), &btn_cap_count, preparsed) != HIDP_STATUS_SUCCESS)
             {
-                LocalFree(preparsed);
+                dev.destroy();
                 continue;
             }
 
             for (int cap_num = 0; cap_num < (int)btn_cap_count; cap_num++) {
                 auto& bc = btn_cap_data[cap_num];
 
-                // Normalize non-range caps to Range form.
+                // IsRange normalization (spice2x pattern) — fill Range from NotRange
+                // so all downstream code can assume Range.* is valid.
                 if (!bc.IsRange) {
                     bc.Range.UsageMin = bc.NotRange.Usage;
                     bc.Range.UsageMax = bc.NotRange.Usage;
@@ -301,43 +432,25 @@ static void devices_reload(InputManagerImpl* impl) {
                 if (btn_count <= 0 || btn_count >= 0xffff)
                     continue;
 
-                // Hat switch (Usage 0x39, Page 0x01) — promote to DPad buttons.
-                if (bc.UsagePage == 0x01 && bc.Range.UsageMin == 0x39) {
-                    // Skip adding to button_caps_list; record hat offset.
-                    // Hat DPad directions will be read via value caps in WM_INPUT,
-                    // but the hat is enumerated as a button cap here in some firmware.
-                    // Record offset and add 8 DPad button entries.
-                    int hat_offset = (int)dev.button_states.size();
-                    dev.hat_cap_offsets.push_back(hat_offset);
-                    for (int d = 0; d < 8; d++) {
-                        dev.button_caps_names.push_back(DPAD_NAMES[d]);
-                        dev.button_states.push_back(false);
-                    }
-                    // Store the button cap for hat handling in WM_INPUT.
-                    // We re-use hat_caps_list (value caps also added below if present,
-                    // but this handles pure button-cap hats).
-                    // Convert to a HIDP_VALUE_CAPS-like entry for uniformity —
-                    // we track these via a separate HIDP_BUTTON_CAPS list.
-                    // (Hat value caps are handled in the value cap section below.)
-                    continue;
-                }
+                // Hat switch in button caps — treat as regular button (match spice2x).
+                // No DPad promotion. If hat appears as button cap, add as normal buttons.
 
                 // Skip vendor-specific usage pages.
                 if ((bc.UsagePage >> 8) == 0xFF)
                     continue;
 
                 // Regular button cap.
-                dev.button_caps_list.push_back(bc);
+                dev.hid->button_caps_list.push_back(bc);
                 for (int b = 0; b < btn_count; b++) {
-                    int button_number = (int)dev.button_states.size() + 1;
+                    int button_number = (int)dev.hid->button_states.size() + 1;
                     dev.button_caps_names.push_back("Button " + std::to_string(button_number));
-                    dev.button_states.push_back(false);
+                    dev.hid->button_states.push_back(false);
                 }
             }
         }
 
         // -----------------------------------------------------------------
-        // Value caps (input).
+        // Value caps (input). Hat switches included as float value_states.
         // -----------------------------------------------------------------
         {
             USHORT val_cap_count = caps.NumberInputValueCaps;
@@ -345,14 +458,14 @@ static void devices_reload(InputManagerImpl* impl) {
             if (val_cap_count > 0 &&
                 HidP_GetValueCaps(HidP_Input, val_cap_data.data(), &val_cap_count, preparsed) != HIDP_STATUS_SUCCESS)
             {
-                LocalFree(preparsed);
+                dev.destroy();
                 continue;
             }
 
             for (int cap_num = 0; cap_num < (int)val_cap_count; cap_num++) {
                 auto& vc = val_cap_data[cap_num];
 
-                // Normalize non-range caps to Range form.
+                // IsRange normalization.
                 if (!vc.IsRange) {
                     vc.Range.UsageMin = vc.NotRange.Usage;
                     vc.Range.UsageMax = vc.NotRange.Usage;
@@ -360,34 +473,8 @@ static void devices_reload(InputManagerImpl* impl) {
 
                 USAGE usage = vc.Range.UsageMin;
 
-                // Hat switch value cap (page 0x01, usage 0x39) — promote to DPad buttons.
-                if (vc.UsagePage == 0x01 && usage == 0x39) {
-                    // Apply sign-extension fix to LogicalMin/Max (spice2x lines 597-604).
-                    if (vc.BitSize > 0 && vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
-                        auto shift_size = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
-                        auto mask = ((uint64_t)1 << vc.BitSize) - 1;
-                        vc.LogicalMin &= (LONG)mask;
-                        vc.LogicalMin <<= shift_size;
-                        vc.LogicalMin >>= shift_size;
-                        vc.LogicalMax &= (LONG)mask;
-                    }
-
-                    // Record hat offset and add DPad entries (if not already added from
-                    // button caps above for this same hat).
-                    // Check if we already have a hat_cap_offsets entry that would have been
-                    // added from a button cap above. In practice, the hat shows up in either
-                    // button caps OR value caps, not both. So we can safely add here.
-                    int hat_offset = (int)dev.button_states.size();
-                    dev.hat_cap_offsets.push_back(hat_offset);
-                    dev.hat_caps_list.push_back(vc);
-                    for (int d = 0; d < 8; d++) {
-                        dev.button_caps_names.push_back(DPAD_NAMES[d]);
-                        dev.button_states.push_back(false);
-                    }
-                    continue; // Do NOT add to value_caps_list.
-                }
-
-                // Regular value cap — apply sign-extension fix to LogicalMin/Max.
+                // Sign-extension fix for LogicalMin/Max (sign-extension location 1 of 3).
+                // Applied unconditionally to all value caps including hats.
                 if (vc.BitSize > 0 && vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
                     auto shift_size = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
                     auto mask = ((uint64_t)1 << vc.BitSize) - 1;
@@ -401,15 +488,20 @@ static void devices_reload(InputManagerImpl* impl) {
                 if ((vc.UsagePage >> 8) == 0xFF)
                     continue;
 
-                dev.value_caps_list.push_back(vc);
+                // All value caps (including hat switch 0x39) go into value_caps_list.
+                // Hat switches store float in value_states: -1.0f = neutral.
+                dev.hid->value_caps_list.push_back(vc);
                 dev.value_caps_names.push_back(axis_label(vc.UsagePage, usage));
-                dev.value_states.push_back(0.5f);
-                dev.value_states_raw.push_back(0);
+
+                // Hat starts at -1.0f (neutral); regular axes start at 0.5f (center).
+                bool is_hat = (vc.UsagePage == 0x01 && usage == 0x39);
+                dev.hid->value_states.push_back(is_hat ? -1.0f : 0.5f);
+                dev.hid->value_states_raw.push_back(0);
             }
         }
 
         // -----------------------------------------------------------------
-        // Output button caps — store cap structs for flush thread.
+        // Output button caps — store cap structs for output thread.
         // -----------------------------------------------------------------
         {
             USHORT out_btn_count = caps.NumberOutputButtonCaps;
@@ -429,7 +521,7 @@ static void devices_reload(InputManagerImpl* impl) {
                     // Skip vendor-specific usage pages.
                     if ((bc.UsagePage >> 8) == 0xFF) continue;
                     // Store once per cap (not per button).
-                    dev.button_output_caps_list.push_back(bc);
+                    dev.hid->button_output_caps_list.push_back(bc);
                     for (int b = 0; b < btn_count; b++) {
                         USAGE usg = bc.Range.UsageMin + (USAGE)b;
                         // Try device-provided string descriptor first.
@@ -439,8 +531,8 @@ static void devices_reload(InputManagerImpl* impl) {
                         else if (!bc.IsRange && bc.NotRange.StringIndex != 0)
                             str_idx = bc.NotRange.StringIndex;
                         wchar_t wbuf[256] = {};
-                        if (str_idx > 0 && dev.hid_handle != INVALID_HANDLE_VALUE
-                            && HidD_GetIndexedString(dev.hid_handle, str_idx, wbuf, sizeof(wbuf))
+                        if (str_idx > 0 && dev.hid->hid_handle != INVALID_HANDLE_VALUE
+                            && HidD_GetIndexedString(dev.hid->hid_handle, str_idx, wbuf, sizeof(wbuf))
                             && wbuf[0] != L'\0') {
                             dev.button_output_caps_names.push_back(wide_to_utf8(wbuf));
                         } else {
@@ -453,7 +545,7 @@ static void devices_reload(InputManagerImpl* impl) {
         }
 
         // -----------------------------------------------------------------
-        // Output value caps — store cap structs for flush thread.
+        // Output value caps — store cap structs for output thread.
         // -----------------------------------------------------------------
         {
             USHORT out_val_count = caps.NumberOutputValueCaps;
@@ -464,12 +556,7 @@ static void devices_reload(InputManagerImpl* impl) {
                 for (int cap_num = 0; cap_num < (int)out_val_count; cap_num++) {
                     auto& vc = out_val_data[cap_num];
 
-                    // Apply the same sign-extension fix as input value caps.
-                    // The HID parser can produce incorrect LogicalMin/Max when
-                    // BitSize < 32 and the value spans the full unsigned range
-                    // (e.g. 0x00–0xFF reported as LogicalMin=0, LogicalMax=-1).
-                    // Without this, lmax ends up negative and our lmax>lmin guard
-                    // returns 0 for every write — lights never turn on.
+                    // Sign-extension fix for output LogicalMin/Max (sign-extension location 2 of 3).
                     if (vc.BitSize > 0 && vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
                         auto shift_size = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
                         auto mask = ((uint64_t)1 << vc.BitSize) - 1;
@@ -490,8 +577,8 @@ static void devices_reload(InputManagerImpl* impl) {
                     // Expand range: one entry per usage so each output is independently addressable.
                     for (int u = 0; u < range_count; u++) {
                         USAGE specific = vc.Range.UsageMin + (USAGE)u;
-                        dev.value_output_caps_list.push_back(vc);
-                        dev.value_output_usages.push_back(specific);
+                        dev.hid->value_output_caps_list.push_back(vc);
+                        dev.hid->value_output_usages.push_back(specific);
                         // Try device-provided string descriptor first.
                         ULONG str_idx = 0;
                         if (vc.IsStringRange && vc.Range.StringMin != 0)
@@ -499,8 +586,8 @@ static void devices_reload(InputManagerImpl* impl) {
                         else if (!vc.IsRange && vc.NotRange.StringIndex != 0)
                             str_idx = vc.NotRange.StringIndex;
                         wchar_t wbuf[256] = {};
-                        if (str_idx > 0 && dev.hid_handle != INVALID_HANDLE_VALUE
-                            && HidD_GetIndexedString(dev.hid_handle, str_idx, wbuf, sizeof(wbuf))
+                        if (str_idx > 0 && dev.hid->hid_handle != INVALID_HANDLE_VALUE
+                            && HidD_GetIndexedString(dev.hid->hid_handle, str_idx, wbuf, sizeof(wbuf))
                             && wbuf[0] != L'\0') {
                             dev.value_output_caps_names.push_back(wide_to_utf8(wbuf));
                         } else {
@@ -512,17 +599,34 @@ static void devices_reload(InputManagerImpl* impl) {
         }
 
         // Size output state arrays.
-        dev.button_output_states.assign(dev.button_output_caps_names.size(), false);
-        dev.value_output_states.assign(dev.value_output_caps_names.size(), 0.0f);
+        dev.hid->button_output_states.assign(dev.button_output_caps_names.size(), false);
+        dev.hid->value_output_states.assign(dev.value_output_caps_names.size(), 0.0f);
         dev.output_pending = false;
-        // dev.hid_handle already set above — used for both string lookups and output sending.
+
+        // Initialize per-device critical sections.
+        InitializeCriticalSection(&dev.cs_input);
+        InitializeCriticalSection(&dev.cs_output);
+
+        // Set output_enabled: device must have a valid write handle and non-zero output report length.
+        dev.output_enabled = (dev.hid->hid_handle != INVALID_HANDLE_VALUE &&
+                              dev.hid->caps.OutputReportByteLength > 0);
 
         impl->devices.push_back(std::move(dev));
     }
 
     // Initialize prev_button_states for capture edge detection.
     for (const auto& dev : impl->devices) {
-        impl->prev_button_states[dev.path] = std::vector<bool>(dev.button_states.size(), false);
+        if (!dev.hid) continue;
+        impl->prev_button_states[dev.path] = std::vector<bool>(dev.hid->button_states.size(), false);
+        // Build prev_hat_states: one entry per value cap that is a hat switch.
+        std::vector<float> hat_snapshot;
+        for (size_t vi = 0; vi < dev.hid->value_caps_list.size(); vi++) {
+            auto& vc = dev.hid->value_caps_list[vi];
+            if (vc.UsagePage == 0x01 && vc.Range.UsageMin == 0x39) {
+                hat_snapshot.push_back(-1.0f);
+            }
+        }
+        impl->prev_hat_states[dev.path] = hat_snapshot;
     }
 }
 
@@ -547,9 +651,8 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
 
     const RAWHID& hid_data = raw->data.hid;
 
+    // Find matching device by raw handle under devices_lock (brief).
     EnterCriticalSection(&impl->devices_lock);
-
-    // Find matching device by raw handle.
     Device* dev = nullptr;
     for (auto& d : impl->devices) {
         if (d.raw_handle == raw->header.hDevice) {
@@ -557,22 +660,27 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
             break;
         }
     }
-    if (!dev || !dev->preparsed) {
+    if (!dev || !dev->hid) {
         LeaveCriticalSection(&impl->devices_lock);
         return;
     }
+    // Release devices_lock now — we have a stable pointer; use per-device lock.
+    LeaveCriticalSection(&impl->devices_lock);
 
     const BYTE*  report_buf  = hid_data.bRawData;
     const UINT   report_size = hid_data.dwSizeHid;
-    PHIDP_PREPARSED_DATA preparsed = dev->preparsed;
+    PHIDP_PREPARSED_DATA preparsed = dev->hid->preparsed;
+
+    // Acquire per-device input lock for state mutation.
+    EnterCriticalSection(&dev->cs_input);
 
     // -----------------------------------------------------------------
-    // Button states (regular buttons — not hat).
+    // Button states (regular buttons).
     // -----------------------------------------------------------------
     {
         int state_offset = 0;
-        for (size_t cap_i = 0; cap_i < dev->button_caps_list.size(); cap_i++) {
-            auto& bc = dev->button_caps_list[cap_i];
+        for (size_t cap_i = 0; cap_i < dev->hid->button_caps_list.size(); cap_i++) {
+            auto& bc = dev->hid->button_caps_list[cap_i];
             int btn_count = (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
             if (btn_count <= 0) {
                 continue;
@@ -592,13 +700,13 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
 
             // Zero the slice for this cap, then set pressed ones.
             for (int b = 0; b < btn_count; b++) {
-                dev->button_states[state_offset + b] = false;
+                dev->hid->button_states[state_offset + b] = false;
             }
             if (query_ok) {
                 for (ULONG u = 0; u < usages_len; u++) {
                     int idx = (int)(usages[u] - bc.Range.UsageMin);
                     if (idx >= 0 && idx < btn_count) {
-                        dev->button_states[state_offset + idx] = true;
+                        dev->hid->button_states[state_offset + idx] = true;
                     }
                 }
             }
@@ -608,55 +716,10 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
     }
 
     // -----------------------------------------------------------------
-    // Hat switch states (via value caps).
+    // Value states (axes + hat switches as float).
     // -----------------------------------------------------------------
-    for (size_t hat_i = 0; hat_i < dev->hat_caps_list.size(); hat_i++) {
-        auto& hc = dev->hat_caps_list[hat_i];
-        int hat_offset = dev->hat_cap_offsets[hat_i];
-
-        ULONG raw_val = 0;
-        NTSTATUS status = HidP_GetUsageValue(
-            HidP_Input,
-            hc.UsagePage,
-            hc.LinkCollection,
-            hc.Range.UsageMin,  // 0x39 (hat)
-            &raw_val,
-            preparsed,
-            (PCHAR)report_buf,
-            report_size);
-
-        // All 8 directions default to false.
-        for (int d = 0; d < 8; d++) {
-            dev->button_states[hat_offset + d] = false;
-        }
-
-        if (status == HIDP_STATUS_SUCCESS) {
-            LONG val = (LONG)raw_val;
-            // Apply sign-extension fix.
-            if (hc.LogicalMin < 0 && hc.BitSize > 0 && hc.BitSize <= (USHORT)(sizeof(hc.LogicalMin) * 8)) {
-                auto shift_size = sizeof(hc.LogicalMin) * 8 - hc.BitSize + 1;
-                val <<= shift_size;
-                val >>= shift_size;
-            }
-
-            LONG lmin = hc.LogicalMin;
-            LONG lmax = hc.LogicalMax;
-            if (lmin <= val && val <= lmax && lmax > lmin) {
-                // Map value to direction index 0-7.
-                int dir = (int)((val - lmin) * 8 / (lmax - lmin + 1));
-                if (dir >= 0 && dir < 8) {
-                    dev->button_states[hat_offset + dir] = true;
-                }
-            }
-            // If out-of-range: neutral — all false (already set).
-        }
-    }
-
-    // -----------------------------------------------------------------
-    // Axis states.
-    // -----------------------------------------------------------------
-    for (size_t cap_i = 0; cap_i < dev->value_caps_list.size(); cap_i++) {
-        auto& vc = dev->value_caps_list[cap_i];
+    for (size_t cap_i = 0; cap_i < dev->hid->value_caps_list.size(); cap_i++) {
+        auto& vc = dev->hid->value_caps_list[cap_i];
 
         ULONG raw_ulong = 0;
         NTSTATUS status = HidP_GetUsageValue(
@@ -672,35 +735,60 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
         if (status != HIDP_STATUS_SUCCESS)
             continue;
 
-        LONG raw_val = (LONG)raw_ulong;
+        bool is_hat = (vc.UsagePage == 0x01 && vc.Range.UsageMin == 0x39);
 
-        // Sign-extension fix (spice2x lines 1791-1797).
-        if (vc.LogicalMin < 0 &&
-                vc.BitSize > 0 &&
-                vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
-            auto shift_size = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
-            raw_val <<= shift_size;
-            raw_val >>= shift_size;
+        if (is_hat) {
+            // Hat switch — store as float. -1.0f = neutral.
+            // Sign extension already applied at enumeration to LogicalMin/Max.
+            LONG raw_val = (LONG)raw_ulong;
+
+            // Sign-extension fix at WM_INPUT — only when LogicalMin < 0 (sign-extension location 3 of 3).
+            if (vc.LogicalMin < 0 && vc.BitSize > 0 &&
+                    vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
+                auto shift_size = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
+                raw_val <<= shift_size;
+                raw_val >>= shift_size;
+            }
+
+            LONG lmin = vc.LogicalMin, lmax = vc.LogicalMax;
+            float hat_val = -1.0f;  // neutral
+            if (lmin <= raw_val && raw_val <= lmax && lmax > lmin) {
+                hat_val = (float)(raw_val - lmin) / (float)(lmax - lmin);
+            }
+            dev->hid->value_states[cap_i] = hat_val;
+        } else {
+            // Regular axis.
+            LONG raw_val = (LONG)raw_ulong;
+
+            // Sign-extension fix (spice2x line 1791) — only when LogicalMin < 0
+            // (sign-extension location 3 of 3, shared with hat above).
+            if (vc.LogicalMin < 0 &&
+                    vc.BitSize > 0 &&
+                    vc.BitSize <= (USHORT)(sizeof(vc.LogicalMin) * 8)) {
+                auto shift_size = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
+                raw_val <<= shift_size;
+                raw_val >>= shift_size;
+            }
+
+            dev->hid->value_states_raw[cap_i] = raw_val;
+
+            // Auto-calibration: expand range on the fly.
+            if (raw_val < vc.LogicalMin) vc.LogicalMin = raw_val;
+            if (raw_val > vc.LogicalMax) vc.LogicalMax = raw_val;
+
+            LONG lmin = vc.LogicalMin;
+            LONG lmax = vc.LogicalMax;
+            float normalized = (lmax > lmin)
+                ? (float)(raw_val - lmin) / (float)(lmax - lmin)
+                : 0.5f;
+            if (normalized < 0.0f) normalized = 0.0f;
+            if (normalized > 1.0f) normalized = 1.0f;
+
+            dev->hid->value_states[cap_i] = normalized;
         }
-
-        dev->value_states_raw[cap_i] = raw_val;
-
-        // Auto-calibration (spice2x lines 1812-1822): expand range on the fly
-        // if the value falls outside the declared min/max. Handles controllers
-        // that report a wider range than their HID descriptor declares.
-        if (raw_val < vc.LogicalMin) vc.LogicalMin = raw_val;
-        if (raw_val > vc.LogicalMax) vc.LogicalMax = raw_val;
-
-        LONG lmin = vc.LogicalMin;
-        LONG lmax = vc.LogicalMax;
-        float normalized = (lmax > lmin)
-            ? (float)(raw_val - lmin) / (float)(lmax - lmin)
-            : 0.5f;
-        if (normalized < 0.0f) normalized = 0.0f;
-        if (normalized > 1.0f) normalized = 1.0f;
-
-        dev->value_states[cap_i] = normalized;
     }
+
+    LeaveCriticalSection(&dev->cs_input);
 
     // -----------------------------------------------------------------
     // Capture mode edge detection.
@@ -712,20 +800,25 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
         LeaveCriticalSection(&impl->capture_lock);
 
         if (capturing && !already_captured) {
+            // Button edge detection.
             auto& prev = impl->prev_button_states[dev->path];
 
+            EnterCriticalSection(&dev->cs_input);
+            size_t btn_size = dev->hid->button_states.size();
+
             // Ensure prev vector is the right size.
-            if (prev.size() != dev->button_states.size()) {
-                prev.assign(dev->button_states.size(), false);
+            if (prev.size() != btn_size) {
+                prev.assign(btn_size, false);
             }
 
-            for (int i = 0; i < (int)dev->button_states.size(); i++) {
-                if (dev->button_states[i] && !prev[i]) {
+            for (int i = 0; i < (int)btn_size; i++) {
+                if (dev->hid->button_states[i] && !prev[i]) {
                     // Edge: button just pressed.
                     CaptureResult cr;
                     cr.path        = dev->path;
                     cr.button_idx  = i;
                     cr.device_name = dev->name;
+                    cr.analog_type = ButtonAnalogType::NONE;
 
                     EnterCriticalSection(&impl->capture_lock);
                     if (!impl->capture_result.has_value()) {
@@ -736,23 +829,80 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
                 }
             }
 
-            prev = dev->button_states;
+            // Copy current button states for next edge detection.
+            prev.assign(dev->hid->button_states.begin(), dev->hid->button_states.end());
+
+            // Hat direction change detection.
+            EnterCriticalSection(&impl->capture_lock);
+            already_captured = impl->capture_result.has_value();
+            LeaveCriticalSection(&impl->capture_lock);
+
+            if (!already_captured) {
+                auto& prev_hats = impl->prev_hat_states[dev->path];
+                int hat_idx = 0;
+                for (size_t vi = 0; vi < dev->hid->value_caps_list.size(); vi++) {
+                    auto& vc = dev->hid->value_caps_list[vi];
+                    if (vc.UsagePage != 0x01 || vc.Range.UsageMin != 0x39) continue;
+
+                    float cur_val = dev->hid->value_states[vi];
+                    float prev_val = (hat_idx < (int)prev_hats.size()) ? prev_hats[hat_idx] : -1.0f;
+
+                    // Detect direction change: was neutral and now has direction,
+                    // or direction changed from snapshot.
+                    if (cur_val >= 0.0f && (prev_val < 0.0f || std::fabs(cur_val - prev_val) > HAT_SWITCH_INCREMENT * 0.5f)) {
+                        ButtonAnalogType dir = getHatDirection(cur_val);
+                        if (dir != ButtonAnalogType::NONE) {
+                            CaptureResult cr;
+                            cr.path        = dev->path;
+                            cr.button_idx  = (int)vi;  // axis_idx into value_states
+                            cr.device_name = dev->name;
+                            cr.analog_type = dir;
+
+                            EnterCriticalSection(&impl->capture_lock);
+                            if (!impl->capture_result.has_value()) {
+                                impl->capture_result = cr;
+                            }
+                            LeaveCriticalSection(&impl->capture_lock);
+                            break;
+                        }
+                    }
+
+                    // Update snapshot.
+                    if (hat_idx < (int)prev_hats.size()) {
+                        prev_hats[hat_idx] = cur_val;
+                    }
+                    hat_idx++;
+                }
+            }
+
+            LeaveCriticalSection(&dev->cs_input);
         }
     }
-
-    LeaveCriticalSection(&impl->devices_lock);
 }
 
 // ---------------------------------------------------------------------------
-// WndProc
+// WndProc — GWLP_USERDATA pattern (replaces g_impl global)
 // ---------------------------------------------------------------------------
 
 static LRESULT CALLBACK EZ2InputWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_CREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCTA*>(lParam);
+        SetWindowLongPtrA(hwnd, GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+        return 0;
+    }
+
+    auto* impl = reinterpret_cast<InputManagerImpl*>(
+        GetWindowLongPtrA(hwnd, GWLP_USERDATA));
+    if (!impl) return DefWindowProcA(hwnd, msg, wParam, lParam);
+
     if (msg == WM_INPUT) {
-        if (g_impl) {
-            handle_wm_input(g_impl, reinterpret_cast<HRAWINPUT>(lParam));
-        }
+        handle_wm_input(impl, reinterpret_cast<HRAWINPUT>(lParam));
         DefWindowProcA(hwnd, msg, wParam, lParam);
+        return 0;
+    }
+    if (msg == WM_CLOSE) {
+        DestroyWindow(hwnd);
         return 0;
     }
     return DefWindowProcA(hwnd, msg, wParam, lParam);
@@ -765,6 +915,9 @@ static LRESULT CALLBACK EZ2InputWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 static DWORD WINAPI msg_pump_thread(LPVOID param) {
     InputManagerImpl* impl = reinterpret_cast<InputManagerImpl*>(param);
 
+    // Set time-critical priority for input pump thread (match spice2x).
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
     // Register window class.
     WNDCLASSEXA wc = {};
     wc.cbSize        = sizeof(WNDCLASSEXA);
@@ -773,7 +926,7 @@ static DWORD WINAPI msg_pump_thread(LPVOID param) {
     wc.lpszClassName = "EZ2InputMgr";
     RegisterClassExA(&wc);
 
-    // Create message-only window.
+    // Create message-only window — pass impl via lpCreateParams.
     HWND hwnd = CreateWindowExA(
         0,
         "EZ2InputMgr",
@@ -782,7 +935,7 @@ static DWORD WINAPI msg_pump_thread(LPVOID param) {
         HWND_MESSAGE,
         nullptr,
         wc.hInstance,
-        nullptr);
+        impl);  // lpCreateParams = impl for GWLP_USERDATA
     impl->hwnd = hwnd;
 
     if (!hwnd) {
@@ -837,94 +990,61 @@ static DWORD WINAPI vtt_thread(LPVOID param) {
 }
 
 // ---------------------------------------------------------------------------
-// Output flush thread
+// Output thread — event-based (Pattern 4 — spice2x do-while)
 // ---------------------------------------------------------------------------
 
-// Pending write built under devices_lock, sent outside it to avoid blocking the UI thread.
-struct PendingWrite {
-    HANDLE handle;
-    std::vector<std::vector<BYTE>> reports; // one per report-ID flush + final
-};
-
-static DWORD WINAPI output_flush_thread(LPVOID param) {
+static DWORD WINAPI output_thread_func(LPVOID param) {
     InputManagerImpl* impl = (InputManagerImpl*)param;
     while (impl->running) {
-        Sleep(1);
+        WaitForSingleObject(impl->output_event, INFINITE);
+        if (!impl->running) break;
 
-        // ---- Build reports under lock (HidP_* are pure in-memory, non-blocking) ----
-        std::vector<PendingWrite> writes;
-        EnterCriticalSection(&impl->devices_lock);
+        // Do-while: re-check after processing to catch updates that arrived during writes.
+        bool any_pending;
+        do {
+            any_pending = false;
+            for (auto& dev : impl->devices) {
+                EnterCriticalSection(&dev.cs_output);
+                bool pending = dev.output_pending && dev.output_enabled;
+                dev.output_pending = false;
+                if (pending) {
+                    // Hold cs_output through entire write (report build + WriteFile).
+                    // Intentional: HID reports are small, fast I/O. Matches spice2x.
+                    device_write_output(dev);
+                }
+                LeaveCriticalSection(&dev.cs_output);
+                if (pending) any_pending = true;
+            }
+            // Check if any device got a new update during our write pass.
+            if (!any_pending) {
+                for (auto& dev : impl->devices) {
+                    EnterCriticalSection(&dev.cs_output);
+                    if (dev.output_pending && dev.output_enabled) any_pending = true;
+                    LeaveCriticalSection(&dev.cs_output);
+                    if (any_pending) break;
+                }
+            }
+        } while (any_pending && impl->running);
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Flush thread — periodic 500ms writes for DAO IIDX boards (Pattern 4)
+// ---------------------------------------------------------------------------
+
+static DWORD WINAPI flush_thread_func(LPVOID param) {
+    InputManagerImpl* impl = (InputManagerImpl*)param;
+    while (impl->running) {
+        Sleep(495);
+        if (!impl->running) break;
         for (auto& dev : impl->devices) {
-            if (!dev.output_pending) continue;
-            dev.output_pending = false;
-            if (dev.hid_handle == INVALID_HANDLE_VALUE) continue;
-            USHORT report_size = dev.caps.OutputReportByteLength;
-            if (report_size == 0) continue;
-
-            PendingWrite pw;
-            pw.handle = dev.hid_handle;
-            std::vector<BYTE> report(report_size, 0);
-
-            // Button outputs.
-            int state_offset = 0;
-            for (auto& bc : dev.button_output_caps_list) {
-                if (!bc.IsRange) { bc.Range.UsageMin = bc.NotRange.Usage; bc.Range.UsageMax = bc.NotRange.Usage; }
-                int btn_count = (int)(bc.Range.UsageMax - bc.Range.UsageMin + 1);
-                std::vector<USAGE> on_usages;
-                for (int b = 0; b < btn_count; b++) {
-                    if (state_offset + b < (int)dev.button_output_states.size() &&
-                        dev.button_output_states[state_offset + b]) {
-                        on_usages.push_back(bc.Range.UsageMin + (USAGE)b);
-                    }
-                }
-                if (!on_usages.empty()) {
-                    ULONG usage_count = (ULONG)on_usages.size();
-                    // HIDP_STATUS_INCOMPATIBLE_REPORT_ID: device uses multiple report IDs.
-                    // Flush current report and retry with a fresh buffer.
-                    while (HidP_SetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
-                                           on_usages.data(), &usage_count,
-                                           dev.preparsed, (PCHAR)report.data(), report_size)
-                           == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
-                        pw.reports.push_back(report);
-                        report.assign(report_size, 0);
-                    }
-                }
-                state_offset += btn_count;
+            EnterCriticalSection(&dev.cs_output);
+            bool enabled = dev.output_enabled;
+            if (enabled) {
+                device_write_output(dev);
             }
-
-            // Value outputs.
-            for (size_t vi = 0; vi < dev.value_output_caps_list.size(); vi++) {
-                auto& vc = dev.value_output_caps_list[vi];
-                if (vi >= dev.value_output_states.size() || vi >= dev.value_output_usages.size()) break;
-                float norm = dev.value_output_states[vi];
-                LONG lmin = vc.LogicalMin, lmax = vc.LogicalMax;
-                // Intermediate as LONG (spice2x pattern) so negative lmin doesn't
-                // corrupt the result when cast to ULONG.
-                LONG lval = (lmax > lmin)
-                    ? lmin + (LONG)lroundf((float)(lmax - lmin) * norm) : lmin;
-                if (lval > lmax) lval = lmax;
-                if (lval < lmin) lval = lmin;
-                ULONG uval = (ULONG)lval;
-                while (HidP_SetUsageValue(HidP_Output, vc.UsagePage, vc.LinkCollection,
-                                          dev.value_output_usages[vi], uval,
-                                          dev.preparsed, (PCHAR)report.data(), report_size)
-                       == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
-                    pw.reports.push_back(report);
-                    report.assign(report_size, 0);
-                }
-            }
-
-            pw.reports.push_back(std::move(report)); // final report
-            writes.push_back(std::move(pw));
-        }
-        LeaveCriticalSection(&impl->devices_lock);
-
-        // ---- Send outside lock — WriteFile may block; must not hold devices_lock ----
-        for (auto& pw : writes) {
-            for (auto& rpt : pw.reports) {
-                DWORD written = 0;
-                WriteFile(pw.handle, rpt.data(), (DWORD)rpt.size(), &written, nullptr);
-            }
+            LeaveCriticalSection(&dev.cs_output);
         }
     }
     return 0;
@@ -936,7 +1056,9 @@ static DWORD WINAPI output_flush_thread(LPVOID param) {
 
 InputManager::InputManager() {
     impl = new InputManagerImpl();
-    g_impl = impl;
+
+    // Create output event (auto-reset).
+    impl->output_event = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     // Enumerate devices.
     devices_reload(impl);
@@ -957,16 +1079,22 @@ InputManager::InputManager() {
     impl->vtt_thread = CreateThread(
         nullptr, 0, vtt_thread, impl, 0, nullptr);
 
-    // Start output flush thread.
-    impl->output_thread = CreateThread(nullptr, 0, output_flush_thread, impl, 0, nullptr);
+    // Start output thread (event-based) and flush thread (periodic 500ms).
+    impl->output_thread = CreateThread(nullptr, 0, output_thread_func, impl, 0, nullptr);
+    impl->flush_thread  = CreateThread(nullptr, 0, flush_thread_func, impl, 0, nullptr);
 }
 
 InputManager::~InputManager() {
     impl->running = false;
 
-    // Stop pump thread.
+    // Wake output thread so it can exit.
+    if (impl->output_event) {
+        SetEvent(impl->output_event);
+    }
+
+    // Stop pump thread — WM_CLOSE triggers DestroyWindow inside the thread.
     if (impl->hwnd) {
-        PostMessageA(impl->hwnd, WM_QUIT, 0, 0);
+        PostMessageA(impl->hwnd, WM_CLOSE, 0, 0);
     }
     if (impl->pump_thread) {
         WaitForSingleObject(impl->pump_thread, 2000);
@@ -981,20 +1109,32 @@ InputManager::~InputManager() {
         impl->vtt_thread = nullptr;
     }
 
-    // Stop output flush thread.
+    // Stop output thread.
     if (impl->output_thread) {
         WaitForSingleObject(impl->output_thread, 2000);
         CloseHandle(impl->output_thread);
         impl->output_thread = nullptr;
     }
 
-    // Free device preparsed data and close hid_handles.
+    // Stop flush thread.
+    if (impl->flush_thread) {
+        WaitForSingleObject(impl->flush_thread, 2000);
+        CloseHandle(impl->flush_thread);
+        impl->flush_thread = nullptr;
+    }
+
+    // Close output event.
+    if (impl->output_event) {
+        CloseHandle(impl->output_event);
+        impl->output_event = nullptr;
+    }
+
+    // Free device data (destroy() calls DeleteCriticalSection for both cs_input, cs_output).
     for (auto& dev : impl->devices) {
         dev.destroy();
     }
     impl->devices.clear();
 
-    g_impl = nullptr;
     delete impl;
     impl = nullptr;
 }
@@ -1012,13 +1152,16 @@ std::vector<Device> InputManager::getDevices() const {
 
 bool InputManager::getButtonState(const std::string& path, int button_idx) const {
     EnterCriticalSection(&impl->devices_lock);
-    for (const auto& dev : impl->devices) {
+    for (auto& dev : impl->devices) {
         if (dev.path == path) {
-            bool state = false;
-            if (button_idx >= 0 && button_idx < (int)dev.button_states.size()) {
-                state = dev.button_states[button_idx];
-            }
             LeaveCriticalSection(&impl->devices_lock);
+            if (!dev.hid) return false;
+            EnterCriticalSection(&dev.cs_input);
+            bool state = false;
+            if (button_idx >= 0 && button_idx < (int)dev.hid->button_states.size()) {
+                state = dev.hid->button_states[button_idx];
+            }
+            LeaveCriticalSection(&dev.cs_input);
             return state;
         }
     }
@@ -1028,13 +1171,16 @@ bool InputManager::getButtonState(const std::string& path, int button_idx) const
 
 float InputManager::getAxisValue(const std::string& path, int axis_idx) const {
     EnterCriticalSection(&impl->devices_lock);
-    for (const auto& dev : impl->devices) {
+    for (auto& dev : impl->devices) {
         if (dev.path == path) {
-            float val = 0.5f;
-            if (axis_idx >= 0 && axis_idx < (int)dev.value_states.size()) {
-                val = dev.value_states[axis_idx];
-            }
             LeaveCriticalSection(&impl->devices_lock);
+            if (!dev.hid) return 0.5f;
+            EnterCriticalSection(&dev.cs_input);
+            float val = 0.5f;
+            if (axis_idx >= 0 && axis_idx < (int)dev.hid->value_states.size()) {
+                val = dev.hid->value_states[axis_idx];
+            }
+            LeaveCriticalSection(&dev.cs_input);
             return val;
         }
     }
@@ -1065,6 +1211,10 @@ void InputManager::startCapture() {
     for (auto& kv : impl->prev_button_states) {
         std::fill(kv.second.begin(), kv.second.end(), false);
     }
+    // Reset hat snapshots to neutral.
+    for (auto& kv : impl->prev_hat_states) {
+        std::fill(kv.second.begin(), kv.second.end(), -1.0f);
+    }
     LeaveCriticalSection(&impl->devices_lock);
 }
 
@@ -1087,18 +1237,26 @@ void InputManager::setLight(const std::string& path, int output_idx, float value
     EnterCriticalSection(&impl->devices_lock);
     for (auto& dev : impl->devices) {
         if (dev.path != path) continue;
-        if (dev.hid_handle == INVALID_HANDLE_VALUE) break;
-        int btn_count = (int)dev.button_output_states.size();
+        LeaveCriticalSection(&impl->devices_lock);
+
+        if (!dev.hid || dev.hid->hid_handle == INVALID_HANDLE_VALUE) return;
+
+        EnterCriticalSection(&dev.cs_output);
+        int btn_count = (int)dev.hid->button_output_states.size();
         if (output_idx < btn_count) {
-            dev.button_output_states[output_idx] = (value > 0.5f);
+            dev.hid->button_output_states[output_idx] = (value > 0.5f);
         } else {
             int val_idx = output_idx - btn_count;
-            if (val_idx < (int)dev.value_output_states.size()) {
-                dev.value_output_states[val_idx] = value;
+            if (val_idx < (int)dev.hid->value_output_states.size()) {
+                dev.hid->value_output_states[val_idx] = value;
             }
         }
         dev.output_pending = true;
-        break;
+        LeaveCriticalSection(&dev.cs_output);
+
+        // Signal output thread.
+        SetEvent(impl->output_event);
+        return;
     }
     LeaveCriticalSection(&impl->devices_lock);
 }
