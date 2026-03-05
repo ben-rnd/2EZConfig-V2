@@ -112,7 +112,7 @@ static DWORD WINAPI InitThread(void*) {
         }
     }
 
-    // Force 60Hz refresh rate if enabled in game settings.
+    // Force 60Hz refresh rate if enabled in global settings.
     if (settingsLoaded && settings.globalSettings().value("force_60hz", false)) {
         DEVMODEA dm = {};
         dm.dmSize = sizeof(dm);
@@ -124,6 +124,11 @@ static DWORD WINAPI InitThread(void*) {
                 ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
             }
         }
+    }
+
+    // Set high priority if enabled in global settings.
+    if (settingsLoaded && settings.globalSettings().value("high_priority", false)) {
+        SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
     }
 
     // Create InputManager — constructor waits for HWND to be ready (up to 500ms).

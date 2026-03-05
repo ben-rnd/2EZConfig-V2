@@ -199,6 +199,12 @@ static void renderUI() {
                 g_settings.save();
             }
 
+            static bool highPriority = g_settings.globalSettings().value("high_priority", false);
+            if (ImGui::Checkbox("Force High Priority", &highPriority)) {
+                g_settings.globalSettings()["high_priority"] = highPriority;
+                g_settings.save();
+            }
+
             ImGui::EndTabItem();
         }
 
