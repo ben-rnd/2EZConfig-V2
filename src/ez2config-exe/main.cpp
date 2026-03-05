@@ -6,6 +6,7 @@
 #include "strings.h"
 #include "input_manager.h"
 #include "bindings.h"
+#include "patch_store.h"
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -16,6 +17,8 @@
 
 static void renderUI();
 static void setTheme();
+static void renderPatchesTab();
+static void renderPatchRow(Patch& patch, SettingsManager& settings, bool isTopLevel);
 
 // File-scope settings and game selector state — accessible to all tab functions
 static SettingsManager g_settings;
@@ -121,6 +124,66 @@ int main() {
     g_input = nullptr;
 
     return 0;
+}
+
+static void renderPatchesTab() {
+    std::string gameId  = g_settings.gameSettings().value("game_id", "");
+    // Use non-const patchesForGame() — patchStore() returns a non-const PatchStore&,
+    // and the non-const patchesForGame() overload returns std::vector<Patch>&
+    // so we can modify enabled/value directly. No const_cast needed.
+    auto& patches = g_settings.patchStore().patchesForGame(gameId);
+
+    if (patches.empty()) {
+        const char* msg = "No patches available for this game.";
+        float textW = ImGui::CalcTextSize(msg).x;
+        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textW) * 0.5f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 40.0f);
+        ImGui::TextDisabled("%s", msg);
+        return;
+    }
+
+    ImGui::BeginChild("##patchScroll", ImVec2(0, ImGui::GetWindowHeight() - 85.0f), false);
+    for (auto& patch : patches) {
+        ImGui::PushID(patch.id.c_str());
+        renderPatchRow(patch, g_settings, true);
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+}
+
+static void renderPatchRow(Patch& patch, SettingsManager& settings, bool isTopLevel) {
+    bool changed = ImGui::Checkbox("##en", &patch.enabled);
+
+    if (patch.type == PatchType::Value) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150.0f);
+        std::vector<const char*> opts;
+        for (const auto& o : patch.options) opts.push_back(o.c_str());
+        if (ImGui::Combo("##val", &patch.value, opts.data(), (int)opts.size()))
+            changed = true;
+    }
+
+    ImGui::SameLine();
+    ImGui::TextUnformatted(patch.name.c_str());
+
+    if (!patch.description.empty() && ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", patch.description.c_str());
+
+    if (changed) {
+        settings.gameSettings()["patches"] = settings.patchStore().saveState();
+        settings.save();
+    }
+
+    // Children rendered only when parent is enabled
+    if (!patch.children.empty() && patch.enabled) {
+        ImGui::Indent(16.0f);
+        for (auto& child : patch.children) {
+            ImGui::PushID(child.id.c_str());
+            renderPatchRow(child, settings, false);
+            ImGui::PopID();
+        }
+        ImGui::Unindent(16.0f);
+    }
 }
 
 static void renderUI() {
@@ -771,6 +834,12 @@ static void renderUI() {
                 ImGui::EndPopup();
             }
 
+            ImGui::EndTabItem();
+        }
+
+        // ---- Patches Tab ----
+        if (!g_isDancer && ImGui::BeginTabItem("Patches")) {
+            renderPatchesTab();
             ImGui::EndTabItem();
         }
 

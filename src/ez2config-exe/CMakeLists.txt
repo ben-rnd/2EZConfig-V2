@@ -9,6 +9,7 @@ target_include_directories(EZ2Config PRIVATE
 target_link_libraries(EZ2Config PRIVATE
     bindings
     injector
+    patches
     imgui
     opengl32
     gdi32
