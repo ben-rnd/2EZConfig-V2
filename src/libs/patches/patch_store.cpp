@@ -255,23 +255,44 @@ void PatchStore::applyValuePatch(const Patch& p) {
 void PatchStore::applyPatternPatch(const Patch& p) {
     if (p.pattern.empty() || p.replacement.empty()) return;
 
-    HMODULE     base = GetModuleHandle(NULL);
-    MODULEINFO  mi   = {};
+    HMODULE    base = GetModuleHandle(NULL);
+    MODULEINFO mi   = {};
     if (!GetModuleInformation(GetCurrentProcess(), base, &mi, sizeof(mi))) return;
 
-    uint8_t*    start      = reinterpret_cast<uint8_t*>(base);
-    size_t      size       = mi.SizeOfImage;
-    size_t      patternLen = p.pattern.size();
+    const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
+    const uint8_t* imageEnd   = imageStart + mi.SizeOfImage;
+    const size_t   patternLen = p.pattern.size();
 
-    for (size_t i = 0; i + patternLen <= size; ++i) {
-        if (memcmp(start + i, p.pattern.c_str(), patternLen) == 0) {
-            DWORD  old      = 0;
-            size_t writeLen = p.replacement.size() + 1;  // include null terminator
-            VirtualProtect(start + i, writeLen, PAGE_EXECUTE_READWRITE, &old);
-            memcpy(start + i, p.replacement.c_str(), writeLen);
-            VirtualProtect(start + i, writeLen, old, &old);
-            return;  // first match wins
+    MEMORY_BASIC_INFORMATION mbi = {};
+    const uint8_t* addr = imageStart;
+
+    while (addr < imageEnd) {
+        if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
+
+        const uint8_t* regionStart = reinterpret_cast<const uint8_t*>(mbi.BaseAddress);
+        const uint8_t* regionEnd   = regionStart + mbi.RegionSize;
+        if (regionEnd > imageEnd) regionEnd = imageEnd;
+
+        if (mbi.State == MEM_COMMIT &&
+            !(mbi.Protect & PAGE_NOACCESS) &&
+            !(mbi.Protect & PAGE_GUARD))
+        {
+            for (const uint8_t* scan = regionStart;
+                 scan + patternLen <= regionEnd; ++scan)
+            {
+                if (memcmp(scan, p.pattern.c_str(), patternLen) == 0) {
+                    uint8_t* target   = const_cast<uint8_t*>(scan);
+                    size_t   writeLen = p.replacement.size() + 1;
+                    DWORD old = 0;
+                    VirtualProtect(target, writeLen, PAGE_EXECUTE_READWRITE, &old);
+                    memcpy(target, p.replacement.c_str(), writeLen);
+                    VirtualProtect(target, writeLen, old, &old);
+                    return;  // first match wins
+                }
+            }
         }
+
+        addr = regionStart + mbi.RegionSize;
     }
     // Not found — silent no-op
 }
