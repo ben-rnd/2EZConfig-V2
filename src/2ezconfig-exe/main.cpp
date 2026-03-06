@@ -248,9 +248,11 @@ static void renderUI() {
         float btnWidth = 90.0f;
         float avail = ImGui::GetContentRegionAvail().x;
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btnWidth);
-        // Get current exeName at frame time (not from Settings tab scope)
+        // Get current exeName at frame time — use exe_name override if set in game-settings
         static const int DJ_COUNT_TB = (int)(sizeof(djGames) / sizeof(djGames[0]));
-        const char* tbExeName = (g_gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_gameIdx].defaultExeName;
+        const char* defaultExe = (g_gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_gameIdx].defaultExeName;
+        std::string exeOverride = g_settings.gameSettings().value("exe_name", "");
+        const char* tbExeName   = exeOverride.empty() ? defaultExe : exeOverride.c_str();
         if (ImGui::Button("Play EZ2", ImVec2(btnWidth, 0))) {
             Injector::LaunchAndInject(tbExeName);
             glfwSetWindowShouldClose(g_window, GLFW_TRUE);
@@ -285,9 +287,27 @@ static void renderUI() {
                     gameId = djGames[g_gameIdx].id;
                 }
                 g_settings.gameSettings()["game_id"] = gameId;
+                g_settings.gameSettings().erase("exe_name");  // reset override when game changes
                 g_settings.save();
             }
 
+            {
+                static char exeNameBuf[MAX_PATH] = {};
+                static int  lastGameIdx = -1;
+                if (lastGameIdx != g_gameIdx) {
+                    lastGameIdx = g_gameIdx;
+                    std::string stored = g_settings.gameSettings().value("exe_name", "");
+                    strncpy(exeNameBuf, stored.c_str(), MAX_PATH - 1);
+                    exeNameBuf[MAX_PATH - 1] = '\0';
+                }
+                if (ImGui::InputText("Exe Name", exeNameBuf, MAX_PATH)) {
+                    if (exeNameBuf[0])
+                        g_settings.gameSettings()["exe_name"] = std::string(exeNameBuf);
+                    else
+                        g_settings.gameSettings().erase("exe_name");
+                    g_settings.save();
+                }
+            }
 
             ImGui::Separator();
             ImGui::TextUnformatted("Global Settings");
