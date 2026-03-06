@@ -287,7 +287,7 @@ void PatchStore::applyPatternPatch(const Patch& p) {
                     VirtualProtect(target, writeLen, PAGE_EXECUTE_READWRITE, &old);
                     memcpy(target, p.replacement.c_str(), writeLen);
                     VirtualProtect(target, writeLen, old, &old);
-                    return;  // first match wins
+                    scan += patternLen - 1;  // skip past match; ++scan in loop adds 1 more
                 }
             }
         }

@@ -109,6 +109,8 @@ static DWORD WINAPI InitThread(void*) {
         installDDrawHook(true);
     }
 
+    settings.patchStore().applyVersionPatch("2EZConfig V2.0");
+
     std::string gameId = settings.gameSettings().value("game_id", "");
 
     //Short sleep to fix crash when using legitimate data with dongles.
@@ -135,7 +137,6 @@ static DWORD WINAPI InitThread(void*) {
 
     // Wait for game init, then apply standard patches.
     Sleep(settings.globalSettings().value("patch_delay_ms", 2000));
-    settings.patchStore().applyVersionPatch("2EZConfig V2.0");
     if (!gameId.empty())
         settings.patchStore().applyPatches(gameId);
 
