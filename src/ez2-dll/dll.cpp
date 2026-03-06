@@ -1,7 +1,9 @@
 #include <windows.h>
 #include <mmsystem.h>
+#include <ddraw.h>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <string>
 
 #include "dll_input.h"
@@ -11,11 +13,61 @@
 #include "patch_store.h"
 #include "settings.h"
 #include "strings.h"
+#include <nlohmann/json.hpp>
 
-static HMODULE       s_dllModule          = nullptr;
-static InputManager* s_mgr                = nullptr;
+static HMODULE       s_dllModule  = nullptr;
+static InputManager* s_mgr        = nullptr;
 static BindingStore  s_bindings;
-static DWORD         s_originalRefreshRate = 0;
+
+// DDraw 60hz hook
+static bool s_force60hz = false;
+using SetDisplayModeFn = HRESULT(WINAPI*)(void*, DWORD, DWORD, DWORD, DWORD, DWORD);
+static SetDisplayModeFn s_origSetDisplayMode = nullptr;
+
+static HRESULT WINAPI HookedSetDisplayMode(
+    void* pThis, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP,
+    DWORD dwRefreshRate, DWORD dwFlags)
+{
+    if (s_force60hz) dwRefreshRate = 60;
+    return s_origSetDisplayMode(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
+}
+
+static void installDDrawHook() {
+    HMODULE hDDraw = GetModuleHandleA("ddraw.dll");
+    if (!hDDraw) hDDraw = LoadLibraryA("ddraw.dll");
+    if (!hDDraw) return;
+
+    auto fnCreate = reinterpret_cast<HRESULT(WINAPI*)(GUID*, IDirectDraw**, IUnknown*)>(
+        GetProcAddress(hDDraw, "DirectDrawCreate"));
+    if (!fnCreate) return;
+
+    IDirectDraw* pDD = nullptr;
+    if (FAILED(fnCreate(nullptr, &pDD, nullptr))) return;
+
+    auto hookSlot = [](void* pIface, int slot) {
+        void** vtable = *reinterpret_cast<void***>(pIface);
+        if (vtable[slot] == reinterpret_cast<void*>(HookedSetDisplayMode)) return;
+        if (!s_origSetDisplayMode)
+            s_origSetDisplayMode = reinterpret_cast<SetDisplayModeFn>(vtable[slot]);
+        DWORD oldProt;
+        VirtualProtect(&vtable[slot], sizeof(void*), PAGE_READWRITE, &oldProt);
+        vtable[slot] = reinterpret_cast<void*>(HookedSetDisplayMode);
+        VirtualProtect(&vtable[slot], sizeof(void*), oldProt, &oldProt);
+    };
+
+    IDirectDraw2* pDD2 = nullptr;
+    if (SUCCEEDED(pDD->QueryInterface(IID_IDirectDraw2, reinterpret_cast<void**>(&pDD2)))) {
+        hookSlot(pDD2, 21);
+        pDD2->Release();
+    }
+    IDirectDraw7* pDD7 = nullptr;
+    if (SUCCEEDED(pDD->QueryInterface(IID_IDirectDraw7, reinterpret_cast<void**>(&pDD7)))) {
+        hookSlot(pDD7, 21);
+        pDD7->Release();
+    }
+
+    pDD->Release();
+}
 
 // All Important IO handler — intercepts IN/OUT instructions.
 static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
@@ -95,6 +147,16 @@ static DWORD WINAPI InitThread(void*) {
     if (GetFileAttributesA(settingsPath.c_str()) == INVALID_FILE_ATTRIBUTES)
         return 0;
 
+    // Read force_60hz early and install DDraw hook before game calls SetDisplayMode.
+    {
+        std::ifstream f(settingsPath);
+        if (f.is_open()) {
+            try { s_force60hz = nlohmann::json::parse(f).value("force_60hz", false); }
+            catch (...) {}
+        }
+    }
+    installDDrawHook();
+
     SettingsManager settings;
     try {
         settings.load(dir, dir);
@@ -104,33 +166,19 @@ static DWORD WINAPI InitThread(void*) {
 
     //Short sleep to fix crash when using legitimate data with dongles.
     Sleep(settings.globalSettings().value("shim_delay", 10));
- 
+
     //Get game ID for patches
     std::string gameId = settings.gameSettings().value("game_id", "");
 
-    // Apply early patches that a time critical.
-    if (!gameId.empty())
-        settings.patchStore().applyEarlyPatches(gameId);
-
-    //Apply global Settings 
+    // Apply early settings/patches that are time critical.
     if (settings.globalSettings().value("io_emu", true))
         AddVectoredExceptionHandler(1, IOHandler);
 
-    if (settings.globalSettings().value("force_60hz", false)) {
-        DEVMODEA dm = {};
-        dm.dmSize = sizeof(dm);
-        if (EnumDisplaySettingsA(nullptr, ENUM_CURRENT_SETTINGS, &dm)) {
-            s_originalRefreshRate = dm.dmDisplayFrequency;
-            if (dm.dmDisplayFrequency != 60) {
-                dm.dmDisplayFrequency = 60;
-                dm.dmFields = DM_DISPLAYFREQUENCY;
-                ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
-            }
-        }
-    }
-
     if (settings.globalSettings().value("high_priority", false))
         SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+
+    if (!gameId.empty())
+        settings.patchStore().applyEarlyPatches(gameId);
 
     //Setup Input manager and load bindings
     s_mgr = new InputManager();
@@ -162,15 +210,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         s_dllModule = hModule;
         CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
     }
-    if (reason == DLL_PROCESS_DETACH) {
-        // Restore original refresh rate if we changed it.
-        if (s_originalRefreshRate != 0 && s_originalRefreshRate != 60) {
-            DEVMODEA dm = {};
-            dm.dmSize = sizeof(dm);
-            dm.dmDisplayFrequency = s_originalRefreshRate;
-            dm.dmFields = DM_DISPLAYFREQUENCY;
-            ChangeDisplaySettingsA(&dm, CDS_FULLSCREEN);
-        }
-    }
+    (void)reason;
     return TRUE;
 }

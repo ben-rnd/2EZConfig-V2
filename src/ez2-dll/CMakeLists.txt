@@ -17,4 +17,6 @@ target_link_libraries(2EZ PRIVATE
     user32
     winmm
     psapi
+    ddraw
+    dxguid
 )

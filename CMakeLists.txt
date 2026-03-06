@@ -108,15 +108,3 @@ add_subdirectory(src/libs/bindings)
 add_subdirectory(src/ez2config-exe)
 add_subdirectory(src/ez2-dll)
 
-# Deploy patches.json to build output so EXE/DLL can load it at runtime
-configure_file(
-    ${CMAKE_SOURCE_DIR}/src/ez2config-exe/patches.json
-    ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/patches.json
-    COPYONLY
-)
-add_custom_target(copy_patches ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/src/ez2config-exe/patches.json
-        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/patches.json
-    COMMENT "Deploying patches.json to build output"
-)

@@ -11,6 +11,7 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 #include <cstdio>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -67,6 +68,42 @@ int main() {
     ImGui_ImplOpenGL2_Init();
 
     setTheme();
+
+    // Extract patches.json from embedded resource if missing or outdated
+    {
+        HRSRC hRes = FindResourceA(nullptr, "PATCHES_JSON", MAKEINTRESOURCEA(10));
+        if (hRes) {
+            HGLOBAL hData = LoadResource(nullptr, hRes);
+            if (hData) {
+                DWORD sz = SizeofResource(nullptr, hRes);
+                const char* ptr = static_cast<const char*>(LockResource(hData));
+                if (ptr && sz) {
+                    bool shouldWrite = (GetFileAttributesA("patches.json") == INVALID_FILE_ATTRIBUTES);
+                    if (!shouldWrite) {
+                        try {
+                            auto embedded = nlohmann::json::parse(ptr, ptr + sz);
+                            int embeddedVer = embedded.value("ver", 0);
+                            std::ifstream diskFile("patches.json");
+                            if (diskFile.is_open()) {
+                                auto diskJson = nlohmann::json::parse(diskFile);
+                                if (!diskJson.contains("ver") || embeddedVer > diskJson.value("ver", 0))
+                                    shouldWrite = true;
+                            }
+                        } catch (...) {}
+                    }
+                    if (shouldWrite) {
+                        HANDLE hFile = CreateFileA("patches.json", GENERIC_WRITE, 0, nullptr,
+                                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                        if (hFile != INVALID_HANDLE_VALUE) {
+                            DWORD written = 0;
+                            WriteFile(hFile, ptr, sz, &written, nullptr);
+                            CloseHandle(hFile);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Load settings from exe directory
     g_settings.load(".", ".");

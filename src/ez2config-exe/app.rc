@@ -1,1 +1,2 @@
 IDI_ICON1 ICON "icon.ico"
+PATCHES_JSON RCDATA "patches.json"
