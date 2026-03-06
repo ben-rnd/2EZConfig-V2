@@ -106,5 +106,5 @@ add_subdirectory(src/libs/settings)
 add_subdirectory(src/libs/input)
 add_subdirectory(src/libs/bindings)
 add_subdirectory(src/2ezconfig-exe)
-add_subdirectory(src/ez2-dll)
+add_subdirectory(src/2ez-dll)
 
