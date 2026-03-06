@@ -189,10 +189,10 @@ struct LightBinding {
 // Owns all binding arrays. Serializes to/from globalSettings() JSON.
 // Receives name arrays as parameters (caller includes strings.h).
 struct BindingStore {
-    static constexpr int BUTTON_COUNT = 20;   // ioButtons[] length
-    static constexpr int DANCER_COUNT = 16;   // ez2DancerIOButtons[] length
+    static constexpr int BUTTON_COUNT = 20;   // djButtonNames[] length
+    static constexpr int DANCER_COUNT = 16;   // dancerButtonNames[] length
     static constexpr int ANALOG_COUNT = 2;    // p1_turntable + p2_turntable
-    static constexpr int LIGHT_COUNT  = 23;   // lights[] array length in strings.h
+    static constexpr int LIGHT_COUNT  = 23;   // lightNames[] length in strings.h
 
     std::array<ButtonBinding, BUTTON_COUNT> buttons;
     std::array<ButtonBinding, DANCER_COUNT> dancerButtons;
@@ -200,16 +200,8 @@ struct BindingStore {
     std::array<LightBinding,  LIGHT_COUNT>  lights;
 
     // Load from globalSettings(). Old-format entries (device_id key) silently skipped.
-    // ioButtonNames = ioButtons[] pointer, dancerButtonNames = ez2DancerIOButtons[]
-    void load(SettingsManager& settings,
-              InputManager& mgr,
-              const char* const* ioButtonNames, int ioCount,
-              const char* const* dancerButtonNames, int dancerCount,
-              const char* const* lightNames, int lightCount);
+    void load(SettingsManager& settings, InputManager& mgr);
 
     // Save to globalSettings() and call settings.save().
-    void save(SettingsManager& settings,
-              const char* const* ioButtonNames, int ioCount,
-              const char* const* dancerButtonNames, int dancerCount,
-              const char* const* lightNames, int lightCount) const;
+    void save(SettingsManager& settings) const;
 };

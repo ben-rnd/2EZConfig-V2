@@ -32,89 +32,76 @@ static bool isPressed(const ButtonBinding& b, InputManager& mgr) {
 }
 
 // --- DJ port computation ----------------------------------------------------
-// BindingStore::buttons[] indices match ioButtons[] in strings.h:
-//  0=Test  1=Service  2=Eff1  3=Eff2  4=Eff3  5=Eff4
-//  6=P1Start  7=P2Start
-//  8=P1-1  9=P1-2  10=P1-3  11=P1-4  12=P1-5  13=P1Pedal
-// 14=P2-1 15=P2-2  16=P2-3  17=P2-4  18=P2-5  19=P2Pedal
 
 static uint8_t computePort0x101(const BindingStore& bs, InputManager& mgr) {
     uint8_t r = 0xFF;
-    if (isPressed(bs.buttons[6],  mgr)) r &= ~0x01;  // P1 Start
-    if (isPressed(bs.buttons[7],  mgr)) r &= ~0x02;  // P2 Start
-    if (isPressed(bs.buttons[2],  mgr)) r &= ~0x04;  // Effector 1
-    if (isPressed(bs.buttons[3],  mgr)) r &= ~0x08;  // Effector 2
-    if (isPressed(bs.buttons[4],  mgr)) r &= ~0x10;  // Effector 3
-    if (isPressed(bs.buttons[5],  mgr)) r &= ~0x20;  // Effector 4
-    if (isPressed(bs.buttons[1],  mgr)) r &= ~0x40;  // Service
-    if (isPressed(bs.buttons[0],  mgr)) r &= ~0x80;  // Test
+    if (isPressed(bs.buttons[DJ_P1_START],   mgr)) r &= ~0x01;
+    if (isPressed(bs.buttons[DJ_P2_START],   mgr)) r &= ~0x02;
+    if (isPressed(bs.buttons[DJ_EFFECTOR_1], mgr)) r &= ~0x04;
+    if (isPressed(bs.buttons[DJ_EFFECTOR_2], mgr)) r &= ~0x08;
+    if (isPressed(bs.buttons[DJ_EFFECTOR_3], mgr)) r &= ~0x10;
+    if (isPressed(bs.buttons[DJ_EFFECTOR_4], mgr)) r &= ~0x20;
+    if (isPressed(bs.buttons[DJ_SERVICE],    mgr)) r &= ~0x40;
+    if (isPressed(bs.buttons[DJ_TEST],       mgr)) r &= ~0x80;
     return r;
 }
 
 static uint8_t computePort0x102(const BindingStore& bs, InputManager& mgr) {
     uint8_t r = 0xFF;
-    if (isPressed(bs.buttons[8],  mgr)) r &= ~0x01;  // P1 1
-    if (isPressed(bs.buttons[9],  mgr)) r &= ~0x02;  // P1 2
-    if (isPressed(bs.buttons[10], mgr)) r &= ~0x04;  // P1 3
-    if (isPressed(bs.buttons[11], mgr)) r &= ~0x08;  // P1 4
-    if (isPressed(bs.buttons[12], mgr)) r &= ~0x10;  // P1 5
+    if (isPressed(bs.buttons[DJ_P1_1],    mgr)) r &= ~0x01;
+    if (isPressed(bs.buttons[DJ_P1_2],    mgr)) r &= ~0x02;
+    if (isPressed(bs.buttons[DJ_P1_3],    mgr)) r &= ~0x04;
+    if (isPressed(bs.buttons[DJ_P1_4],    mgr)) r &= ~0x08;
+    if (isPressed(bs.buttons[DJ_P1_5],    mgr)) r &= ~0x10;
     // bits 5-6 unused
-    if (isPressed(bs.buttons[13], mgr)) r &= ~0x80;  // P1 Pedal
+    if (isPressed(bs.buttons[DJ_P1_PEDAL], mgr)) r &= ~0x80;
     return r;
 }
 
 static uint8_t computePort0x106(const BindingStore& bs, InputManager& mgr) {
     uint8_t r = 0xFF;
-    if (isPressed(bs.buttons[14], mgr)) r &= ~0x01;  // P2 1
-    if (isPressed(bs.buttons[15], mgr)) r &= ~0x02;  // P2 2
-    if (isPressed(bs.buttons[16], mgr)) r &= ~0x04;  // P2 3
-    if (isPressed(bs.buttons[17], mgr)) r &= ~0x08;  // P2 4
-    if (isPressed(bs.buttons[18], mgr)) r &= ~0x10;  // P2 5
+    if (isPressed(bs.buttons[DJ_P2_1],    mgr)) r &= ~0x01;
+    if (isPressed(bs.buttons[DJ_P2_2],    mgr)) r &= ~0x02;
+    if (isPressed(bs.buttons[DJ_P2_3],    mgr)) r &= ~0x04;
+    if (isPressed(bs.buttons[DJ_P2_4],    mgr)) r &= ~0x08;
+    if (isPressed(bs.buttons[DJ_P2_5],    mgr)) r &= ~0x10;
     // bits 5-6 unused
-    if (isPressed(bs.buttons[19], mgr)) r &= ~0x80;  // P2 Pedal
+    if (isPressed(bs.buttons[DJ_P2_PEDAL], mgr)) r &= ~0x80;
     return r;
 }
 
 // --- Dancer port computation ------------------------------------------------
-// BindingStore::dancerButtons[] indices match ez2DancerIOButtons[] in strings.h:
-//  0=Test  1=Service
-//  2=P1Left  3=P1Centre  4=P1Right
-//  5=P2Left  6=P2Centre  7=P2Right
-//  8=P1LSensorTop   9=P1LSensorBot
-// 10=P1RSensorTop  11=P1RSensorBot
-// 12=P2LSensorTop  13=P2LSensorBot
-// 14=P2RSensorTop  15=P2RSensorBot
 
 // Foot ports: each panel press clears a 4-bit nibble, result is inverted.
 static uint16_t computePort0x300(const BindingStore& bs, InputManager& mgr) {
     uint16_t r = 0x0FFF;
-    if (isPressed(bs.dancerButtons[2], mgr)) r &= ~0x00F;  // P1 Left
-    if (isPressed(bs.dancerButtons[3], mgr)) r &= ~0x0F0;  // P1 Centre
-    if (isPressed(bs.dancerButtons[4], mgr)) r &= ~0xF00;  // P1 Right
+    if (isPressed(bs.dancerButtons[DANCER_P1_LEFT],   mgr)) r &= ~0x00F;
+    if (isPressed(bs.dancerButtons[DANCER_P1_CENTRE], mgr)) r &= ~0x0F0;
+    if (isPressed(bs.dancerButtons[DANCER_P1_RIGHT],  mgr)) r &= ~0xF00;
     return static_cast<uint16_t>(~r);
 }
 
 static uint16_t computePort0x302(const BindingStore& bs, InputManager& mgr) {
     uint16_t r = 0x0FFF;
-    if (isPressed(bs.dancerButtons[5], mgr)) r &= ~0x00F;  // P2 Left
-    if (isPressed(bs.dancerButtons[6], mgr)) r &= ~0x0F0;  // P2 Centre
-    if (isPressed(bs.dancerButtons[7], mgr)) r &= ~0xF00;  // P2 Right
+    if (isPressed(bs.dancerButtons[DANCER_P2_LEFT],   mgr)) r &= ~0x00F;
+    if (isPressed(bs.dancerButtons[DANCER_P2_CENTRE], mgr)) r &= ~0x0F0;
+    if (isPressed(bs.dancerButtons[DANCER_P2_RIGHT],  mgr)) r &= ~0xF00;
     return static_cast<uint16_t>(~r);
 }
 
 // Hand sensor port (0x306): active-high, test/service in low byte.
 static uint16_t computePort0x306(const BindingStore& bs, InputManager& mgr) {
     uint16_t r = 0xFFFF;
-    if (isPressed(bs.dancerButtons[8],  mgr)) r &= ~(1 << 11);  // P1 L Sensor Top
-    if (isPressed(bs.dancerButtons[9],  mgr)) r &= ~(1 << 12);  // P1 L Sensor Bot
-    if (isPressed(bs.dancerButtons[10], mgr)) r &= ~(1 << 10);  // P1 R Sensor Top
-    if (isPressed(bs.dancerButtons[11], mgr)) r &= ~(1 << 13);  // P1 R Sensor Bot
-    if (isPressed(bs.dancerButtons[12], mgr)) r &= ~(1 <<  9);  // P2 L Sensor Top
-    if (isPressed(bs.dancerButtons[13], mgr)) r &= ~(1 << 14);  // P2 L Sensor Bot
-    if (isPressed(bs.dancerButtons[14], mgr)) r &= ~(1 <<  8);  // P2 R Sensor Top
-    if (isPressed(bs.dancerButtons[15], mgr)) r &= ~(1 << 15);  // P2 R Sensor Bot
-    if (isPressed(bs.dancerButtons[0],  mgr)) r &= 0xFF00 | (1 << 5);  // Test
-    if (isPressed(bs.dancerButtons[1],  mgr)) r &= 0xFF00 | (1 << 4);  // Service
+    if (isPressed(bs.dancerButtons[DANCER_P1_L_SENSOR_TOP], mgr)) r &= ~(1 << 11);
+    if (isPressed(bs.dancerButtons[DANCER_P1_L_SENSOR_BOT], mgr)) r &= ~(1 << 12);
+    if (isPressed(bs.dancerButtons[DANCER_P1_R_SENSOR_TOP], mgr)) r &= ~(1 << 10);
+    if (isPressed(bs.dancerButtons[DANCER_P1_R_SENSOR_BOT], mgr)) r &= ~(1 << 13);
+    if (isPressed(bs.dancerButtons[DANCER_P2_L_SENSOR_TOP], mgr)) r &= ~(1 <<  9);
+    if (isPressed(bs.dancerButtons[DANCER_P2_L_SENSOR_BOT], mgr)) r &= ~(1 << 14);
+    if (isPressed(bs.dancerButtons[DANCER_P2_R_SENSOR_TOP], mgr)) r &= ~(1 <<  8);
+    if (isPressed(bs.dancerButtons[DANCER_P2_R_SENSOR_BOT], mgr)) r &= ~(1 << 15);
+    if (isPressed(bs.dancerButtons[DANCER_TEST],            mgr)) r &= 0xFF00 | (1 << 5);
+    if (isPressed(bs.dancerButtons[DANCER_SERVICE],         mgr)) r &= 0xFF00 | (1 << 4);
     return r ^ 0xFF00;
 }
 
@@ -139,8 +126,8 @@ static DWORD WINAPI inputPollingThread(void* arg) {
         s_djPortCache[6] = computePort0x106(bs, mgr);
 
         // DJ analog ports (turntables)
-        s_djPortCache[3] = bs.analogs[0].getPosition(mgr, mgr.getVttPosition(0));
-        s_djPortCache[4] = bs.analogs[1].getPosition(mgr, mgr.getVttPosition(1));
+        s_djPortCache[3] = bs.analogs[ANALOG_P1_TURNTABLE].getPosition(mgr, mgr.getVttPosition(ANALOG_P1_TURNTABLE));
+        s_djPortCache[4] = bs.analogs[ANALOG_P2_TURNTABLE].getPosition(mgr, mgr.getVttPosition(ANALOG_P2_TURNTABLE));
 
         // Dancer ports
         s_dancerPortCache[0] = computePort0x300(bs, mgr);

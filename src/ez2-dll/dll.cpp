@@ -97,17 +97,6 @@ static DWORD WINAPI InitThread(void*) {
     if (GetFileAttributesA(settingsPath.c_str()) == INVALID_FILE_ATTRIBUTES)
         return 0;
 
-    // Read force_60hz early and install DDraw hook before game calls SetDisplayMode.
-    bool force60hz = false;
-    {
-        std::ifstream f(settingsPath);
-        if (f.is_open()) {
-            try { force60hz = nlohmann::json::parse(f).value("force_60hz", false); }
-            catch (...) {}
-        }
-    }
-    installDDrawHook(force60hz);
-
     SettingsManager settings;
     try {
         settings.load(dir, dir);
@@ -115,11 +104,15 @@ static DWORD WINAPI InitThread(void*) {
         return 0;
     }
 
+    //pre delay as we're hooking dll functions.
+    if(settings.globalSettings().value("force_60hz", false)){
+        installDDrawHook(true);
+    }
+
+    std::string gameId = settings.gameSettings().value("game_id", "");
+
     //Short sleep to fix crash when using legitimate data with dongles.
     Sleep(settings.globalSettings().value("shim_delay", 10));
-
-    //Get game ID for patches
-    std::string gameId = settings.gameSettings().value("game_id", "");
 
     // Apply early settings/patches that are time critical.
     if (settings.globalSettings().value("io_emu", true))
@@ -133,15 +126,8 @@ static DWORD WINAPI InitThread(void*) {
 
     //Setup Input manager and load bindings
     s_mgr = new InputManager();
-
-    static const int IO_COUNT     = (int)(sizeof(ioButtons)          / sizeof(ioButtons[0]));
-    static const int DANCER_COUNT = (int)(sizeof(ez2DancerIOButtons) / sizeof(ez2DancerIOButtons[0]));
-    static const int LIGHT_COUNT  = (int)(sizeof(lights)             / sizeof(lights[0]));
     try {
-        s_bindings.load(settings, *s_mgr,
-                        ioButtons,          IO_COUNT,
-                        ez2DancerIOButtons, DANCER_COUNT,
-                        lights,             LIGHT_COUNT);
+        s_bindings.load(settings, *s_mgr);
     } catch (...) {}
 
     startInputPollingThread(s_bindings, *s_mgr);
@@ -149,7 +135,7 @@ static DWORD WINAPI InitThread(void*) {
 
     // Wait for game init, then apply standard patches.
     Sleep(settings.globalSettings().value("patch_delay_ms", 2000));
-    settings.patchStore().applyVersionPatch("EZ2Config 1.00");
+    settings.patchStore().applyVersionPatch("2EZConfig V2.0");
     if (!gameId.empty())
         settings.patchStore().applyPatches(gameId);
 

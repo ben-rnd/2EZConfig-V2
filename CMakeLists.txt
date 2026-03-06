@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(EZ2Config VERSION 1.0.0 LANGUAGES C CXX)
+project(2EZConfig VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -105,6 +105,6 @@ add_subdirectory(src/libs/patches)
 add_subdirectory(src/libs/settings)
 add_subdirectory(src/libs/input)
 add_subdirectory(src/libs/bindings)
-add_subdirectory(src/ez2config-exe)
+add_subdirectory(src/2ezconfig-exe)
 add_subdirectory(src/ez2-dll)
 

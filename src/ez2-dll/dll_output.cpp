@@ -1,19 +1,9 @@
 #include "dll_output.h"
 #include "bindings.h"
 #include "input_manager.h"
+#include "strings.h"
 #include <windows.h>
 
-// Light indices into BindingStore::lights[] — matches lights[] order.
-enum LightChannel {
-    LIGHT_EFFECTOR_1, LIGHT_EFFECTOR_2, LIGHT_EFFECTOR_3, LIGHT_EFFECTOR_4,
-    LIGHT_P1_START, LIGHT_P2_START,
-    LIGHT_P1_TURNTABLE,
-    LIGHT_P1_1, LIGHT_P1_2, LIGHT_P1_3, LIGHT_P1_4, LIGHT_P1_5,
-    LIGHT_P2_TURNTABLE,
-    LIGHT_P2_1, LIGHT_P2_2, LIGHT_P2_3, LIGHT_P2_4, LIGHT_P2_5,
-    LIGHT_NEONS,
-    LIGHT_RED_LAMP_L, LIGHT_RED_LAMP_R, LIGHT_BLUE_LAMP_L, LIGHT_BLUE_LAMP_R
-};
 
 static volatile float s_lightState[BindingStore::LIGHT_COUNT] = {};
 static volatile bool  s_lightDirty = false;

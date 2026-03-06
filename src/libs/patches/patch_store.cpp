@@ -265,10 +265,11 @@ void PatchStore::applyPatternPatch(const Patch& p) {
 
     for (size_t i = 0; i + patternLen <= size; ++i) {
         if (memcmp(start + i, p.pattern.c_str(), patternLen) == 0) {
-            DWORD old = 0;
-            VirtualProtect(start + i, p.replacement.size(), PAGE_EXECUTE_READWRITE, &old);
-            memcpy(start + i, p.replacement.c_str(), p.replacement.size());
-            VirtualProtect(start + i, p.replacement.size(), old, &old);
+            DWORD  old      = 0;
+            size_t writeLen = p.replacement.size() + 1;  // include null terminator
+            VirtualProtect(start + i, writeLen, PAGE_EXECUTE_READWRITE, &old);
+            memcpy(start + i, p.replacement.c_str(), writeLen);
+            VirtualProtect(start + i, writeLen, old, &old);
             return;  // first match wins
         }
     }

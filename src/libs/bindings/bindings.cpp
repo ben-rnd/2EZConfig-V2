@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include "bindings.h"
+#include "strings.h"
 #include <algorithm>
 #include <cstring>
 
@@ -224,26 +225,22 @@ nlohmann::json LightBinding::toJson() const {
 
 // ---- BindingStore implementations -----------------------------------
 
-void BindingStore::load(SettingsManager& settings,
-                        InputManager& mgr,
-                        const char* const* ioButtonNames, int ioCount,
-                        const char* const* dancerButtonNames, int dancerCount,
-                        const char* const* lightNames, int lightCount) {
+void BindingStore::load(SettingsManager& settings, InputManager& mgr) {
     auto& gs = settings.globalSettings();
     // io and dancer bindings are stored in separate sub-objects to avoid key
     // collisions ("Test", "Service" appear in both name arrays).
     if (gs.contains("io_button_bindings") && gs["io_button_bindings"].is_object()) {
         const auto& bb = gs["io_button_bindings"];
-        for (int i = 0; i < ioCount && i < BUTTON_COUNT; ++i) {
-            if (!bb.contains(ioButtonNames[i])) continue;
-            const auto& val = bb[ioButtonNames[i]];
+        for (int i = 0; i < BUTTON_COUNT; ++i) {
+            if (!bb.contains(djButtonNames[i])) continue;
+            const auto& val = bb[djButtonNames[i]];
             if (val.is_object())
                 buttons[i] = ButtonBinding::fromJson(val);
         }
     }
     if (gs.contains("dancer_button_bindings") && gs["dancer_button_bindings"].is_object()) {
         const auto& bb = gs["dancer_button_bindings"];
-        for (int i = 0; i < dancerCount && i < DANCER_COUNT; ++i) {
+        for (int i = 0; i < DANCER_COUNT; ++i) {
             if (!bb.contains(dancerButtonNames[i])) continue;
             const auto& val = bb[dancerButtonNames[i]];
             if (val.is_object())
@@ -264,7 +261,7 @@ void BindingStore::load(SettingsManager& settings,
     // Load light_bindings
     if (gs.contains("light_bindings") && gs["light_bindings"].is_object()) {
         const auto& lb = gs["light_bindings"];
-        for (int i = 0; i < lightCount && i < LIGHT_COUNT; ++i) {
+        for (int i = 0; i < LIGHT_COUNT; ++i) {
             if (!lb.contains(lightNames[i])) continue;
             const auto& val = lb[lightNames[i]];
             if (val.is_object())
@@ -284,19 +281,16 @@ void BindingStore::load(SettingsManager& settings,
     }
 }
 
-void BindingStore::save(SettingsManager& settings,
-                        const char* const* ioButtonNames, int ioCount,
-                        const char* const* dancerButtonNames, int dancerCount,
-                        const char* const* lightNames, int lightCount) const {
+void BindingStore::save(SettingsManager& settings) const {
     nlohmann::json& gs = settings.globalSettings();
 
     gs["io_button_bindings"] = nlohmann::json::object();
-    for (int i = 0; i < ioCount && i < BUTTON_COUNT; ++i) {
+    for (int i = 0; i < BUTTON_COUNT; ++i) {
         if (buttons[i].isSet())
-            gs["io_button_bindings"][ioButtonNames[i]] = buttons[i].toJson();
+            gs["io_button_bindings"][djButtonNames[i]] = buttons[i].toJson();
     }
     gs["dancer_button_bindings"] = nlohmann::json::object();
-    for (int i = 0; i < dancerCount && i < DANCER_COUNT; ++i) {
+    for (int i = 0; i < DANCER_COUNT; ++i) {
         if (dancerButtons[i].isSet())
             gs["dancer_button_bindings"][dancerButtonNames[i]] = dancerButtons[i].toJson();
     }
@@ -310,7 +304,7 @@ void BindingStore::save(SettingsManager& settings,
 
     // Serialize light_bindings
     gs["light_bindings"] = nlohmann::json::object();
-    for (int i = 0; i < lightCount && i < LIGHT_COUNT; ++i) {
+    for (int i = 0; i < LIGHT_COUNT; ++i) {
         if (lights[i].isSet())
             gs["light_bindings"][lightNames[i]] = lights[i].toJson();
     }
