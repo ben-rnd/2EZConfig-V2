@@ -1,5 +1,6 @@
 # 2EZConfig.exe
 add_executable(2EZConfig WIN32 main.cpp app.rc)
+set_source_files_properties(app.rc PROPERTIES COMPILE_FLAGS "--include-dir=${CMAKE_SOURCE_DIR}/src")
 
 target_include_directories(2EZConfig PRIVATE
     ${CMAKE_SOURCE_DIR}/src/common/include
