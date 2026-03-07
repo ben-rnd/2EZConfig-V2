@@ -10,11 +10,20 @@
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
+#include <windows.h>
+#include <filesystem>
 #include <cstdio>
 #include <fstream>
 #include <string>
 #include <vector>
 #include <algorithm>
+
+static std::string getAppDataDir() {
+    char buf[MAX_PATH] = {};
+    if (GetEnvironmentVariableA("APPDATA", buf, MAX_PATH))
+        return std::string(buf) + "\\2ezconfig";
+    return ".";
+}
 
 static void renderUI();
 static void setTheme();
@@ -46,7 +55,7 @@ int main() {
     glfwSetErrorCallback([](int e, const char* d) { fprintf(stderr, "GLFW error %d: %s\n", e, d); });
     if (!glfwInit()) return 1;
 
-    g_window = glfwCreateWindow(640, 480, "2EZConfig", nullptr, nullptr);
+    g_window = glfwCreateWindow(640, 480, "2EZConfig V2.0", nullptr, nullptr);
     if (!g_window) { glfwTerminate(); return 1; }
     glfwMakeContextCurrent(g_window);
     glfwSwapInterval(1);
@@ -66,8 +75,13 @@ int main() {
 
     setTheme();
 
-    // Extract patches.json from embedded resource if missing or outdated
+    // Resolve shared config dir: %APPDATA%\2ezconfig
+    std::string appDataDir = getAppDataDir();
+    std::filesystem::create_directories(appDataDir);
+
+    // Extract patches.json from embedded resource to appdata dir if missing or outdated
     {
+        std::string patchesPath = appDataDir + "\\patches.json";
         HRSRC hRes = FindResourceA(nullptr, "PATCHES_JSON", MAKEINTRESOURCEA(10));
         if (hRes) {
             HGLOBAL hData = LoadResource(nullptr, hRes);
@@ -75,12 +89,12 @@ int main() {
                 DWORD sz = SizeofResource(nullptr, hRes);
                 const char* ptr = static_cast<const char*>(LockResource(hData));
                 if (ptr && sz) {
-                    bool shouldWrite = (GetFileAttributesA("patches.json") == INVALID_FILE_ATTRIBUTES);
+                    bool shouldWrite = (GetFileAttributesA(patchesPath.c_str()) == INVALID_FILE_ATTRIBUTES);
                     if (!shouldWrite) {
                         try {
                             auto embedded = nlohmann::json::parse(ptr, ptr + sz);
                             int embeddedVer = embedded.value("ver", 0);
-                            std::ifstream diskFile("patches.json");
+                            std::ifstream diskFile(patchesPath);
                             if (diskFile.is_open()) {
                                 auto diskJson = nlohmann::json::parse(diskFile);
                                 if (!diskJson.contains("ver") || embeddedVer > diskJson.value("ver", 0))
@@ -89,7 +103,7 @@ int main() {
                         } catch (...) {}
                     }
                     if (shouldWrite) {
-                        HANDLE hFile = CreateFileA("patches.json", GENERIC_WRITE, 0, nullptr,
+                        HANDLE hFile = CreateFileA(patchesPath.c_str(), GENERIC_WRITE, 0, nullptr,
                                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
                         if (hFile != INVALID_HANDLE_VALUE) {
                             DWORD written = 0;
@@ -102,8 +116,8 @@ int main() {
         }
     }
 
-    // Load settings from exe directory
-    g_settings.load(".", ".");
+    // Load settings: game-settings.json stays local, global-settings + patches in appdata
+    g_settings.load(".", appDataDir);
 
     // Start input subsystem
     g_input = new InputManager();
@@ -125,8 +139,6 @@ int main() {
         for (int i = 0; !found && i < DANCER_COUNT_M; i++) {
             if (gid == dancerGames[i].id) { g_gameIdx = DJ_COUNT_M + i; g_isDancer = true; found = true; }
         }
-        // Migration: old-style "ez2dancer" (no version) — default to first Dancer entry
-        if (!found && gid == "ez2dancer") { g_gameIdx = DJ_COUNT_M; g_isDancer = true; }
     }
 
     while (!glfwWindowShouldClose(g_window)) {
@@ -142,7 +154,7 @@ int main() {
         int w, h;
         glfwGetFramebufferSize(g_window, &w, &h);
         glViewport(0, 0, w, h);
-        glClearColor(0.09f, 0.09f, 0.09f, 1.0f);
+        glClearColor(0.07f, 0.07f, 0.07f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(g_window);
@@ -186,7 +198,7 @@ static void renderPatchesTab() {
 }
 
 static void renderPatchRow(Patch& patch, SettingsManager& settings, bool isTopLevel) {
-    bool changed = ImGui::Checkbox("##en", &patch.enabled);
+    bool changed = ImGui::Checkbox(patch.name.c_str(), &patch.enabled);
 
     if (patch.type == PatchType::Value) {
         ImGui::SameLine();
@@ -196,9 +208,6 @@ static void renderPatchRow(Patch& patch, SettingsManager& settings, bool isTopLe
         if (ImGui::Combo("##val", &patch.value, opts.data(), (int)opts.size()))
             changed = true;
     }
-
-    ImGui::SameLine();
-    ImGui::TextUnformatted(patch.name.c_str());
 
     if (!patch.description.empty() && ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", patch.description.c_str());
@@ -241,7 +250,7 @@ static void renderUI() {
 
     ImGui::Begin("##main", nullptr, flags);
 
-    ImGui::TextUnformatted("2EZConfig");
+    ImGui::TextUnformatted("2EZConfig ~ It rules once again ~ ");
     ImGui::SameLine();
     // Right-align Play EZ2 button: compute position so the button sits at window right edge
     {
@@ -319,13 +328,13 @@ static void renderUI() {
             }
 
             static bool force60hz = g_settings.globalSettings().value("force_60hz", false);
-            if (ImGui::Checkbox("Force 60Hz", &force60hz)) {
+            if (ImGui::Checkbox("Force 60Hz (experimental)", &force60hz)) {
                 g_settings.globalSettings()["force_60hz"] = force60hz;
                 g_settings.save();
             }
 
             static bool highPriority = g_settings.globalSettings().value("high_priority", false);
-            if (ImGui::Checkbox("Force High Priority", &highPriority)) {
+            if (ImGui::Checkbox("Force High Priority (experimental)", &highPriority)) {
                 g_settings.globalSettings()["high_priority"] = highPriority;
                 g_settings.save();
             }
@@ -912,59 +921,61 @@ static void renderUI() {
 }
 
 static void setTheme() {
+    // Night Traveller theme — dark charcoal/black base, warm amber-orange accents
     ImGuiStyle& style = ImGui::GetStyle();
     style.FrameRounding    = 4.0f;
     style.WindowBorderSize = 0.0f;
-    style.PopupBorderSize  = 0.0f;
+    style.PopupBorderSize  = 1.0f;
     style.GrabRounding     = 4.0f;
+    style.TabRounding      = 4.0f;
 
     ImVec4* c = ImGui::GetStyle().Colors;
-    c[ImGuiCol_Text]                 = { 1.00f, 1.00f, 1.00f, 1.00f };
-    c[ImGuiCol_TextDisabled]         = { 0.73f, 0.75f, 0.74f, 1.00f };
-    c[ImGuiCol_WindowBg]             = { 0.09f, 0.09f, 0.09f, 0.94f };
+    c[ImGuiCol_Text]                 = { 0.92f, 0.91f, 0.88f, 1.00f };  // warm off-white
+    c[ImGuiCol_TextDisabled]         = { 0.42f, 0.41f, 0.38f, 1.00f };  // mid grey
+    c[ImGuiCol_WindowBg]             = { 0.07f, 0.07f, 0.07f, 0.97f };  // near black
     c[ImGuiCol_ChildBg]              = { 0.00f, 0.00f, 0.00f, 0.00f };
-    c[ImGuiCol_PopupBg]              = { 0.08f, 0.08f, 0.08f, 0.94f };
-    c[ImGuiCol_Border]               = { 0.20f, 0.20f, 0.20f, 0.50f };
+    c[ImGuiCol_PopupBg]              = { 0.09f, 0.09f, 0.09f, 0.97f };
+    c[ImGuiCol_Border]               = { 0.25f, 0.23f, 0.20f, 0.60f };  // warm dark grey
     c[ImGuiCol_BorderShadow]         = { 0.00f, 0.00f, 0.00f, 0.00f };
-    c[ImGuiCol_FrameBg]              = { 0.71f, 0.39f, 0.39f, 0.54f };
-    c[ImGuiCol_FrameBgHovered]       = { 0.84f, 0.66f, 0.66f, 0.40f };
-    c[ImGuiCol_FrameBgActive]        = { 0.84f, 0.66f, 0.66f, 0.67f };
-    c[ImGuiCol_TitleBg]              = { 0.47f, 0.22f, 0.22f, 0.67f };
-    c[ImGuiCol_TitleBgActive]        = { 0.47f, 0.22f, 0.22f, 1.00f };
-    c[ImGuiCol_TitleBgCollapsed]     = { 0.47f, 0.22f, 0.22f, 0.67f };
-    c[ImGuiCol_MenuBarBg]            = { 0.34f, 0.16f, 0.16f, 1.00f };
+    c[ImGuiCol_FrameBg]              = { 0.16f, 0.15f, 0.13f, 1.00f };  // dark charcoal
+    c[ImGuiCol_FrameBgHovered]       = { 0.24f, 0.22f, 0.18f, 1.00f };
+    c[ImGuiCol_FrameBgActive]        = { 0.30f, 0.27f, 0.22f, 1.00f };
+    c[ImGuiCol_TitleBg]              = { 0.10f, 0.07f, 0.02f, 1.00f };  // very dark orange
+    c[ImGuiCol_TitleBgActive]        = { 0.22f, 0.13f, 0.02f, 1.00f };
+    c[ImGuiCol_TitleBgCollapsed]     = { 0.10f, 0.07f, 0.02f, 0.80f };
+    c[ImGuiCol_MenuBarBg]            = { 0.10f, 0.07f, 0.02f, 1.00f };
     c[ImGuiCol_ScrollbarBg]          = { 0.02f, 0.02f, 0.02f, 0.53f };
-    c[ImGuiCol_ScrollbarGrab]        = { 0.31f, 0.31f, 0.31f, 1.00f };
-    c[ImGuiCol_ScrollbarGrabHovered] = { 0.41f, 0.41f, 0.41f, 1.00f };
-    c[ImGuiCol_ScrollbarGrabActive]  = { 0.51f, 0.51f, 0.51f, 1.00f };
-    c[ImGuiCol_CheckMark]            = { 1.00f, 1.00f, 1.00f, 1.00f };
-    c[ImGuiCol_SliderGrab]           = { 0.71f, 0.39f, 0.39f, 1.00f };
-    c[ImGuiCol_SliderGrabActive]     = { 0.84f, 0.66f, 0.66f, 1.00f };
-    c[ImGuiCol_Button]               = { 1.00f, 0.19f, 0.19f, 0.40f };
-    c[ImGuiCol_ButtonHovered]        = { 0.71f, 0.39f, 0.39f, 0.65f };
-    c[ImGuiCol_ButtonActive]         = { 0.20f, 0.20f, 0.20f, 0.50f };
-    c[ImGuiCol_Header]               = { 0.56f, 0.10f, 0.10f, 1.00f };
-    c[ImGuiCol_HeaderHovered]        = { 0.84f, 0.66f, 0.66f, 0.65f };
-    c[ImGuiCol_HeaderActive]         = { 0.84f, 0.66f, 0.66f, 0.00f };
-    c[ImGuiCol_Separator]            = { 0.43f, 0.43f, 0.50f, 0.50f };
-    c[ImGuiCol_SeparatorHovered]     = { 0.56f, 0.10f, 0.10f, 1.00f };
-    c[ImGuiCol_SeparatorActive]      = { 0.56f, 0.10f, 0.10f, 1.00f };
-    c[ImGuiCol_ResizeGrip]           = { 0.56f, 0.10f, 0.10f, 1.00f };
-    c[ImGuiCol_ResizeGripHovered]    = { 0.84f, 0.66f, 0.66f, 0.66f };
-    c[ImGuiCol_ResizeGripActive]     = { 0.84f, 0.66f, 0.66f, 0.66f };
-    c[ImGuiCol_Tab]                  = { 0.56f, 0.10f, 0.10f, 1.00f };
-    c[ImGuiCol_TabHovered]           = { 0.84f, 0.66f, 0.66f, 0.66f };
-    c[ImGuiCol_TabActive]            = { 0.84f, 0.66f, 0.66f, 0.66f };
-    c[ImGuiCol_TabUnfocused]         = { 0.07f, 0.10f, 0.15f, 0.97f };
-    c[ImGuiCol_TabUnfocusedActive]   = { 0.14f, 0.26f, 0.42f, 1.00f };
-    c[ImGuiCol_PlotLines]            = { 0.61f, 0.61f, 0.61f, 1.00f };
-    c[ImGuiCol_PlotLinesHovered]     = { 1.00f, 0.43f, 0.35f, 1.00f };
-    c[ImGuiCol_PlotHistogram]        = { 0.90f, 0.70f, 0.00f, 1.00f };
-    c[ImGuiCol_PlotHistogramHovered] = { 1.00f, 0.60f, 0.00f, 1.00f };
-    c[ImGuiCol_TextSelectedBg]       = { 0.26f, 0.59f, 0.98f, 0.35f };
-    c[ImGuiCol_DragDropTarget]       = { 1.00f, 1.00f, 0.00f, 0.90f };
-    c[ImGuiCol_NavHighlight]         = { 0.41f, 0.41f, 0.41f, 1.00f };
+    c[ImGuiCol_ScrollbarGrab]        = { 0.32f, 0.32f, 0.30f, 1.00f };
+    c[ImGuiCol_ScrollbarGrabHovered] = { 0.44f, 0.42f, 0.38f, 1.00f };
+    c[ImGuiCol_ScrollbarGrabActive]  = { 0.83f, 0.44f, 0.10f, 1.00f };  // orange on active
+    c[ImGuiCol_CheckMark]            = { 0.88f, 0.50f, 0.10f, 1.00f };  // orange
+    c[ImGuiCol_SliderGrab]           = { 0.83f, 0.44f, 0.10f, 1.00f };  // orange
+    c[ImGuiCol_SliderGrabActive]     = { 1.00f, 0.60f, 0.20f, 1.00f };
+    c[ImGuiCol_Button]               = { 0.83f, 0.44f, 0.10f, 0.30f };
+    c[ImGuiCol_ButtonHovered]        = { 0.88f, 0.50f, 0.12f, 0.75f };
+    c[ImGuiCol_ButtonActive]         = { 1.00f, 0.58f, 0.15f, 1.00f };
+    c[ImGuiCol_Header]               = { 0.55f, 0.28f, 0.04f, 0.75f };  // dark orange
+    c[ImGuiCol_HeaderHovered]        = { 0.83f, 0.44f, 0.10f, 0.75f };
+    c[ImGuiCol_HeaderActive]         = { 0.90f, 0.52f, 0.12f, 1.00f };
+    c[ImGuiCol_Separator]            = { 0.28f, 0.26f, 0.22f, 0.70f };
+    c[ImGuiCol_SeparatorHovered]     = { 0.83f, 0.44f, 0.10f, 0.80f };
+    c[ImGuiCol_SeparatorActive]      = { 0.90f, 0.52f, 0.12f, 1.00f };
+    c[ImGuiCol_ResizeGrip]           = { 0.83f, 0.44f, 0.10f, 0.20f };
+    c[ImGuiCol_ResizeGripHovered]    = { 0.83f, 0.44f, 0.10f, 0.65f };
+    c[ImGuiCol_ResizeGripActive]     = { 1.00f, 0.58f, 0.15f, 0.95f };
+    c[ImGuiCol_Tab]                  = { 0.40f, 0.22f, 0.05f, 1.00f };  // visible dark orange
+    c[ImGuiCol_TabHovered]           = { 0.90f, 0.50f, 0.12f, 1.00f };
+    c[ImGuiCol_TabActive]            = { 0.78f, 0.42f, 0.09f, 1.00f };  // bright active orange
+    c[ImGuiCol_TabUnfocused]         = { 0.25f, 0.14f, 0.03f, 1.00f };
+    c[ImGuiCol_TabUnfocusedActive]   = { 0.48f, 0.26f, 0.06f, 1.00f };
+    c[ImGuiCol_PlotLines]            = { 0.55f, 0.55f, 0.52f, 1.00f };
+    c[ImGuiCol_PlotLinesHovered]     = { 1.00f, 0.58f, 0.15f, 1.00f };
+    c[ImGuiCol_PlotHistogram]        = { 0.83f, 0.44f, 0.10f, 1.00f };
+    c[ImGuiCol_PlotHistogramHovered] = { 1.00f, 0.60f, 0.20f, 1.00f };
+    c[ImGuiCol_TextSelectedBg]       = { 0.83f, 0.44f, 0.10f, 0.35f };
+    c[ImGuiCol_DragDropTarget]       = { 1.00f, 0.58f, 0.15f, 0.90f };
+    c[ImGuiCol_NavHighlight]         = { 0.83f, 0.44f, 0.10f, 1.00f };
     c[ImGuiCol_NavWindowingHighlight]= { 1.00f, 1.00f, 1.00f, 0.70f };
     c[ImGuiCol_NavWindowingDimBg]    = { 0.80f, 0.80f, 0.80f, 0.20f };
-    c[ImGuiCol_ModalWindowDimBg]     = { 0.80f, 0.80f, 0.80f, 0.35f };
+    c[ImGuiCol_ModalWindowDimBg]     = { 0.00f, 0.00f, 0.00f, 0.65f };
 }

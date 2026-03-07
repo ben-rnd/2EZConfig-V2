@@ -1,9 +1,11 @@
 #include <windows.h>
 #include <mmsystem.h>
+#include <tlhelp32.h>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "ddraw_hook.h"
 #include "dll_input.h"
@@ -82,6 +84,35 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
     }
 }
 
+static void suspendOtherThreads(std::vector<HANDLE>& out) {
+    DWORD myTid = GetCurrentThreadId();
+    DWORD pid   = GetCurrentProcessId();
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 te = { sizeof(te) };
+    if (Thread32First(snap, &te)) {
+        do {
+            if (te.th32OwnerProcessID == pid && te.th32ThreadID != myTid) {
+                HANDLE h = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
+                if (h) { SuspendThread(h); out.push_back(h); }
+            }
+        } while (Thread32Next(snap, &te));
+    }
+    CloseHandle(snap);
+}
+
+static void resumeThreads(std::vector<HANDLE>& handles) {
+    for (HANDLE h : handles) { ResumeThread(h); CloseHandle(h); }
+    handles.clear();
+}
+
+static std::string getAppDataDir() {
+    char buf[MAX_PATH] = {};
+    if (GetEnvironmentVariableA("APPDATA", buf, MAX_PATH))
+        return std::string(buf) + "\\2ezconfig";
+    return "";
+}
+
 static DWORD WINAPI InitThread(void*) {
     // Fix innacurate sleep()
     timeBeginPeriod(1);
@@ -92,39 +123,43 @@ static DWORD WINAPI InitThread(void*) {
     char* lastSlash = strrchr(dir, '\\');
     if (lastSlash) *lastSlash = '\0';
 
-    // Exit early if no settings file — obviously broken install if settings arent found.
-    std::string settingsPath = std::string(dir) + "\\global-settings.json";
-    if (GetFileAttributesA(settingsPath.c_str()) == INVALID_FILE_ATTRIBUTES)
+    // Resolve shared config dir: %APPDATA%\2ezconfig
+    std::string appDataDir = getAppDataDir();
+    if (appDataDir.empty()) return 0;
+
+    // Exit early if shared config dir doesn't exist — 2EZConfig has never been run.
+    if (GetFileAttributesA(appDataDir.c_str()) == INVALID_FILE_ATTRIBUTES)
         return 0;
 
     SettingsManager settings;
     try {
-        settings.load(dir, dir);
+        settings.load(dir, appDataDir);
     } catch (...) {
         return 0;
     }
 
-    //pre delay as we're hooking dll functions.
-    if(settings.globalSettings().value("force_60hz", false)){
-        installDDrawHook(true);
-    }
-
-    settings.patchStore().applyVersionPatch("2EZConfig V2.0");
-
     std::string gameId = settings.gameSettings().value("game_id", "");
 
-    //Short sleep to fix crash when using legitimate data with dongles.
-    Sleep(settings.globalSettings().value("shim_delay", 10));
+    // Suspend all game threads while installing time-critical hooks.
+    std::vector<HANDLE> suspended;
+    suspendOtherThreads(suspended);
 
-    // Apply early settings/patches that are time critical.
+    if (settings.globalSettings().value("force_60hz", false))
+        installDDrawHook(true);
+
     if (settings.globalSettings().value("io_emu", true))
         AddVectoredExceptionHandler(1, IOHandler);
 
     if (settings.globalSettings().value("high_priority", false))
         SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
+    resumeThreads(suspended);
+
+    // Allow dongle/hardware to stabilize before continuing.
+    Sleep(settings.globalSettings().value("shim_delay", 10));
+
     if (!gameId.empty())
-        settings.patchStore().applyEarlyPatches(gameId);
+    settings.patchStore().applyEarlyPatches(gameId);
 
     //Setup Input manager and load bindings
     s_mgr = new InputManager();
@@ -135,8 +170,9 @@ static DWORD WINAPI InitThread(void*) {
     startInputPollingThread(s_bindings, *s_mgr);
     startLightFlushThread(s_bindings, *s_mgr);
 
-    // Wait for game init, then apply standard patches.
+    // Wait for game init, then apply patches and version string.
     Sleep(settings.globalSettings().value("patch_delay_ms", 2000));
+    settings.patchStore().applyVersionPatch("2EZConfig V2.0");
     if (!gameId.empty())
         settings.patchStore().applyPatches(gameId);
 
