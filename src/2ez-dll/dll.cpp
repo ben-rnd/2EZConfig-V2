@@ -159,7 +159,7 @@ static DWORD WINAPI InitThread(void*) {
     Sleep(settings.globalSettings().value("shim_delay", 10));
 
     if (!gameId.empty())
-    settings.patchStore().applyEarlyPatches(gameId);
+        settings.patchStore().applyEarlyPatches(gameId);
 
     //Setup Input manager and load bindings
     s_mgr = new InputManager();

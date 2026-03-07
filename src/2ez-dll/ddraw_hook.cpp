@@ -4,14 +4,54 @@
 
 static bool s_force60hz = false;
 using SetDisplayModeFn = HRESULT(WINAPI*)(void*, DWORD, DWORD, DWORD, DWORD, DWORD);
-static SetDisplayModeFn s_origSetDisplayMode = nullptr;
+static SetDisplayModeFn s_origDD2 = nullptr;
+static SetDisplayModeFn s_origDD4 = nullptr;
+static SetDisplayModeFn s_origDD7 = nullptr;
 
-static HRESULT WINAPI HookedSetDisplayMode(
+static HRESULT WINAPI HookedSetDisplayModeDD2(
     void* pThis, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP,
     DWORD dwRefreshRate, DWORD dwFlags)
 {
-    if (s_force60hz) dwRefreshRate = 60;
-    return s_origSetDisplayMode(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
+    if (s_force60hz) {
+        HRESULT hr = s_origDD2(pThis, dwWidth, dwHeight, dwBPP, 60, dwFlags);
+        if (SUCCEEDED(hr)) return hr;
+        // 60Hz rejected by driver — fall back to original rate
+    }
+    return s_origDD2(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
+}
+
+static HRESULT WINAPI HookedSetDisplayModeDD4(
+    void* pThis, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP,
+    DWORD dwRefreshRate, DWORD dwFlags)
+{
+    if (s_force60hz) {
+        HRESULT hr = s_origDD4(pThis, dwWidth, dwHeight, dwBPP, 60, dwFlags);
+        if (SUCCEEDED(hr)) return hr;
+        // 60Hz rejected by driver — fall back to original rate
+    }
+    return s_origDD4(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
+}
+
+static HRESULT WINAPI HookedSetDisplayModeDD7(
+    void* pThis, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP,
+    DWORD dwRefreshRate, DWORD dwFlags)
+{
+    if (s_force60hz) {
+        HRESULT hr = s_origDD7(pThis, dwWidth, dwHeight, dwBPP, 60, dwFlags);
+        if (SUCCEEDED(hr)) return hr;
+        // 60Hz rejected by driver — fall back to original rate
+    }
+    return s_origDD7(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
+}
+
+static void hookSlot(void* pIface, int slot, void* hookFn, SetDisplayModeFn* origOut) {
+    void** vtable = *reinterpret_cast<void***>(pIface);
+    if (vtable[slot] == hookFn) return;
+    *origOut = reinterpret_cast<SetDisplayModeFn>(vtable[slot]);
+    DWORD oldProt;
+    VirtualProtect(&vtable[slot], sizeof(void*), PAGE_READWRITE, &oldProt);
+    vtable[slot] = hookFn;
+    VirtualProtect(&vtable[slot], sizeof(void*), oldProt, &oldProt);
 }
 
 void installDDrawHook(bool force60hz) {
@@ -21,34 +61,31 @@ void installDDrawHook(bool force60hz) {
     if (!hDDraw) hDDraw = LoadLibraryA("ddraw.dll");
     if (!hDDraw) return;
 
-    auto fnCreate = reinterpret_cast<HRESULT(WINAPI*)(GUID*, IDirectDraw**, IUnknown*)>(
-        GetProcAddress(hDDraw, "DirectDrawCreate"));
-    if (!fnCreate) return;
+    // Use DirectDrawCreateEx (v7 API) to avoid corrupting global DDraw state
+    // that DirectDrawCreate (v1 API) causes before the game's own CreateEx call.
+    auto fnCreateEx = reinterpret_cast<HRESULT(WINAPI*)(GUID*, void**, REFIID, IUnknown*)>(
+        GetProcAddress(hDDraw, "DirectDrawCreateEx"));
+    if (!fnCreateEx) return;
 
-    IDirectDraw* pDD = nullptr;
-    if (FAILED(fnCreate(nullptr, &pDD, nullptr))) return;
+    IDirectDraw7* pDD7 = nullptr;
+    if (FAILED(fnCreateEx(nullptr, reinterpret_cast<void**>(&pDD7), IID_IDirectDraw7, nullptr))) return;
 
-    auto hookSlot = [](void* pIface, int slot) {
-        void** vtable = *reinterpret_cast<void***>(pIface);
-        if (vtable[slot] == reinterpret_cast<void*>(HookedSetDisplayMode)) return;
-        if (!s_origSetDisplayMode)
-            s_origSetDisplayMode = reinterpret_cast<SetDisplayModeFn>(vtable[slot]);
-        DWORD oldProt;
-        VirtualProtect(&vtable[slot], sizeof(void*), PAGE_READWRITE, &oldProt);
-        vtable[slot] = reinterpret_cast<void*>(HookedSetDisplayMode);
-        VirtualProtect(&vtable[slot], sizeof(void*), oldProt, &oldProt);
-    };
+    // Hook DD7 directly
+    hookSlot(pDD7, 21, reinterpret_cast<void*>(HookedSetDisplayModeDD7), &s_origDD7);
 
+    // QI to DD4 and hook (games using DirectDrawCreateEx with IID_IDirectDraw4)
+    IDirectDraw4* pDD4 = nullptr;
+    if (SUCCEEDED(pDD7->QueryInterface(IID_IDirectDraw4, reinterpret_cast<void**>(&pDD4)))) {
+        hookSlot(pDD4, 21, reinterpret_cast<void*>(HookedSetDisplayModeDD4), &s_origDD4);
+        pDD4->Release();
+    }
+
+    // QI to DD2 and hook (older games using DirectDrawCreate)
     IDirectDraw2* pDD2 = nullptr;
-    if (SUCCEEDED(pDD->QueryInterface(IID_IDirectDraw2, reinterpret_cast<void**>(&pDD2)))) {
-        hookSlot(pDD2, 21);
+    if (SUCCEEDED(pDD7->QueryInterface(IID_IDirectDraw2, reinterpret_cast<void**>(&pDD2)))) {
+        hookSlot(pDD2, 21, reinterpret_cast<void*>(HookedSetDisplayModeDD2), &s_origDD2);
         pDD2->Release();
     }
-    IDirectDraw7* pDD7 = nullptr;
-    if (SUCCEEDED(pDD->QueryInterface(IID_IDirectDraw7, reinterpret_cast<void**>(&pDD7)))) {
-        hookSlot(pDD7, 21);
-        pDD7->Release();
-    }
 
-    pDD->Release();
+    pDD7->Release();
 }
