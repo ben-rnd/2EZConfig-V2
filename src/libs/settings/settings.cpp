@@ -16,7 +16,8 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
     std::string globalPath = userSettingsDir + "/global-settings.json";
 
     // Load or create game-settings.json
-    if (std::filesystem::exists(gamePath)) {
+    bool gameNew = !std::filesystem::exists(gamePath);
+    if (!gameNew) {
         std::ifstream file(gamePath);
         file >> m_gameSettings;
     } else {
@@ -26,7 +27,8 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
     }
 
     // Load or create global-settings.json
-    if (std::filesystem::exists(globalPath)) {
+    bool globalNew = !std::filesystem::exists(globalPath);
+    if (!globalNew) {
         std::ifstream file(globalPath);
         file >> m_globalSettings;
     } else {
@@ -37,9 +39,12 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
         };
     }
 
-    // Load patch definitions from patches.json + user-patches.json (gameDir)
-    m_patchStore.load(gameDir);
+    // Load patch definitions from patches.json + user-patches.json (shared appdata dir)
+    m_patchStore.load(userSettingsDir);
     m_patchStore.loadState(m_gameSettings.value("patches", json::object()));
+
+    // Write defaults to disk immediately if either file was missing
+    if (gameNew || globalNew) save();
 }
 
 void SettingsManager::save() const {
