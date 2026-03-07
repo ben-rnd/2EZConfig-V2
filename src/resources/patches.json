@@ -192,6 +192,22 @@
       }
     ]
   },
+  "ez2dj_be_a": {
+    "patches": [
+      {
+        "id": "use_io_card_force",
+        "name": "Force UseIOCard Enabled",
+        "description": "Patches all UseIOCard branch checks to always proceed as if UseIOCard=1, regardless of INI value.",
+        "type": "toggle",
+        "writes": [
+          { "offset": "0x18538", "bytes": "eb 05" },
+          { "offset": "0x186e3", "bytes": "eb 05" },
+          { "offset": "0x19145", "bytes": "eb 02" },
+          { "offset": "0x2ae54", "bytes": "90 90 90 90 90 90" }
+        ]
+      }
+    ]
+  },
   "ez2ac_fn_ex": {
     "patches": [
       {
