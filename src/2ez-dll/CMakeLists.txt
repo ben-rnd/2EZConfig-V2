@@ -12,6 +12,7 @@ target_include_directories(2EZ PRIVATE
 )
 
 target_link_libraries(2EZ PRIVATE
+    hardlock
     bindings
     patches
     kernel32

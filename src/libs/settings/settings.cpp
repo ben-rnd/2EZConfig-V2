@@ -23,6 +23,13 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
     } else {
         m_gameSettings = {
             {"game_id", "ez2dj"},
+            {"hardlock_enabled", false},
+            {"hardlock", {
+                {"ModAd", "0"},
+                {"Seed1", "0"},
+                {"Seed2", "0"},
+                {"Seed3", "0"}
+            }}
         };
     }
 

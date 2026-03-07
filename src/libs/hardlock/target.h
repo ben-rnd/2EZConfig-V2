@@ -1,0 +1,55 @@
+#pragma once
+// Detection for Architecture and OS
+
+#define OS_LINUX   0x3000
+#define OS_WINDOWS 0x4000
+#define OS_OSX     0x5000
+
+#define ARCH_MASK_32       0x20
+#define ARCH_MASK_64       0x40
+
+#define TARGET_PLATFORM_WIN64 (OS_WINDOWS | ARCH_MASK_64)
+#define TARGET_PLATFORM_WIN32 (OS_WINDOWS | ARCH_MASK_32)
+#define TARGET_PLATFORM_LIN64 (OS_LINUX | ARCH_MASK_64)
+#define TARGET_PLATFORM_LIN32 (OS_LINUX | ARCH_MASK_32)
+
+#define TARGET_PLATFORM_OSX64 (OS_OSX | ARCH_MASK_64)
+#define TARGET_PLATFORM_OSX32 (OS_OSX | ARCH_MASK_32)
+
+
+#ifdef _WIN32
+#define TARGET_OS_WINDOWS 1
+#ifdef _WIN64
+#define TARGET_PLATFORM TARGET_PLATFORM_WIN64
+#else
+#define TARGET_PLATFORM TARGET_PLATFORM_WIN32
+#endif
+#endif
+
+#ifdef __linux__
+#define TARGET_OS_LINUX 1
+#if defined(__LP64__) || defined(_LP64)
+#define TARGET_PLATFORM TARGET_PLATFORM_LIN64
+#else
+#define TARGET_PLATFORM TARGET_PLATFORM_LIN32
+#endif
+#endif
+
+#ifdef __APPLE__
+#ifdef __MACH__
+#define TARGET_OS_OSX 1
+#if __x86_64__ || __ppc64__
+#define TARGET_PLATFORM TARGET_PLATFORM_OSX64
+#else
+#define TARGET_PLATFORM TARGET_PLATFORM_OSX32
+#endif
+#endif
+#endif
+
+#if TARGET_PLATFORM & ARCH_MASK_32
+#define TARGET_ARCH_32 1
+#endif
+
+#if TARGET_PLATFORM & ARCH_MASK_64
+#define TARGET_ARCH_64 1
+#endif

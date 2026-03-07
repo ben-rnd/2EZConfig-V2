@@ -6,6 +6,12 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <nlohmann/json.hpp>
+
+extern "C" {
+#include "io.hardlock.hooks.h"
+#include "io.hardlock.emulator.h"
+}
 
 #include "ddraw_hook.h"
 #include "dll_input.h"
@@ -179,10 +185,39 @@ static DWORD WINAPI InitThread(void*) {
     return 0;
 }
 
+static void tryInitHardlock(HMODULE hModule) {
+    char dllPath[MAX_PATH] = {};
+    GetModuleFileNameA(hModule, dllPath, MAX_PATH);
+    char* lastSlash = strrchr(dllPath, '\\');
+    if (!lastSlash) return;
+    *lastSlash = '\0';
+
+    char settingsPath[MAX_PATH];
+    snprintf(settingsPath, MAX_PATH, "%s\\game-settings.json", dllPath);
+
+    std::ifstream f(settingsPath);
+    if (!f.is_open()) return;
+    nlohmann::json j;
+    try { j = nlohmann::json::parse(f); } catch (...) { return; }
+
+    if (!j.value("hardlock_enabled", false)) return;
+
+    auto hl = j.value("hardlock", nlohmann::json::object());
+    unsigned short modAd = (unsigned short)std::stoul(hl.value("ModAd", "0"), nullptr, 16);
+    unsigned short seed1 = (unsigned short)std::stoul(hl.value("Seed1", "0"), nullptr, 16);
+    unsigned short seed2 = (unsigned short)std::stoul(hl.value("Seed2", "0"), nullptr, 16);
+    unsigned short seed3 = (unsigned short)std::stoul(hl.value("Seed3", "0"), nullptr, 16);
+
+    if (LoadHardLockInfo(modAd, seed1, seed2, seed3) && InitHooks()) {
+        //DBG_printfA("[io.hardlock]: Started!");
+    }
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         s_dllModule = hModule;
-        CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
+        tryInitHardlock(hModule);
+        CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)InitThread, nullptr, 0, nullptr);
     }
     (void)reason;
     return TRUE;

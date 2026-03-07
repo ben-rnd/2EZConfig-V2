@@ -1,5 +1,4 @@
 #include <windows.h>
-#include <shellapi.h>
 #include <tlhelp32.h>
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -123,27 +122,45 @@ static int Inject(DWORD *pid){
 }
 
 int Injector::LaunchAndInject(const char* exeName) {
-    wchar_t wideName[MAX_PATH];
-    mbstowcs(wideName, exeName, MAX_PATH);
-
-    SHELLEXECUTEINFOW ShExecInfo = { 0 };
-    ShExecInfo.cbSize = sizeof(ShExecInfo);
-    ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
-    ShExecInfo.lpFile = wideName;
-
-    if (!ShellExecuteExW(&ShExecInfo))
+    // Resolve full path (handles both absolute paths and filenames relative to cwd)
+    char fullPath[MAX_PATH];
+    if (!GetFullPathNameA(exeName, MAX_PATH, fullPath, NULL)) {
+        printf("[-] GetFullPathNameA failed\n");
         return 0;
-
-    DWORD pid = GetProcessId(ShExecInfo.hProcess);
-    if (!pid) {
-        while (!pid) {
-            pid = GetProcId(exeName);
-        }
     }
 
-    CloseHandle(ShExecInfo.hProcess);
+    // Extract game directory (dirname of exe)
+    char gameDir[MAX_PATH];
+    strncpy(gameDir, fullPath, MAX_PATH);
+    char* lastSlash = strrchr(gameDir, '\\');
+    if (lastSlash) *lastSlash = '\0';
 
-    return Inject(&pid);
+    EnableDebugPrivilege();
+
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+
+    if (!CreateProcessA(fullPath, NULL, NULL, NULL, FALSE,
+                        CREATE_SUSPENDED, NULL, gameDir, &si, &pi)) {
+        printf("[-] CreateProcessA failed (%lu)\n", GetLastError());
+        return 0;
+    }
+
+    // Inject DLL while process is suspended — DllMain runs before any game code
+    int result = InjectDll(pi.hProcess, "2EZ.dll");
+    if (!result) {
+        printf("[-] InjectDll failed\n");
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return 0;
+    }
+
+    // Resume — hooks are already installed by DllMain
+    ResumeThread(pi.hThread);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return 1;
 }
 
 int Injector::InjectRunningProcess(const char* processName) {

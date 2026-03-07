@@ -100,6 +100,7 @@ FetchContent_Declare(usbhidusage
 )
 FetchContent_MakeAvailable(usbhidusage)
 
+add_subdirectory(src/libs/hardlock)
 add_subdirectory(src/libs/injector)
 add_subdirectory(src/libs/patches)
 add_subdirectory(src/libs/settings)
