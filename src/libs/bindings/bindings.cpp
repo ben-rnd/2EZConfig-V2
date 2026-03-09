@@ -39,33 +39,22 @@ static std::string vkToName(int vk) {
     return std::string("VK ") + std::to_string(vk);
 }
 
-// ---- ButtonBinding implementations ----------------------------------
+// Hat-switch direction check: returns true if hat_val matches the given direction.
+// hat_val is a normalized [0,1] axis value; directions are evenly spaced at 1/7 intervals.
+static const float HAT_SWITCH_INCREMENT = 1.0f / 7.0f;
 
-std::string ButtonBinding::getDisplayString(const InputManager& mgr) const {
-    if (!isSet()) return "(unbound)";
-
-    if (isKeyboard()) {
-        return std::string("Key: ") + vkToName(vk_code);
-    }
-
-    // HID path
-    std::vector<Device> devs = mgr.getDevices();
-    for (const Device& dev : devs) {
-        if (dev.path == device_path) {
-            // Found — get button label
-            std::string label;
-            if (button_idx >= 0 && button_idx < (int)dev.button_caps_names.size()) {
-                label = dev.button_caps_names[button_idx];
-            } else {
-                label = std::string("Button ") + std::to_string(button_idx);
-            }
-            std::string devName = truncate(dev.name, 18);
-            return label + " [" + devName + "]";
-        }
-    }
-    // Device not found — disconnected fallback
-    return std::string("[Disconnected] ") + truncate(device_name, 18);
+static bool isHatDirectionActive(float hat_val, ButtonAnalogType dir) {
+    if (hat_val < 0.0f) return false;
+    int dir_idx = (int)dir - (int)ButtonAnalogType::HS_UP;
+    float target = dir_idx * HAT_SWITCH_INCREMENT;
+    float diff = hat_val - target;
+    if (diff > 0.5f) diff -= 1.0f;
+    if (diff < -0.5f) diff += 1.0f;
+    return (diff >= -HAT_SWITCH_INCREMENT * 0.5f - 0.001f &&
+            diff <=  HAT_SWITCH_INCREMENT * 0.5f + 0.001f);
 }
+
+// ---- ButtonBinding implementations ----------------------------------
 
 nlohmann::json ButtonBinding::toJson() const {
     nlohmann::json j;
@@ -115,25 +104,6 @@ nlohmann::json ButtonBinding::toJson() const {
 
 // ---- AnalogBinding implementations ----------------------------------
 
-std::string AnalogBinding::getDisplayString(const InputManager& mgr) const {
-    if (!isSet()) return "(unbound)";
-
-    std::vector<Device> devs = mgr.getDevices();
-    for (const Device& dev : devs) {
-        if (dev.path == device_path) {
-            std::string axisLabel;
-            if (axis_idx >= 0 && axis_idx < (int)dev.value_caps_names.size()) {
-                axisLabel = dev.value_caps_names[axis_idx];
-            } else {
-                axisLabel = std::string("Axis ") + std::to_string(axis_idx);
-            }
-            return dev.name + " / " + axisLabel;
-        }
-    }
-    // Disconnected fallback
-    return std::string("[Disconnected] ") + device_name;
-}
-
 nlohmann::json AnalogBinding::toJson() const {
     nlohmann::json j;
     j["device_path"]  = device_path;
@@ -165,22 +135,10 @@ nlohmann::json AnalogBinding::toJson() const {
             const auto& vtt = j["vtt"];
             a.vtt_step = vtt.value("step", 3);
 
-            // New format: "plus" and "minus" are VttKey objects
-            if (vtt.contains("plus") && vtt["plus"].is_object()) {
-                a.vtt_plus = VttKey::fromJson(vtt["plus"]);
-            }
-            if (vtt.contains("minus") && vtt["minus"].is_object()) {
-                a.vtt_minus = VttKey::fromJson(vtt["minus"]);
-            }
-            // Backwards compat: old format had "plus_vk"/"minus_vk" as ints
-            if (a.vtt_plus.vk == 0 && !a.vtt_plus.isSet()) {
-                int old_plus = vtt.value("plus_vk", 0);
-                if (old_plus != 0) a.vtt_plus.vk = old_plus;
-            }
-            if (a.vtt_minus.vk == 0 && !a.vtt_minus.isSet()) {
-                int old_minus = vtt.value("minus_vk", 0);
-                if (old_minus != 0) a.vtt_minus.vk = old_minus;
-            }
+            if (vtt.contains("plus") && vtt["plus"].is_object())
+                a.vtt_plus  = ButtonBinding::fromJson(vtt["plus"]);
+            if (vtt.contains("minus") && vtt["minus"].is_object())
+                a.vtt_minus = ButtonBinding::fromJson(vtt["minus"]);
         }
         return a;
     } catch (...) {
@@ -189,22 +147,6 @@ nlohmann::json AnalogBinding::toJson() const {
 }
 
 // ---- LightBinding implementations -----------------------------------
-
-std::string LightBinding::getDisplayString(const InputManager& mgr) const {
-    if (!isSet()) return "(unbound)";
-    std::vector<Device> devs = mgr.getDevices();
-    for (const auto& dev : devs) {
-        if (dev.path != device_path) continue;
-        int btn_count = (int)dev.button_output_caps_names.size();
-        if (output_idx < btn_count)
-            return dev.button_output_caps_names[output_idx] + " (" + dev.name + ")";
-        int val_idx = output_idx - btn_count;
-        if (val_idx < (int)dev.value_output_caps_names.size())
-            return dev.value_output_caps_names[val_idx] + " (" + dev.name + ")";
-        return "Output " + std::to_string(output_idx) + " (" + dev.name + ")";
-    }
-    return "[Disconnected] " + device_name;
-}
 
 nlohmann::json LightBinding::toJson() const {
     nlohmann::json j;
@@ -225,7 +167,9 @@ nlohmann::json LightBinding::toJson() const {
 
 // ---- BindingStore implementations -----------------------------------
 
-void BindingStore::load(SettingsManager& settings, InputManager& mgr) {
+void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
+    mgr = &inputMgr;
+
     auto& gs = settings.globalSettings();
     // io and dancer bindings are stored in separate sub-objects to avoid key
     // collisions ("Test", "Service" appear in both name arrays).
@@ -272,10 +216,10 @@ void BindingStore::load(SettingsManager& settings, InputManager& mgr) {
     // Configure VTT in InputManager for keyboard-only VTT bindings.
     // HID-button VTT is polled in main.cpp render loop each frame instead.
     for (int p = 0; p < ANALOG_COUNT; ++p) {
-        if (analogs[p].vtt_plus.vk != 0 || analogs[p].vtt_minus.vk != 0) {
-            mgr.setVttKeys(p,
-                analogs[p].vtt_plus.vk,
-                analogs[p].vtt_minus.vk,
+        if (analogs[p].vtt_plus.vk_code != 0 || analogs[p].vtt_minus.vk_code != 0) {
+            mgr->setVttKeys(p,
+                analogs[p].vtt_plus.vk_code,
+                analogs[p].vtt_minus.vk_code,
                 analogs[p].vtt_step);
         }
     }
@@ -310,4 +254,88 @@ void BindingStore::save(SettingsManager& settings) const {
     }
 
     settings.save();
+}
+
+bool BindingStore::isHeld(const ButtonBinding& b) const {
+    if (!b.isSet()) return false;
+    if (b.isKeyboard()) return (GetAsyncKeyState(b.vk_code) & 0x8000) != 0;
+    if (!mgr) return false;
+    if (b.analog_type != ButtonAnalogType::NONE) {
+        float hat_val = mgr->getAxisValue(b.device_path, b.button_idx);
+        return isHatDirectionActive(hat_val, b.analog_type);
+    }
+    return mgr->getButtonState(b.device_path, b.button_idx);
+}
+
+std::string BindingStore::getDisplayString(const ButtonBinding& b) const {
+    if (!b.isSet()) return "(unbound)";
+
+    if (b.isKeyboard()) {
+        return std::string("Key: ") + vkToName(b.vk_code);
+    }
+
+    if (!mgr) return std::string("[Disconnected] ") + truncate(b.device_name, 18);
+
+    // HID path
+    std::vector<Device> devs = mgr->getDevices();
+    for (const Device& dev : devs) {
+        if (dev.path == b.device_path) {
+            std::string label;
+            if (b.button_idx >= 0 && b.button_idx < (int)dev.button_caps_names.size()) {
+                label = dev.button_caps_names[b.button_idx];
+            } else {
+                label = std::string("Button ") + std::to_string(b.button_idx);
+            }
+            std::string devName = truncate(dev.name, 18);
+            return label + " [" + devName + "]";
+        }
+    }
+    // Device not found — disconnected fallback
+    return std::string("[Disconnected] ") + truncate(b.device_name, 18);
+}
+
+std::string BindingStore::getDisplayString(const AnalogBinding& a) const {
+    if (!a.isSet()) return "(unbound)";
+
+    if (!mgr) return std::string("[Disconnected] ") + a.device_name;
+
+    std::vector<Device> devs = mgr->getDevices();
+    for (const Device& dev : devs) {
+        if (dev.path == a.device_path) {
+            std::string axisLabel;
+            if (a.axis_idx >= 0 && a.axis_idx < (int)dev.value_caps_names.size()) {
+                axisLabel = dev.value_caps_names[a.axis_idx];
+            } else {
+                axisLabel = std::string("Axis ") + std::to_string(a.axis_idx);
+            }
+            return dev.name + " / " + axisLabel;
+        }
+    }
+    return std::string("[Disconnected] ") + a.device_name;
+}
+
+std::string BindingStore::getDisplayString(const LightBinding& l) const {
+    if (!l.isSet()) return "(unbound)";
+
+    if (!mgr) return std::string("[Disconnected] ") + l.device_name;
+
+    std::vector<Device> devs = mgr->getDevices();
+    for (const auto& dev : devs) {
+        if (dev.path != l.device_path) continue;
+        int btn_count = (int)dev.button_output_caps_names.size();
+        if (l.output_idx < btn_count)
+            return dev.button_output_caps_names[l.output_idx] + " (" + dev.name + ")";
+        int val_idx = l.output_idx - btn_count;
+        if (val_idx < (int)dev.value_output_caps_names.size())
+            return dev.value_output_caps_names[val_idx] + " (" + dev.name + ")";
+        return "Output " + std::to_string(l.output_idx) + " (" + dev.name + ")";
+    }
+    return "[Disconnected] " + l.device_name;
+}
+
+uint8_t BindingStore::getPosition(const AnalogBinding& a, uint8_t vtt_pos) const {
+    if (!a.isSet() || !mgr) return vtt_pos;
+    float raw = mgr->getAxisValue(a.device_path, a.axis_idx);
+    if (a.reverse) raw = 1.0f - raw;
+    return (uint8_t)((int)(raw * 255.0f) + (int)vtt_pos - 128);
 }

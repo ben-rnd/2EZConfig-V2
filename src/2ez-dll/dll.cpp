@@ -173,7 +173,7 @@ static DWORD WINAPI InitThread(void*) {
         s_bindings.load(settings, *s_mgr);
     } catch (...) {}
 
-    startInputPollingThread(s_bindings, *s_mgr);
+    startInputPollingThread(s_bindings);
     startLightFlushThread(s_bindings, *s_mgr);
 
     // Wait for game init, then apply patches and version string.

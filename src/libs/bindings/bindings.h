@@ -41,9 +41,6 @@ struct ButtonBinding {
         analog_type = ButtonAnalogType::NONE;
     }
 
-    // Returns: "Button 3 [EZ2CATCH USB]" or "[Disconnected] EZ2CATCH USB" or "Key: A" or "(unbound)"
-    std::string getDisplayString(const InputManager& mgr) const;
-
     nlohmann::json   toJson()  const;
     static ButtonBinding fromJson(const nlohmann::json& j);
 
@@ -58,66 +55,6 @@ struct ButtonBinding {
     }
 };
 
-// ---- VttKey --------------------------------------------------------------
-// Represents a single VTT direction binding: either a keyboard VK or an HID
-// controller button. Exactly one of (vk != 0) or (device_path non-empty) is set.
-
-struct VttKey {
-    int         vk          = 0;    // keyboard virtual key code
-    std::string device_path;        // HID device path (non-empty = controller binding)
-    int         button_idx  = -1;   // HID button index within device
-    std::string device_name;        // informational display fallback
-
-    bool isSet() const { return vk != 0 || (!device_path.empty() && button_idx >= 0); }
-
-    void clear() {
-        vk = 0;
-        device_path.clear();
-        button_idx = -1;
-        device_name.clear();
-    }
-
-    std::string getLabel() const {
-        if (vk != 0) {
-            UINT scanCode = MapVirtualKeyA(static_cast<UINT>(vk), MAPVK_VK_TO_VSC);
-            bool extended = (vk == VK_INSERT || vk == VK_DELETE ||
-                             vk == VK_HOME   || vk == VK_END    ||
-                             vk == VK_PRIOR  || vk == VK_NEXT   ||
-                             vk == VK_UP     || vk == VK_DOWN   ||
-                             vk == VK_LEFT   || vk == VK_RIGHT);
-            LONG lParam = (LONG)((scanCode << 16) | (extended ? (1 << 24) : 0));
-            char buf[64] = {};
-            if (GetKeyNameTextA(lParam, buf, sizeof(buf)) > 0)
-                return std::string(buf);
-            return "Key " + std::to_string(vk);
-        }
-        if (!device_path.empty() && button_idx >= 0)
-            return "Btn " + std::to_string(button_idx + 1);
-        return "(unbound)";
-    }
-
-    nlohmann::json toJson() const {
-        nlohmann::json j;
-        j["vk"]          = vk;
-        j["device_path"] = device_path;
-        j["device_name"] = device_name;
-        j["button_idx"]  = button_idx;
-        return j;
-    }
-
-    static VttKey fromJson(const nlohmann::json& j) {
-        VttKey k;
-        if (!j.is_object()) return k;
-        k.vk          = j.value("vk", 0);
-        k.device_path = j.value("device_path", "");
-        k.device_name = j.value("device_name", "");
-        k.button_idx  = j.value("button_idx", -1);
-        // Backwards compat: old format had "plus_vk"/"minus_vk" as direct int
-        // (handled in AnalogBinding::fromJson)
-        return k;
-    }
-};
-
 // ---- AnalogBinding -------------------------------------------------------
 
 struct AnalogBinding {
@@ -125,8 +62,8 @@ struct AnalogBinding {
     int         axis_idx    = -1;
     std::string device_name;
     bool        reverse     = false;
-    VttKey      vtt_plus;
-    VttKey      vtt_minus;
+    ButtonBinding vtt_plus;
+    ButtonBinding vtt_minus;
     int         vtt_step    = 3;
 
     bool isSet()   const { return !device_path.empty() && axis_idx >= 0; }
@@ -148,18 +85,8 @@ struct AnalogBinding {
         device_name.clear();
     }
 
-    // Returns: "EZ2CATCH USB / X Axis" or "[Disconnected] EZ2CATCH USB" or "(unbound)"
-    std::string getDisplayString(const InputManager& mgr) const;
-
     nlohmann::json   toJson()  const;
     static AnalogBinding fromJson(const nlohmann::json& j);
-
-    uint8_t getPosition(const InputManager& mgr, uint8_t vtt_pos) const {
-        if (!isSet()) return vtt_pos;
-        float raw = mgr.getAxisValue(device_path, axis_idx);
-        if (reverse) raw = 1.0f - raw;
-        return (uint8_t)((int)(raw * 255.0f) + (int)vtt_pos - 128);
-    }
 };
 
 // ---- LightBinding --------------------------------------------------------
@@ -177,17 +104,14 @@ struct LightBinding {
         device_name.clear();
     }
 
-    // Returns: "Button 3 (LED Controller)" or "[Disconnected] LED Controller" or "(unbound)"
-    std::string getDisplayString(const InputManager& mgr) const;
-
     nlohmann::json toJson() const;
     static LightBinding fromJson(const nlohmann::json& j);
 };
 
 // ---- BindingStore --------------------------------------------------------
 
-// Owns all binding arrays. Serializes to/from globalSettings() JSON.
-// Receives name arrays as parameters (caller includes strings.h).
+// Owns all binding arrays and the InputManager reference used to query them.
+// Serializes to/from globalSettings() JSON.
 struct BindingStore {
     static constexpr int BUTTON_COUNT = 20;   // djButtonNames[] length
     static constexpr int DANCER_COUNT = 16;   // dancerButtonNames[] length
@@ -199,9 +123,24 @@ struct BindingStore {
     std::array<AnalogBinding, ANALOG_COUNT> analogs;
     std::array<LightBinding,  LIGHT_COUNT>  lights;
 
-    // Load from globalSettings(). Old-format entries (device_id key) silently skipped.
+    InputManager* mgr = nullptr;
+
+    // Load from globalSettings(). Sets mgr for subsequent queries.
+    // Old-format entries (device_id key) silently skipped.
     void load(SettingsManager& settings, InputManager& mgr);
 
     // Save to globalSettings() and call settings.save().
     void save(SettingsManager& settings) const;
+
+    // Input queries — use these instead of calling InputManager directly.
+    // Returns false if b is unset or mgr is null.
+    bool isHeld(const ButtonBinding& b) const;
+
+    // Returns display strings for UI rendering.
+    std::string getDisplayString(const ButtonBinding& b) const;
+    std::string getDisplayString(const AnalogBinding& a) const;
+    std::string getDisplayString(const LightBinding& l) const;
+
+    // Returns turntable position [0,255] incorporating axis and VTT offset.
+    uint8_t getPosition(const AnalogBinding& a, uint8_t vtt_pos) const;
 };
