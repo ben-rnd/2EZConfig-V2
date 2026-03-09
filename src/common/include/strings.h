@@ -103,10 +103,10 @@ static const char* dancerButtonNames[] = {
     "Test", "Service",
     "P1 Left", "P1 Centre", "P1 Right",
     "P2 Left", "P2 Centre", "P2 Right",
-    "P1 L Sensor Top", "P1 L Sesor Bottom",
-    "P1 R Sensor Top", "P1 R Sesor Bottom",
-    "P2 L Sensor Top", "P2 L Sesor Bottom",
-    "P2 R Sensor Top", "P2 R Sesor Bottom",
+    "P1 L Sensor Top", "P1 L Sensor Bottom",
+    "P1 R Sensor Top", "P1 R Sensor Bottom",
+    "P2 L Sensor Top", "P2 L Sensor Bottom",
+    "P2 R Sensor Top", "P2 R Sensor Bottom",
 };
 
 static const char* dancerLightNames[] = {

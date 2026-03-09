@@ -30,25 +30,45 @@ static void setTheme();
 static void renderSettingsTab();
 static void renderButtonsTab();
 static void renderAnalogsTab();
+static void renderAnalogEditPopup(const std::vector<Device>& axisDevs);
 static void renderLightsTab();
+static void renderLightBindPopup(const std::vector<Device>& outputDevs);
 static void renderPatchesTab();
-static void renderPatchRow(Patch& patch, SettingsManager& settings, bool isTopLevel);
+static void renderPatchRow(Patch& patch, SettingsManager& settings);
 static int  pollKeyboardPress(bool* prevKeys);
 static void renderVttKeyBind(const char* label, const char* bindId, const char* clearId,
                              ButtonBinding& key, bool& capturing, bool& otherCapturing, bool* prevKeys);
 static void globalCheckbox(const char* label, const char* key, bool defaultVal);
 
-// File-scope settings and game selector state — accessible to all tab functions
-static SettingsManager g_settings;
-static int  g_gameIdx  = 0;     // index into flat combo list (DJ games first, then Dancer)
-static bool g_isDancer = false; // derived from g_gameIdx
+// All app-wide state grouped in one place
+struct AppState {
+    SettingsManager settings;
+    InputManager*   input    = nullptr;
+    BindingStore    bindings;
+    int             gameIdx  = 0;
+    bool            isDancer = false;
+    uint8_t         vtt_pos[2] = {128, 128};
+};
+static AppState    g_app;
+static GLFWwindow* g_window = nullptr;
 
-static GLFWwindow*                g_window   = nullptr;
-static InputManager*              g_input    = nullptr;
-static BindingStore               g_bindings;
+// Analog-edit popup state (persists across frames; opened by renderAnalogsTab)
+static int  s_editPort         = -1;
+static bool s_openPopup        = false;
+static int  s_devIdx[2]        = {0, 0};
+static int  s_axisIdx[2]       = {0, 0};
+static bool s_initialized[2]   = {false, false};
+static bool s_capturingVtt[2][2] = {};
+static bool s_vttPrevKeys[256]   = {};
 
-// VTT position state (center=128). Polled from render loop each frame.
-static uint8_t g_vtt_pos[2] = {128, 128};
+// Light-bind popup state (persists across frames; opened by renderLightsTab)
+static int         s_bindLightIdx   = -1;
+static bool        s_openLightPopup = false;
+static int         s_lightDevIdx    = 0;
+static int         s_lightOutIdx    = -1;
+static float       s_testTimer      = 0.0f;
+static std::string s_testPath;
+static int         s_testOutIdx     = -1;
 
 
 int main() {
@@ -117,27 +137,27 @@ int main() {
     }
 
     // Load settings: game-settings.json stays local, global-settings + patches in appdata
-    g_settings.load(".", appDataDir);
+    g_app.settings.load(".", appDataDir);
 
     // Start input subsystem
-    g_input = new InputManager();
+    g_app.input = new InputManager();
 
-    // Load bindings from settings (passes array pointers — no strings.h dep in binding layer)
-    g_bindings.load(g_settings, *g_input);
+    // Load bindings from settings
+    g_app.bindings.load(g_app.settings, *g_app.input);
 
     // Initialize game selector state from persisted game_id
     {
-        std::string gid = g_settings.gameSettings().value("game_id", "ez2dj_1st");
+        std::string gid = g_app.settings.gameSettings().value("game_id", "ez2dj_1st");
         static const int DJ_COUNT_M     = (int)(sizeof(djGames)     / sizeof(djGames[0]));
         static const int DANCER_COUNT_M = (int)(sizeof(dancerGames) / sizeof(dancerGames[0]));
-        g_gameIdx = 0;
-        g_isDancer = false;
+        g_app.gameIdx  = 0;
+        g_app.isDancer = false;
         bool found = false;
         for (int i = 0; !found && i < DJ_COUNT_M; i++) {
-            if (gid == djGames[i].id) { g_gameIdx = i; found = true; }
+            if (gid == djGames[i].id) { g_app.gameIdx = i; found = true; }
         }
         for (int i = 0; !found && i < DANCER_COUNT_M; i++) {
-            if (gid == dancerGames[i].id) { g_gameIdx = DJ_COUNT_M + i; g_isDancer = true; found = true; }
+            if (gid == dancerGames[i].id) { g_app.gameIdx = DJ_COUNT_M + i; g_app.isDancer = true; found = true; }
         }
     }
 
@@ -166,8 +186,8 @@ int main() {
     glfwDestroyWindow(g_window);
     glfwTerminate();
 
-    delete g_input;
-    g_input = nullptr;
+    delete g_app.input;
+    g_app.input = nullptr;
 
     return 0;
 }
@@ -193,8 +213,8 @@ static void renderUI() {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btnWidth);
         // Get current exeName at frame time — use exe_name override if set in game-settings
         static const int DJ_COUNT_TB = (int)(sizeof(djGames) / sizeof(djGames[0]));
-        const char* defaultExe = (g_gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_gameIdx].defaultExeName;
-        std::string exeOverride = g_settings.gameSettings().value("exe_name", "");
+        const char* defaultExe = (g_app.gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_app.gameIdx].defaultExeName;
+        std::string exeOverride = g_app.settings.gameSettings().value("exe_name", "");
         const char* tbExeName   = exeOverride.empty() ? defaultExe : exeOverride.c_str();
         if (ImGui::Button("Play EZ2", ImVec2(btnWidth, 0))) {
             Injector::LaunchAndInject(tbExeName);
@@ -215,7 +235,7 @@ static void renderUI() {
             ImGui::EndTabItem();
         }
 
-        if (!g_isDancer) {
+        if (!g_app.isDancer) {
             if (ImGui::BeginTabItem("Analogs")) {
                 renderAnalogsTab();
                 ImGui::EndTabItem();
@@ -237,11 +257,11 @@ static void renderUI() {
 }
 
 static void renderPatchesTab() {
-    std::string gameId  = g_settings.gameSettings().value("game_id", "");
+    std::string gameId = g_app.settings.gameSettings().value("game_id", "");
     // Use non-const patchesForGame() — patchStore() returns a non-const PatchStore&,
     // and the non-const patchesForGame() overload returns std::vector<Patch>&
     // so we can modify enabled/value directly. No const_cast needed.
-    auto& patches = g_settings.patchStore().patchesForGame(gameId);
+    auto& patches = g_app.settings.patchStore().patchesForGame(gameId);
 
     if (patches.empty()) {
         const char* msg = "No patches available for this game.";
@@ -255,13 +275,13 @@ static void renderPatchesTab() {
     ImGui::BeginChild("##patchScroll", ImVec2(0, 0), false);
     for (auto& patch : patches) {
         ImGui::PushID(patch.id.c_str());
-        renderPatchRow(patch, g_settings, true);
+        renderPatchRow(patch, g_app.settings);
         ImGui::PopID();
     }
     ImGui::EndChild();
 }
 
-static void renderPatchRow(Patch& patch, SettingsManager& settings, bool isTopLevel) {
+static void renderPatchRow(Patch& patch, SettingsManager& settings) {
     bool changed = ImGui::Checkbox(patch.name.c_str(), &patch.enabled);
 
     if (patch.type == PatchType::Value) {
@@ -286,7 +306,7 @@ static void renderPatchRow(Patch& patch, SettingsManager& settings, bool isTopLe
         ImGui::Indent(16.0f);
         for (auto& child : patch.children) {
             ImGui::PushID(child.id.c_str());
-            renderPatchRow(child, settings, false);
+            renderPatchRow(child, settings);
             ImGui::PopID();
         }
         ImGui::Unindent(16.0f);
@@ -307,43 +327,43 @@ static void renderSettingsTab() {
         gameComboBuilt = true;
     }
 
-    if (ImGui::Combo("Game", &g_gameIdx, gameComboItems, TOTAL_COUNT)) {
-        g_isDancer = (g_gameIdx >= DJ_COUNT);
+    if (ImGui::Combo("Game", &g_app.gameIdx, gameComboItems, TOTAL_COUNT)) {
+        g_app.isDancer = (g_app.gameIdx >= DJ_COUNT);
         std::string gameId;
-        if (g_isDancer) {
-            int dancerIdx = g_gameIdx - DJ_COUNT;
+        if (g_app.isDancer) {
+            int dancerIdx = g_app.gameIdx - DJ_COUNT;
             gameId = dancerGames[dancerIdx].id;
         } else {
-            gameId = djGames[g_gameIdx].id;
+            gameId = djGames[g_app.gameIdx].id;
         }
-        g_settings.gameSettings()["game_id"] = gameId;
-        g_settings.gameSettings().erase("exe_name");  // reset override when game changes
-        g_settings.save();
+        g_app.settings.gameSettings()["game_id"] = gameId;
+        g_app.settings.gameSettings().erase("exe_name");  // reset override when game changes
+        g_app.settings.save();
     }
 
     {
         static char exeNameBuf[MAX_PATH] = {};
         static int  lastGameIdx = -1;
-        if (lastGameIdx != g_gameIdx) {
-            lastGameIdx = g_gameIdx;
-            std::string stored = g_settings.gameSettings().value("exe_name", "");
+        if (lastGameIdx != g_app.gameIdx) {
+            lastGameIdx = g_app.gameIdx;
+            std::string stored = g_app.settings.gameSettings().value("exe_name", "");
             strncpy(exeNameBuf, stored.c_str(), MAX_PATH - 1);
             exeNameBuf[MAX_PATH - 1] = '\0';
         }
         if (ImGui::InputText("Exe Name", exeNameBuf, MAX_PATH)) {
             if (exeNameBuf[0])
-                g_settings.gameSettings()["exe_name"] = std::string(exeNameBuf);
+                g_app.settings.gameSettings()["exe_name"] = std::string(exeNameBuf);
             else
-                g_settings.gameSettings().erase("exe_name");
-            g_settings.save();
+                g_app.settings.gameSettings().erase("exe_name");
+            g_app.settings.save();
         }
     }
 
     ImGui::Separator();
     ImGui::TextUnformatted("Global Settings");
     ImGui::Separator();
-    globalCheckbox("Enable IO Emulation",            "io_emu",       true);
-    globalCheckbox("Force 60Hz (experimental)",      "force_60hz",   false);
+    globalCheckbox("Enable IO Emulation",                "io_emu",       true);
+    globalCheckbox("Force 60Hz (experimental)",          "force_60hz",   false);
     globalCheckbox("Force High Priority (experimental)", "high_priority", false);
 
     ImGui::Separator();
@@ -361,46 +381,44 @@ static void renderButtonsTab() {
     static bool      s_prevKeys[256] = {};
 
     if (s_state != s_prevState) {
-        if (s_state == BindState::Listening) g_input->startCapture();
-        else                                 g_input->stopCapture();
+        if (s_state == BindState::Listening) g_app.input->startCapture();
+        else                                 g_app.input->stopCapture();
         s_prevState = s_state;
     }
 
-    const char** actionList  = g_isDancer ? dancerButtonNames : djButtonNames;
-    const int    actionCount = g_isDancer ? BindingStore::DANCER_COUNT : BindingStore::BUTTON_COUNT;
+    const char** actionList  = g_app.isDancer ? dancerButtonNames : djButtonNames;
+    const int    actionCount = g_app.isDancer ? BindingStore::DANCER_COUNT : BindingStore::BUTTON_COUNT;
 
     ImGui::BeginChild("##buttonsScroll", ImVec2(0, ImGui::GetWindowHeight() - 85), false);
-    // 3-column table: [name | binding | Edit button]
     if (ImGui::BeginTable("##buttonable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Button", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-        ImGui::TableSetupColumn("Binding",   ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Button",  ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        ImGui::TableSetupColumn("Binding", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
         ImGui::TableHeadersRow();
 
         for (int i = 0; i < actionCount; i++) {
             ImGui::PushID(i);
             ImGui::TableNextRow();
-            ButtonBinding& bnd = g_isDancer ? g_bindings.dancerButtons[i] : g_bindings.buttons[i];
+            ButtonBinding& bnd = g_app.isDancer ? g_app.bindings.dancerButtons[i] : g_app.bindings.buttons[i];
 
             if (s_state == BindState::Listening && s_listenIdx == i) {
                 ImGui::TableSetColumnIndex(0);
-                // Listening row
                 ImGui::TextColored(ImVec4(1,1,0,1), "Press a button...");
                 ImGui::TableSetColumnIndex(1);
                 char timerStr[16]; snprintf(timerStr, sizeof(timerStr), "(%.1fs)", s_listenTimer);
                 ImGui::TextUnformatted(timerStr);
                 ImGui::TableSetColumnIndex(2);
                 if (ImGui::Button("Cancel")) {
-                    g_input->stopCapture();
+                    g_app.input->stopCapture();
                     s_state     = BindState::Normal;
                     s_listenIdx = -1;
                 }
 
                 // Poll HID capture
-                auto hit = g_input->pollCapture();
+                auto hit = g_app.input->pollCapture();
                 if (hit) {
                     bnd = ButtonBinding::fromCapture(*hit);
-                    g_bindings.save(g_settings);
+                    g_app.bindings.save(g_app.settings);
                     s_state     = BindState::Normal;
                     s_listenIdx = -1;
                 }
@@ -412,8 +430,8 @@ static void renderButtonsTab() {
                         ButtonBinding kb;
                         kb.vk_code = vk;
                         bnd = kb;
-                        g_bindings.save(g_settings);
-                        g_input->stopCapture();
+                        g_app.bindings.save(g_app.settings);
+                        g_app.input->stopCapture();
                         s_state     = BindState::Normal;
                         s_listenIdx = -1;
                     }
@@ -422,7 +440,7 @@ static void renderButtonsTab() {
                 // Timeout
                 s_listenTimer -= ImGui::GetIO().DeltaTime;
                 if (s_listenTimer <= 0.0f) {
-                    g_input->stopCapture();
+                    g_app.input->stopCapture();
                     s_state = BindState::Normal;
                 }
             } else {
@@ -430,7 +448,7 @@ static void renderButtonsTab() {
                 ImGui::TableSetColumnIndex(0);
 
                 // Active highlight
-                bool active = g_bindings.isHeld(bnd);
+                bool active = g_app.bindings.isHeld(bnd);
 
                 if (active)
                     ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s:", actionList[i]);
@@ -440,9 +458,9 @@ static void renderButtonsTab() {
                 ImGui::TableSetColumnIndex(1);
 
                 if (active)
-                    ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s", g_bindings.getDisplayString(bnd).c_str());
+                    ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s", g_app.bindings.getDisplayString(bnd).c_str());
                 else
-                    ImGui::TextUnformatted(g_bindings.getDisplayString(bnd).c_str());
+                    ImGui::TextUnformatted(g_app.bindings.getDisplayString(bnd).c_str());
 
                 ImGui::TableSetColumnIndex(2);
 
@@ -458,7 +476,7 @@ static void renderButtonsTab() {
                     ImGui::SameLine();
                     if (ImGui::Button("Clear")) {
                         bnd.clear();
-                        g_bindings.save(g_settings);
+                        g_app.bindings.save(g_app.settings);
                     }
                 }
             }
@@ -473,28 +491,17 @@ static void renderButtonsTab() {
 static void renderAnalogsTab() {
     // Poll VTT keys each frame to drive the live preview
     for (int port = 0; port < 2; port++) {
-        const AnalogBinding& ab = g_bindings.analogs[port];
-        if (ab.vtt_plus.isSet() && g_bindings.isHeld(ab.vtt_plus))
-            g_vtt_pos[port] = (uint8_t)(((int)g_vtt_pos[port] + ab.vtt_step) & 0xFF);
-        if (ab.vtt_minus.isSet() && g_bindings.isHeld(ab.vtt_minus))
-            g_vtt_pos[port] = (uint8_t)(((int)g_vtt_pos[port] - ab.vtt_step + 256) & 0xFF);
+        const AnalogBinding& ab = g_app.bindings.analogs[port];
+        if (ab.vtt_plus.isSet()  && g_app.bindings.isHeld(ab.vtt_plus))
+            g_app.vtt_pos[port] = (uint8_t)(((int)g_app.vtt_pos[port] + ab.vtt_step) & 0xFF);
+        if (ab.vtt_minus.isSet() && g_app.bindings.isHeld(ab.vtt_minus))
+            g_app.vtt_pos[port] = (uint8_t)(((int)g_app.vtt_pos[port] - ab.vtt_step + 256) & 0xFF);
     }
-
-    // Edit popup state
-    static int   s_editPort = -1;
-    static bool  s_openPopup = false;
-    static int   s_devIdx[2]  = {0, 0};
-    static int   s_axisIdx[2] = {0, 0};
-    static bool  s_initialized[2] = {false, false};
-    // VTT capture: [port][0=plus, 1=minus]
-    static bool  s_capturingVtt[2][2]  = {};
-    // Keyboard prev-keys for VTT capture (shared across both directions)
-    static bool  s_vttPrevKeys[256]    = {};
 
     // Build device list for combo: only Generic Desktop (page 0x01)
     // devices with axes. Excludes consumer control (0x0C), system
     // control, and other non-joystick HID collections.
-    std::vector<Device> devs = g_input->getDevices();
+    std::vector<Device> devs = g_app.input->getDevices();
     std::vector<Device> axisDevs;
     for (auto& d : devs)
         if (!d.value_caps_names.empty() && d.hid && d.hid->caps.UsagePage == 0x01)
@@ -504,7 +511,7 @@ static void renderAnalogsTab() {
     if (ImGui::BeginTable("##analogTable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Turntable", ImGuiTableColumnFlags_WidthFixed, 120.0f);
         ImGui::TableSetupColumn("Binding",   ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableSetupColumn("Actions",   ImGuiTableColumnFlags_WidthFixed, 100.0f);
         ImGui::TableHeadersRow();
 
         for (int p = 0; p < BindingStore::ANALOG_COUNT; p++) {
@@ -514,35 +521,33 @@ static void renderAnalogsTab() {
             // Col 0: name + live preview bar
             ImGui::TableSetColumnIndex(0);
             ImGui::Text("P%d", p+1);
-            AnalogBinding& ab = g_bindings.analogs[p];
-            if(ab.isSet() || ab.hasVtt()){
+            AnalogBinding& ab = g_app.bindings.analogs[p];
+            if (ab.isSet() || ab.hasVtt()) {
                 ImGui::SameLine();
-                float display = g_bindings.getPosition(ab, g_vtt_pos[p]) / 255.0f;
+                float display = g_app.bindings.getPosition(ab, g_app.vtt_pos[p]) / 255.0f;
                 ImGui::ProgressBar(display, ImVec2(40.0f, 0));
             }
 
             // Col 1: binding label
             ImGui::TableSetColumnIndex(1);
-
-            if(!ab.isSet() && ab.hasVtt()){
+            if (!ab.isSet() && ab.hasVtt())
                 ImGui::TextUnformatted("Virtual TT keys Assigned");
-            }else{
-                ImGui::TextUnformatted(g_bindings.getDisplayString(ab).c_str());
-            }
+            else
+                ImGui::TextUnformatted(g_app.bindings.getDisplayString(ab).c_str());
 
             // Col 2: [Edit] [Clear] buttons
             ImGui::TableSetColumnIndex(2);
             if (ImGui::Button("Edit")) {
-                s_editPort = p;
-                s_openPopup = true;
+                s_editPort       = p;
+                s_openPopup      = true;
                 s_initialized[p] = false;
             }
             if (ab.isSet() || ab.hasVtt()) {
                 ImGui::SameLine();
                 if (ImGui::Button("Clear")) {
                     ab.clear();
-                    g_vtt_pos[p] = 128;
-                    g_bindings.save(g_settings);
+                    g_app.vtt_pos[p] = 128;
+                    g_app.bindings.save(g_app.settings);
                 }
             }
 
@@ -553,130 +558,124 @@ static void renderAnalogsTab() {
 
     // Open popup outside PushID scope
     if (s_openPopup) { ImGui::OpenPopup("EditAnalog"); s_openPopup = false; }
+    renderAnalogEditPopup(axisDevs);
+}
 
-    // Edit popup modal
-    if (ImGui::BeginPopupModal("EditAnalog", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        int p = s_editPort;
-        if (p >= 0 && p < BindingStore::ANALOG_COUNT) {
-            ImGui::PushID(p);
-            ImGui::Text("Editing: %s", analogNames[p]);
-            ImGui::Separator();
-            AnalogBinding& ab = g_bindings.analogs[p];
+static void renderAnalogEditPopup(const std::vector<Device>& axisDevs) {
+    if (!ImGui::BeginPopupModal("EditAnalog", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
 
-            // Initialize combo selection once per popup open
-            if (!s_initialized[p]) {
-                s_initialized[p] = true;
-                s_devIdx[p] = 0; s_axisIdx[p] = 0;
-                if (ab.isSet()) {
-                    for (int di = 0; di < (int)axisDevs.size(); di++) {
-                        if (axisDevs[di].path == ab.device_path) {
-                            s_devIdx[p]  = di + 1;  // +1 for "(none)" at index 0
-                            s_axisIdx[p] = (ab.axis_idx >= 0) ? ab.axis_idx : 0;
-                            break;
-                        }
+    int p = s_editPort;
+    if (p >= 0 && p < BindingStore::ANALOG_COUNT) {
+        ImGui::PushID(p);
+        ImGui::Text("Editing: %s", analogNames[p]);
+        ImGui::Separator();
+        AnalogBinding& ab = g_app.bindings.analogs[p];
+
+        // Initialize combo selection once per popup open
+        if (!s_initialized[p]) {
+            s_initialized[p] = true;
+            s_devIdx[p] = 0; s_axisIdx[p] = 0;
+            if (ab.isSet()) {
+                for (int di = 0; di < (int)axisDevs.size(); di++) {
+                    if (axisDevs[di].path == ab.device_path) {
+                        s_devIdx[p]  = di + 1;  // +1 for "(none)" at index 0
+                        s_axisIdx[p] = (ab.axis_idx >= 0) ? ab.axis_idx : 0;
+                        break;
                     }
                 }
             }
+        }
 
-            // Device combo (axes-only devices + "(none)")
-            std::vector<const char*> devLabels;
-            devLabels.push_back("(none)");
-            for (auto& d : axisDevs) devLabels.push_back(d.name.c_str());
-            if (ImGui::Combo("Device", &s_devIdx[p], devLabels.data(), (int)devLabels.size())) {
-                s_axisIdx[p] = 0;
-                if (s_devIdx[p] > 0) {
-                    const Device& d = axisDevs[(size_t)(s_devIdx[p] - 1)];
-                    ab.device_path = d.path; ab.device_name = d.name; ab.axis_idx = 0;
-                } else { ab.clearAxis(); }
-                g_bindings.save(g_settings);
-            }
-
-            // Axis combo (value_caps_names[] of selected device)
+        // Device combo (axes-only devices + "(none)")
+        std::vector<const char*> devLabels;
+        devLabels.push_back("(none)");
+        for (auto& d : axisDevs) devLabels.push_back(d.name.c_str());
+        if (ImGui::Combo("Device", &s_devIdx[p], devLabels.data(), (int)devLabels.size())) {
+            s_axisIdx[p] = 0;
             if (s_devIdx[p] > 0) {
                 const Device& d = axisDevs[(size_t)(s_devIdx[p] - 1)];
-                int axCount = (int)d.value_caps_names.size();
-                std::vector<const char*> axLabels;
-                for (auto& l : d.value_caps_names) axLabels.push_back(l.c_str());
-                if (axCount > 0 && ImGui::Combo("Axis", &s_axisIdx[p], axLabels.data(), axCount)) {
-                    ab.axis_idx = s_axisIdx[p];
-                    g_bindings.save(g_settings);
-                }
-            } else {
-                ImGui::TextDisabled("Axis: (select device first)");
-            }
-
-            // Reverse checkbox
-            if (ImGui::Checkbox("Reverse", &ab.reverse))
-                g_bindings.save(g_settings);
-
-            ImGui::Separator();
-
-            renderVttKeyBind("Virtual TT-:", "Bind##vttm", "Clear##vttm",
-                             ab.vtt_minus, s_capturingVtt[p][1], s_capturingVtt[p][0], s_vttPrevKeys);
-            renderVttKeyBind("Virtual TT+:", "Bind##vttp", "Clear##vttp",
-                             ab.vtt_plus,  s_capturingVtt[p][0], s_capturingVtt[p][1], s_vttPrevKeys);
-
-            // VTT Step
-            if (ImGui::SliderInt("Virtual TT Step Amount", &ab.vtt_step, 1, 10))
-                g_bindings.save(g_settings);
-
-            ImGui::Separator();
-
-            // Live preview
-            {
-                float display = 0.5;
-                char overlay[32];
-                if (ab.isSet() || ab.hasVtt()){
-                    display = g_bindings.getPosition(ab, g_vtt_pos[p]) / 255.0f;
-                    snprintf(overlay, sizeof(overlay), "%.0f", display * 255.0f);
-                }
-                else
-                    snprintf(overlay, sizeof(overlay), "(unbound)");
-
-                ImGui::ProgressBar(display, ImVec2(-0.5f, 0), overlay);
-            }
-
-            ImGui::PopID();
+                ab.device_path = d.path; ab.device_name = d.name; ab.axis_idx = 0;
+            } else { ab.device_path.clear(); ab.device_name.clear(); ab.axis_idx = -1; }
+            g_app.bindings.save(g_app.settings);
         }
+
+        // Axis combo (value_caps_names[] of selected device)
+        if (s_devIdx[p] > 0) {
+            const Device& d = axisDevs[(size_t)(s_devIdx[p] - 1)];
+            int axCount = (int)d.value_caps_names.size();
+            std::vector<const char*> axLabels;
+            for (auto& l : d.value_caps_names) axLabels.push_back(l.c_str());
+            if (axCount > 0 && ImGui::Combo("Axis", &s_axisIdx[p], axLabels.data(), axCount)) {
+                ab.axis_idx = s_axisIdx[p];
+                g_app.bindings.save(g_app.settings);
+            }
+        } else {
+            ImGui::TextDisabled("Axis: (select device first)");
+        }
+
+        // Reverse checkbox
+        if (ImGui::Checkbox("Reverse", &ab.reverse))
+            g_app.bindings.save(g_app.settings);
+
         ImGui::Separator();
-        if (ImGui::Button("Close", ImVec2(120, 0))) {
-            // Stop any VTT capture in progress
-            for (int pp = 0; pp < 2; pp++) {
-                for (int dir = 0; dir < 2; dir++) {
-                    if (s_capturingVtt[pp][dir]) {
-                        g_input->stopCapture();
-                        s_capturingVtt[pp][dir] = false;
-                    }
+
+        renderVttKeyBind("Virtual TT-:", "Bind##vttm", "Clear##vttm",
+                         ab.vtt_minus, s_capturingVtt[p][1], s_capturingVtt[p][0], s_vttPrevKeys);
+        renderVttKeyBind("Virtual TT+:", "Bind##vttp", "Clear##vttp",
+                         ab.vtt_plus,  s_capturingVtt[p][0], s_capturingVtt[p][1], s_vttPrevKeys);
+
+        // VTT Step
+        if (ImGui::SliderInt("Virtual TT Step Amount", &ab.vtt_step, 1, 10))
+            g_app.bindings.save(g_app.settings);
+
+        ImGui::Separator();
+
+        // Live preview
+        {
+            float display = 0.5f;
+            char overlay[32];
+            if (ab.isSet() || ab.hasVtt()) {
+                display = g_app.bindings.getPosition(ab, g_app.vtt_pos[p]) / 255.0f;
+                snprintf(overlay, sizeof(overlay), "%.0f", display * 255.0f);
+            } else {
+                snprintf(overlay, sizeof(overlay), "(unbound)");
+            }
+            ImGui::ProgressBar(display, ImVec2(-0.5f, 0), overlay);
+        }
+
+        ImGui::PopID();
+    }
+    ImGui::Separator();
+    if (ImGui::Button("Close", ImVec2(120, 0))) {
+        // Stop any VTT capture in progress
+        for (int pp = 0; pp < 2; pp++) {
+            for (int dir = 0; dir < 2; dir++) {
+                if (s_capturingVtt[pp][dir]) {
+                    g_app.input->stopCapture();
+                    s_capturingVtt[pp][dir] = false;
                 }
             }
-            ImGui::CloseCurrentPopup();
-            s_editPort = -1;
         }
-        ImGui::EndPopup();
+        ImGui::CloseCurrentPopup();
+        s_editPort = -1;
     }
+    ImGui::EndPopup();
 }
 
 static void renderLightsTab() {
-    static int   s_bindLightIdx   = -1;       // which lights[] row is being bound
-    static bool  s_openLightPopup = false;
-    static int   s_lightDevIdx    = 0;        // combo index (0 = "(none)")
-    static int   s_lightOutIdx    = -1;       // flat output index
-    static float s_testTimer      = 0.0f;
-    static std::string s_testPath;
-    static int   s_testOutIdx     = -1;
-
-    // Advance test timer — auto-turn-off after 1 second
+    // Advance test timer — auto-turn-off after 0.5 seconds
     if (s_testTimer > 0.0f) {
         s_testTimer -= ImGui::GetIO().DeltaTime;
         if (s_testTimer <= 0.0f && !s_testPath.empty()) {
-            g_input->setLight(s_testPath, s_testOutIdx, 0.0f);
-            g_input->disableOutput(s_testPath);
+            g_app.input->setLight(s_testPath, s_testOutIdx, 0.0f);
+            g_app.input->disableOutput(s_testPath);
         }
     }
 
     // Get output-capable devices for bind popup.
     // Show all devices with at least one output cap (matches spice2x filter).
-    std::vector<Device> allDevs = g_input->getDevices();
+    std::vector<Device> allDevs = g_app.input->getDevices();
     std::vector<Device> outputDevs;
     for (auto& d : allDevs) {
         if (!d.button_output_caps_names.empty() || !d.value_output_caps_names.empty())
@@ -689,16 +688,16 @@ static void renderLightsTab() {
             ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Light",   ImGuiTableColumnFlags_WidthFixed, 120.0f);
         ImGui::TableSetupColumn("Binding", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Actions",    ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
         ImGui::TableHeadersRow();
 
         for (int i = 0; i < BindingStore::LIGHT_COUNT; i++) {
             ImGui::PushID(i);
             ImGui::TableNextRow();
 
-            LightBinding& lb = g_bindings.lights[i];
+            LightBinding& lb = g_app.bindings.lights[i];
 
-            std::string lightLabel = g_bindings.getDisplayString(lb);
+            std::string lightLabel = g_app.bindings.getDisplayString(lb);
             bool isTestActive = (s_testTimer > 0.0f && lb.isSet()
                                 && s_testPath == lb.device_path
                                 && s_testOutIdx == lb.output_idx);
@@ -714,9 +713,9 @@ static void renderLightsTab() {
 
             ImGui::TableSetColumnIndex(2);
             if (ImGui::Button("Bind")) {
-                s_bindLightIdx   = i;
-                s_lightDevIdx    = 0;
-                s_lightOutIdx    = -1;
+                s_bindLightIdx = i;
+                s_lightDevIdx  = 0;
+                s_lightOutIdx  = -1;
                 // Populate from current binding if set
                 if (lb.isSet()) {
                     for (int d = 0; d < (int)outputDevs.size(); d++) {
@@ -730,11 +729,11 @@ static void renderLightsTab() {
                 s_openLightPopup = true;
             }
 
-            if(lb.isSet()){
+            if (lb.isSet()) {
                 ImGui::SameLine();
                 if (ImGui::Button("Clear")) {
                     lb.clear();
-                    g_bindings.save(g_settings);
+                    g_app.bindings.save(g_app.settings);
                 }
             }
 
@@ -744,63 +743,67 @@ static void renderLightsTab() {
     }
     ImGui::EndChild();
 
-    // Bind popup
     if (s_openLightPopup) { ImGui::OpenPopup("BindLight"); s_openLightPopup = false; }
-    if (ImGui::BeginPopupModal("BindLight", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Bind Light: %s", (s_bindLightIdx >= 0 ? lightNames[s_bindLightIdx] : "?"));
-        ImGui::Separator();
+    renderLightBindPopup(outputDevs);
+}
 
-        // Device combo — output-capable devices only
-        std::vector<const char*> devLabels;
-        devLabels.push_back("(none)");
-        for (auto& d : outputDevs) devLabels.push_back(d.name.c_str());
-        int prevDevIdx = s_lightDevIdx;
-        ImGui::Combo("Device", &s_lightDevIdx, devLabels.data(), (int)devLabels.size());
-        if (prevDevIdx != s_lightDevIdx) s_lightOutIdx = -1;  // reset output on device change
+static void renderLightBindPopup(const std::vector<Device>& outputDevs) {
+    if (!ImGui::BeginPopupModal("BindLight", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
 
-        // Output combo — flat: button_output_caps_names then value_output_caps_names
-        int prevOutIdx = s_lightOutIdx;
-        if (s_lightDevIdx > 0) {
-            const Device& selDev = outputDevs[s_lightDevIdx - 1];
-            std::vector<const char*> outLabels;
-            for (auto& n : selDev.button_output_caps_names) outLabels.push_back(n.c_str());
-            for (auto& n : selDev.value_output_caps_names)  outLabels.push_back(n.c_str());
-            if (!outLabels.empty()) {
-                if (s_lightOutIdx < 0) s_lightOutIdx = 0;  // auto-select first
-                ImGui::Combo("Output", &s_lightOutIdx, outLabels.data(), (int)outLabels.size());
-            }
-        } else {
-            s_lightOutIdx = -1;
+    ImGui::Text("Bind Light: %s", (s_bindLightIdx >= 0 ? lightNames[s_bindLightIdx] : "?"));
+    ImGui::Separator();
+
+    // Device combo — output-capable devices only
+    std::vector<const char*> devLabels;
+    devLabels.push_back("(none)");
+    for (auto& d : outputDevs) devLabels.push_back(d.name.c_str());
+    int prevDevIdx = s_lightDevIdx;
+    ImGui::Combo("Device", &s_lightDevIdx, devLabels.data(), (int)devLabels.size());
+    if (prevDevIdx != s_lightDevIdx) s_lightOutIdx = -1;  // reset output on device change
+
+    // Output combo — flat: button_output_caps_names then value_output_caps_names
+    int prevOutIdx = s_lightOutIdx;
+    if (s_lightDevIdx > 0) {
+        const Device& selDev = outputDevs[s_lightDevIdx - 1];
+        std::vector<const char*> outLabels;
+        for (auto& n : selDev.button_output_caps_names) outLabels.push_back(n.c_str());
+        for (auto& n : selDev.value_output_caps_names)  outLabels.push_back(n.c_str());
+        if (!outLabels.empty()) {
+            if (s_lightOutIdx < 0) s_lightOutIdx = 0;  // auto-select first
+            ImGui::Combo("Output", &s_lightOutIdx, outLabels.data(), (int)outLabels.size());
         }
-
-        // Instant-save on any combo change (matching Buttons tab pattern)
-        if ((prevDevIdx != s_lightDevIdx || prevOutIdx != s_lightOutIdx)
-            && s_lightDevIdx > 0 && s_lightOutIdx >= 0 && s_bindLightIdx >= 0) {
-            LightBinding& lb = g_bindings.lights[s_bindLightIdx];
-            lb.device_path = outputDevs[s_lightDevIdx - 1].path;
-            lb.device_name = outputDevs[s_lightDevIdx - 1].name;
-            lb.output_idx  = s_lightOutIdx;
-            g_bindings.save(g_settings);
-        }
-
-        ImGui::Separator();
-
-        // Test button — pulses light for 1 second then auto-off
-        bool canTest = s_lightDevIdx > 0 && s_lightOutIdx >= 0;
-        if (!canTest) ImGui::BeginDisabled();
-        if (ImGui::Button("Test")) {
-            s_testPath   = outputDevs[s_lightDevIdx - 1].path;
-            s_testOutIdx = s_lightOutIdx;
-            g_input->setLight(s_testPath, s_testOutIdx, 1.0f);
-            s_testTimer  = 0.5f;
-        }
-        if (!canTest) ImGui::EndDisabled();
-
-        ImGui::SameLine();
-        if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
-
-        ImGui::EndPopup();
+    } else {
+        s_lightOutIdx = -1;
     }
+
+    // Instant-save on any combo change (matching Buttons tab pattern)
+    if ((prevDevIdx != s_lightDevIdx || prevOutIdx != s_lightOutIdx)
+        && s_lightDevIdx > 0 && s_lightOutIdx >= 0 && s_bindLightIdx >= 0) {
+        LightBinding& lb = g_app.bindings.lights[s_bindLightIdx];
+        lb.device_path = outputDevs[s_lightDevIdx - 1].path;
+        lb.device_name = outputDevs[s_lightDevIdx - 1].name;
+        lb.output_idx  = s_lightOutIdx;
+        g_app.bindings.save(g_app.settings);
+    }
+
+    ImGui::Separator();
+
+    // Test button — pulses light for 0.5 seconds then auto-off
+    bool canTest = s_lightDevIdx > 0 && s_lightOutIdx >= 0;
+    if (!canTest) ImGui::BeginDisabled();
+    if (ImGui::Button("Test")) {
+        s_testPath   = outputDevs[s_lightDevIdx - 1].path;
+        s_testOutIdx = s_lightOutIdx;
+        g_app.input->setLight(s_testPath, s_testOutIdx, 1.0f);
+        s_testTimer  = 0.5f;
+    }
+    if (!canTest) ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+
+    ImGui::EndPopup();
 }
 
 // Returns newly-pressed VK (ignoring mouse buttons), or -1 if none. Updates prevKeys[] in-place.
@@ -818,23 +821,23 @@ static int pollKeyboardPress(bool* prevKeys) {
 
 static void renderVttKeyBind(const char* label, const char* bindId, const char* clearId,
                              ButtonBinding& key, bool& capturing, bool& otherCapturing, bool* prevKeys) {
-    ImGui::Text("%s %s", label, g_bindings.getDisplayString(key).c_str());
+    ImGui::Text("%s %s", label, g_app.bindings.getDisplayString(key).c_str());
     ImGui::SameLine();
     if (capturing) {
         ImGui::TextColored(ImVec4(1,1,0,1), "[Press button or key...]");
-        auto hit = g_input->pollCapture();
+        auto hit = g_app.input->pollCapture();
         if (hit) {
             key = ButtonBinding::fromCapture(*hit);
-            g_bindings.save(g_settings);
-            g_input->stopCapture();
+            g_app.bindings.save(g_app.settings);
+            g_app.input->stopCapture();
             capturing = false;
         } else {
             int vk = pollKeyboardPress(prevKeys);
             if (vk >= 0) {
                 key.clear();
                 key.vk_code = vk;
-                g_bindings.save(g_settings);
-                g_input->stopCapture();
+                g_app.bindings.save(g_app.settings);
+                g_app.input->stopCapture();
                 capturing = false;
             }
         }
@@ -842,7 +845,7 @@ static void renderVttKeyBind(const char* label, const char* bindId, const char* 
         if (ImGui::Button(bindId)) {
             otherCapturing = false;
             capturing = true;
-            g_input->startCapture();
+            g_app.input->startCapture();
             for (int vk = 0; vk < 256; vk++)
                 prevKeys[vk] = (GetAsyncKeyState(vk) & 0x8000) != 0;
         }
@@ -850,17 +853,17 @@ static void renderVttKeyBind(const char* label, const char* bindId, const char* 
             ImGui::SameLine();
             if (ImGui::Button(clearId)) {
                 key.clear();
-                g_bindings.save(g_settings);
+                g_app.bindings.save(g_app.settings);
             }
         }
     }
 }
 
 static void globalCheckbox(const char* label, const char* key, bool defaultVal) {
-    bool val = g_settings.globalSettings().value(key, defaultVal);
+    bool val = g_app.settings.globalSettings().value(key, defaultVal);
     if (ImGui::Checkbox(label, &val)) {
-        g_settings.globalSettings()[key] = val;
-        g_settings.save();
+        g_app.settings.globalSettings()[key] = val;
+        g_app.settings.save();
     }
 }
 

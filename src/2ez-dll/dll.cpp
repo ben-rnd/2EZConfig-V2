@@ -21,7 +21,6 @@ extern "C" {
 #include "patch_store.h"
 #include "settings.h"
 #include "strings.h"
-#include <nlohmann/json.hpp>
 
 static HMODULE       s_dllModule  = nullptr;
 static InputManager* s_mgr        = nullptr;
@@ -49,13 +48,13 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
         case 0xEC: // IN AL, DX — DJ read (8-bit)
             switch (port) {
                 //buttons
-                case 0x101: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[1]; break;
-                case 0x102: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[2]; break;
-                case 0x106: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[6]; break;
+                case 0x101: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[1].load(); break;
+                case 0x102: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[2].load(); break;
+                case 0x106: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[6].load(); break;
 
                 //analogs
-                case 0x103: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[3]; break;  // P1 turntable
-                case 0x104: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[4]; break;  // P2 turntable
+                case 0x103: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[3].load(); break;  // P1 turntable
+                case 0x104: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[4].load(); break;  // P2 turntable
 
                 //fall through
                 default:    ctx->Eax = (ctx->Eax & 0xFFFFFF00) | 0xFF; break;
@@ -65,10 +64,10 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
 
         case 0xED: // IN AX, DX — Dancer read (16-bit)
             switch (port) {
-                case 0x300: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[0]; break;
-                case 0x302: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[1]; break;
-                case 0x304: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[2]; break;
-                case 0x306: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[3]; break;
+                case 0x300: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[0].load(); break;
+                case 0x302: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[1].load(); break;
+                case 0x304: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[2].load(); break;
+                case 0x306: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[3].load(); break;
 
                 default:    ctx->Eax = (ctx->Eax & 0xFFFF0000) | 0xFFFF; break;
             }
@@ -174,7 +173,7 @@ static DWORD WINAPI InitThread(void*) {
     } catch (...) {}
 
     startInputPollingThread(s_bindings);
-    startLightFlushThread(s_bindings, *s_mgr);
+    startLightFlushThread(s_bindings);
 
     // Wait for game init, then apply patches and version string.
     Sleep(settings.globalSettings().value("patch_delay_ms", 2000));

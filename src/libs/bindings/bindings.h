@@ -18,26 +18,38 @@ static inline const char* analogPortKey(int port) {
     return port == 0 ? "p1_turntable" : "p2_turntable";
 }
 
+// ---- BindingBase ---------------------------------------------------------
+// Shared device identity fields for all binding types.
+// No virtual methods — just data + common clear helper.
+
+struct BindingBase {
+    std::string device_path;    // full Windows device path from InputManager::getDevices()[i].path
+    std::string device_name;    // informational: for [Disconnected] display fallback
+
+protected:
+    void clearBase() {
+        device_path.clear();
+        device_name.clear();
+    }
+};
+
 // ---- ButtonBinding -------------------------------------------------------
 
-struct ButtonBinding {
+struct ButtonBinding : BindingBase {
     // HID button: device_path + button_idx (device_path non-empty, vk_code==0)
     // Keyboard:   vk_code != 0 (device_path empty)
     // Unbound:    device_path empty AND vk_code == 0
-    std::string      device_path;    // full Windows device path from InputManager::getDevices()[i].path
     int              button_idx = -1;
     int              vk_code    = 0;
-    std::string      device_name;    // informational: for [Disconnected] display fallback
     ButtonAnalogType analog_type = ButtonAnalogType::NONE;  // hat-as-button direction
 
     bool isSet()      const { return (!device_path.empty() && button_idx >= 0) || vk_code != 0; }
     bool isKeyboard() const { return vk_code != 0; }
 
     void clear() {
-        device_path.clear();
-        button_idx = -1;
-        vk_code    = 0;
-        device_name.clear();
+        clearBase();
+        button_idx  = -1;
+        vk_code     = 0;
         analog_type = ButtonAnalogType::NONE;
     }
 
@@ -57,32 +69,23 @@ struct ButtonBinding {
 
 // ---- AnalogBinding -------------------------------------------------------
 
-struct AnalogBinding {
-    std::string device_path;
-    int         axis_idx    = -1;
-    std::string device_name;
-    bool        reverse     = false;
+struct AnalogBinding : BindingBase {
+    int           axis_idx = -1;
+    bool          reverse  = false;
     ButtonBinding vtt_plus;
     ButtonBinding vtt_minus;
-    int         vtt_step    = 3;
+    int           vtt_step = 3;
 
     bool isSet()   const { return !device_path.empty() && axis_idx >= 0; }
     bool hasVtt()  const { return vtt_plus.isSet() || vtt_minus.isSet(); }
 
     void clear() {
-        device_path.clear();
+        clearBase();
         axis_idx = -1;
-        device_name.clear();
-        reverse = false;
+        reverse  = false;
         vtt_plus.clear();
         vtt_minus.clear();
         vtt_step = 3;
-    }
-
-    void clearAxis() {
-        device_path.clear();
-        axis_idx = -1;
-        device_name.clear();
     }
 
     nlohmann::json   toJson()  const;
@@ -91,17 +94,14 @@ struct AnalogBinding {
 
 // ---- LightBinding --------------------------------------------------------
 
-struct LightBinding {
-    std::string device_path;   // full Windows device path (same as ButtonBinding)
-    int         output_idx = -1;   // flat index: button_output_caps first, value_output_caps after
-    std::string device_name;   // informational; for [Disconnected] fallback display
+struct LightBinding : BindingBase {
+    int output_idx = -1;   // flat index: button_output_caps first, value_output_caps after
 
     bool isSet() const { return !device_path.empty() && output_idx >= 0; }
 
     void clear() {
-        device_path.clear();
+        clearBase();
         output_idx = -1;
-        device_name.clear();
     }
 
     nlohmann::json toJson() const;
@@ -133,14 +133,13 @@ struct BindingStore {
     void save(SettingsManager& settings) const;
 
     // Input queries — use these instead of calling InputManager directly.
-    // Returns false if b is unset or mgr is null.
     bool isHeld(const ButtonBinding& b) const;
 
-    // Returns display strings for UI rendering.
+    // Display strings for UI rendering.
     std::string getDisplayString(const ButtonBinding& b) const;
     std::string getDisplayString(const AnalogBinding& a) const;
     std::string getDisplayString(const LightBinding& l) const;
 
-    // Returns turntable position [0,255] incorporating axis and VTT offset.
+    // Turntable position [0,255] incorporating axis and VTT offset.
     uint8_t getPosition(const AnalogBinding& a, uint8_t vtt_pos) const;
 };

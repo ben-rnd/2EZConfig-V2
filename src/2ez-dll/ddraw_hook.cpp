@@ -8,40 +8,27 @@ static SetDisplayModeFn s_origDD2 = nullptr;
 static SetDisplayModeFn s_origDD4 = nullptr;
 static SetDisplayModeFn s_origDD7 = nullptr;
 
-static HRESULT WINAPI HookedSetDisplayModeDD2(
+// Shared logic: if force60hz, try 60Hz first; on failure fall back to original rate.
+static HRESULT setDisplayModeCommon(
     void* pThis, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP,
-    DWORD dwRefreshRate, DWORD dwFlags)
+    DWORD dwRefreshRate, DWORD dwFlags, SetDisplayModeFn orig)
 {
     if (s_force60hz) {
-        HRESULT hr = s_origDD2(pThis, dwWidth, dwHeight, dwBPP, 60, dwFlags);
+        HRESULT hr = orig(pThis, dwWidth, dwHeight, dwBPP, 60, dwFlags);
         if (SUCCEEDED(hr)) return hr;
         // 60Hz rejected by driver — fall back to original rate
     }
-    return s_origDD2(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
+    return orig(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
 }
 
-static HRESULT WINAPI HookedSetDisplayModeDD4(
-    void* pThis, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP,
-    DWORD dwRefreshRate, DWORD dwFlags)
-{
-    if (s_force60hz) {
-        HRESULT hr = s_origDD4(pThis, dwWidth, dwHeight, dwBPP, 60, dwFlags);
-        if (SUCCEEDED(hr)) return hr;
-        // 60Hz rejected by driver — fall back to original rate
-    }
-    return s_origDD4(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
+static HRESULT WINAPI HookedSetDisplayModeDD2(void* pThis, DWORD w, DWORD h, DWORD bpp, DWORD rate, DWORD flags) {
+    return setDisplayModeCommon(pThis, w, h, bpp, rate, flags, s_origDD2);
 }
-
-static HRESULT WINAPI HookedSetDisplayModeDD7(
-    void* pThis, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP,
-    DWORD dwRefreshRate, DWORD dwFlags)
-{
-    if (s_force60hz) {
-        HRESULT hr = s_origDD7(pThis, dwWidth, dwHeight, dwBPP, 60, dwFlags);
-        if (SUCCEEDED(hr)) return hr;
-        // 60Hz rejected by driver — fall back to original rate
-    }
-    return s_origDD7(pThis, dwWidth, dwHeight, dwBPP, dwRefreshRate, dwFlags);
+static HRESULT WINAPI HookedSetDisplayModeDD4(void* pThis, DWORD w, DWORD h, DWORD bpp, DWORD rate, DWORD flags) {
+    return setDisplayModeCommon(pThis, w, h, bpp, rate, flags, s_origDD4);
+}
+static HRESULT WINAPI HookedSetDisplayModeDD7(void* pThis, DWORD w, DWORD h, DWORD bpp, DWORD rate, DWORD flags) {
+    return setDisplayModeCommon(pThis, w, h, bpp, rate, flags, s_origDD7);
 }
 
 static void hookSlot(void* pIface, int slot, void* hookFn, SetDisplayModeFn* origOut) {

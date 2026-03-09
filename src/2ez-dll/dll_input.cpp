@@ -3,10 +3,21 @@
 #include "input_manager.h"
 #include "strings.h"
 #include <windows.h>
+#include <atomic>
 
-// Pre-computed port cache. VEH handler reads from here (single volatile read).
-volatile uint8_t  s_djPortCache[7]     = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
-volatile uint16_t s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
+// DJ input port indices
+static constexpr uint16_t PORT_DJ_CTRL       = 0x101;
+static constexpr uint16_t PORT_DJ_P1_BUTTONS = 0x102;
+static constexpr uint16_t PORT_DJ_P2_BUTTONS = 0x106;
+
+// Dancer input port indices
+static constexpr uint16_t PORT_DANCER_P1_FEET    = 0x300;
+static constexpr uint16_t PORT_DANCER_P2_FEET    = 0x302;
+static constexpr uint16_t PORT_DANCER_HAND_SENSOR = 0x306;
+
+// Pre-computed port cache. VEH handler reads from here (single atomic read).
+std::atomic<uint8_t>  s_djPortCache[7]     = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
+std::atomic<uint16_t> s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
 
 // --- DJ port computation ----------------------------------------------------
 
@@ -91,18 +102,18 @@ static DWORD WINAPI inputPollingThread(void* arg) {
         Sleep(1);
 
         // DJ button ports
-        s_djPortCache[1] = computePort0x101(bs);
-        s_djPortCache[2] = computePort0x102(bs);
-        s_djPortCache[6] = computePort0x106(bs);
+        s_djPortCache[1].store(computePort0x101(bs));
+        s_djPortCache[2].store(computePort0x102(bs));
+        s_djPortCache[6].store(computePort0x106(bs));
 
         // DJ analog ports (turntables)
-        s_djPortCache[3] = bs.getPosition(bs.analogs[ANALOG_P1_TURNTABLE], bs.mgr->getVttPosition(ANALOG_P1_TURNTABLE));
-        s_djPortCache[4] = bs.getPosition(bs.analogs[ANALOG_P2_TURNTABLE], bs.mgr->getVttPosition(ANALOG_P2_TURNTABLE));
+        s_djPortCache[3].store(bs.getPosition(bs.analogs[ANALOG_P1_TURNTABLE], bs.mgr->getVttPosition(ANALOG_P1_TURNTABLE)));
+        s_djPortCache[4].store(bs.getPosition(bs.analogs[ANALOG_P2_TURNTABLE], bs.mgr->getVttPosition(ANALOG_P2_TURNTABLE)));
 
         // Dancer ports
-        s_dancerPortCache[0] = computePort0x300(bs);
-        s_dancerPortCache[1] = computePort0x302(bs);
-        s_dancerPortCache[3] = computePort0x306(bs);
+        s_dancerPortCache[0].store(computePort0x300(bs));
+        s_dancerPortCache[1].store(computePort0x302(bs));
+        s_dancerPortCache[3].store(computePort0x306(bs));
     }
     return 0;
 }
