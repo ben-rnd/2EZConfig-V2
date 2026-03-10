@@ -465,7 +465,7 @@ static void renderButtonsTab() {
                 if (active)
                     ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s:", actionList[i]);
                 else
-                    ImGui::TextUnformatted(actionList[i]);
+                    ImGui::Text("%s:", actionList[i]);
 
                 ImGui::TableSetColumnIndex(1);
 
