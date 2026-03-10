@@ -7,7 +7,7 @@
 #include <windows.h>
 
 #include "bindings.h"
-#include "strings.h"
+#include "game_defs.h"
 #include <algorithm>
 #include <cstring>
 
@@ -74,7 +74,7 @@ nlohmann::json ButtonBinding::toJson() const {
     return j;
 }
 
-/*static*/ ButtonBinding ButtonBinding::fromJson(const nlohmann::json& j) {
+ButtonBinding ButtonBinding::fromJson(const nlohmann::json& j) {
     try {
         ButtonBinding b;
         if (!j.is_object()) return b;
@@ -118,7 +118,7 @@ nlohmann::json AnalogBinding::toJson() const {
     return j;
 }
 
-/*static*/ AnalogBinding AnalogBinding::fromJson(const nlohmann::json& j) {
+AnalogBinding AnalogBinding::fromJson(const nlohmann::json& j) {
     try {
         AnalogBinding a;
         if (!j.is_object()) return a;
@@ -156,7 +156,7 @@ nlohmann::json LightBinding::toJson() const {
     return j;
 }
 
-/*static*/ LightBinding LightBinding::fromJson(const nlohmann::json& j) {
+LightBinding LightBinding::fromJson(const nlohmann::json& j) {
     LightBinding b;
     if (!j.is_object()) return b;
     b.device_path = j.value("device_path", "");

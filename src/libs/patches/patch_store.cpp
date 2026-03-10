@@ -4,7 +4,6 @@
 #include <psapi.h>
 #include <fstream>
 #include <sstream>
-#include <algorithm>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 
@@ -111,8 +110,8 @@ void PatchStore::load(const std::string& dir) {
             json j;
             try {
                 f >> j;
-                for (auto& [gameId, gameObj] : j.items()) {
-                    parseGamePatches(gameObj, m_patches[gameId]);
+                for (auto it = j.begin(); it != j.end(); ++it) {
+                    parseGamePatches(it.value(), m_patches[it.key()]);
                 }
             } catch (...) {
                 // Malformed JSON — skip silently
@@ -128,14 +127,16 @@ void PatchStore::load(const std::string& dir) {
             json j;
             try {
                 f >> j;
-                for (auto& [gameId, gameObj] : j.items()) {
+                for (auto jit = j.begin(); jit != j.end(); ++jit) {
+                    const std::string& gameId = jit.key();
                     std::vector<Patch> userPatches;
-                    parseGamePatches(gameObj, userPatches);
+                    parseGamePatches(jit.value(), userPatches);
                     auto& bundled = m_patches[gameId];
                     for (auto& up : userPatches) {
-                        auto it = std::find_if(bundled.begin(), bundled.end(),
-                            [&](const Patch& bp) { return bp.id == up.id; });
-                        if (it != bundled.end()) *it = up;
+                        Patch* found = nullptr;
+                        for (int fi = 0; fi < (int)bundled.size(); ++fi)
+                            if (bundled[fi].id == up.id) { found = &bundled[fi]; break; }
+                        if (found) *found = up;
                         else bundled.push_back(up);
                     }
                 }
@@ -209,20 +210,22 @@ void PatchStore::saveStateHelper(const std::vector<Patch>& patches, json& out) c
 }
 
 void PatchStore::loadState(const json& patchState) {
-    for (auto& [gameId, patches] : m_patches) {
+    for (auto it = m_patches.begin(); it != m_patches.end(); ++it) {
+        const std::string& gameId = it->first;
         // patchState is scoped by game_id: { "ez2ac_fn_ex": { "patch_id": {...} } }
         if (patchState.contains(gameId) && patchState[gameId].is_object()) {
-            loadStateHelper(patches, patchState[gameId]);
+            loadStateHelper(it->second, patchState[gameId]);
         }
     }
 }
 
 json PatchStore::saveState() const {
     json out = json::object();
-    for (const auto& [gameId, patches] : m_patches) {
+    for (auto it = m_patches.begin(); it != m_patches.end(); ++it) {
+        const std::string& gameId = it->first;
         // Save per game_id so same-named patches across games don't collide.
         json gameOut = json::object();
-        saveStateHelper(patches, gameOut);
+        saveStateHelper(it->second, gameOut);
         out[gameId] = gameOut;
     }
     return out;

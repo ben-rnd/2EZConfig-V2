@@ -25,7 +25,6 @@ extern "C" {
 #include <string>
 #include <vector>
 #include <map>
-#include <optional>
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
@@ -170,7 +169,8 @@ struct InputManagerImpl {
 
     // Capture mode.
     bool capture_mode = false;
-    std::optional<CaptureResult> capture_result;
+    CaptureResult capture_result;
+    bool capture_result_ready = false;
     CRITICAL_SECTION capture_lock;
 
     // Previous button states for edge detection (keyed by device path).
@@ -800,7 +800,7 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
     {
         EnterCriticalSection(&impl->capture_lock);
         bool capturing = impl->capture_mode;
-        bool already_captured = impl->capture_result.has_value();
+        bool already_captured = impl->capture_result_ready;
         LeaveCriticalSection(&impl->capture_lock);
 
         if (capturing && !already_captured) {
@@ -825,8 +825,9 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
                     cr.analog_type = ButtonAnalogType::NONE;
 
                     EnterCriticalSection(&impl->capture_lock);
-                    if (!impl->capture_result.has_value()) {
+                    if (!impl->capture_result_ready) {
                         impl->capture_result = cr;
+                        impl->capture_result_ready = true;
                     }
                     LeaveCriticalSection(&impl->capture_lock);
                     break;
@@ -838,7 +839,7 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
 
             // Hat direction change detection.
             EnterCriticalSection(&impl->capture_lock);
-            already_captured = impl->capture_result.has_value();
+            already_captured = impl->capture_result_ready;
             LeaveCriticalSection(&impl->capture_lock);
 
             if (!already_captured) {
@@ -863,8 +864,9 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
                             cr.analog_type = dir;
 
                             EnterCriticalSection(&impl->capture_lock);
-                            if (!impl->capture_result.has_value()) {
+                            if (!impl->capture_result_ready) {
                                 impl->capture_result = cr;
+                                impl->capture_result_ready = true;
                             }
                             LeaveCriticalSection(&impl->capture_lock);
                             break;
@@ -1230,8 +1232,8 @@ uint8_t InputManager::getVttPosition(int port) const {
 
 void InputManager::startCapture() {
     EnterCriticalSection(&impl->capture_lock);
-    impl->capture_mode   = true;
-    impl->capture_result = std::nullopt;
+    impl->capture_mode         = true;
+    impl->capture_result_ready = false;
     LeaveCriticalSection(&impl->capture_lock);
 
     // Reset prev states so any current press is treated as a fresh edge.
@@ -1248,17 +1250,20 @@ void InputManager::startCapture() {
 
 void InputManager::stopCapture() {
     EnterCriticalSection(&impl->capture_lock);
-    impl->capture_mode   = false;
-    impl->capture_result = std::nullopt;
+    impl->capture_mode         = false;
+    impl->capture_result_ready = false;
     LeaveCriticalSection(&impl->capture_lock);
 }
 
-std::optional<CaptureResult> InputManager::pollCapture() {
+bool InputManager::pollCapture(CaptureResult& out) {
     EnterCriticalSection(&impl->capture_lock);
-    auto result = impl->capture_result;
-    impl->capture_result = std::nullopt;
+    bool ready = impl->capture_result_ready;
+    if (ready) {
+        out = impl->capture_result;
+        impl->capture_result_ready = false;
+    }
     LeaveCriticalSection(&impl->capture_lock);
-    return result;
+    return ready;
 }
 
 void InputManager::setLight(const std::string& path, int output_idx, float value) {

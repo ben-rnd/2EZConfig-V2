@@ -3,7 +3,7 @@
 #include "imgui_impl_opengl2.h"
 #include "injector.h"
 #include "settings.h"
-#include "strings.h"
+#include "game_defs.h"
 #include "input_manager.h"
 #include "bindings.h"
 #include "patch_store.h"
@@ -16,7 +16,6 @@
 #include <fstream>
 #include <string>
 #include <vector>
-#include <algorithm>
 
 static std::string getAppDataDir() {
     char buf[MAX_PATH] = {};
@@ -373,15 +372,15 @@ static void renderSettingsTab() {
 }
 
 static void renderButtonsTab() {
-    enum class BindState { Normal, Listening };
-    static BindState s_state      = BindState::Normal;
-    static BindState s_prevState  = BindState::Normal;
+    enum BindState { BindState_Normal, BindState_Listening };
+    static BindState s_state      = BindState_Normal;
+    static BindState s_prevState  = BindState_Normal;
     static int       s_listenIdx  = -1;
     static float     s_listenTimer = 0.0f;
     static bool      s_prevKeys[256] = {};
 
     if (s_state != s_prevState) {
-        if (s_state == BindState::Listening) g_app.input->startCapture();
+        if (s_state == BindState_Listening) g_app.input->startCapture();
         else                                 g_app.input->stopCapture();
         s_prevState = s_state;
     }
@@ -401,7 +400,7 @@ static void renderButtonsTab() {
             ImGui::TableNextRow();
             ButtonBinding& bnd = g_app.isDancer ? g_app.bindings.dancerButtons[i] : g_app.bindings.buttons[i];
 
-            if (s_state == BindState::Listening && s_listenIdx == i) {
+            if (s_state == BindState_Listening && s_listenIdx == i) {
                 ImGui::TableSetColumnIndex(0);
                 ImGui::TextColored(ImVec4(1,1,0,1), "Press a button...");
                 ImGui::TableSetColumnIndex(1);
@@ -410,21 +409,21 @@ static void renderButtonsTab() {
                 ImGui::TableSetColumnIndex(2);
                 if (ImGui::Button("Cancel")) {
                     g_app.input->stopCapture();
-                    s_state     = BindState::Normal;
+                    s_state     = BindState_Normal;
                     s_listenIdx = -1;
                 }
 
                 // Poll HID capture
-                auto hit = g_app.input->pollCapture();
-                if (hit) {
-                    bnd = ButtonBinding::fromCapture(*hit);
+                CaptureResult hit;
+                if (g_app.input->pollCapture(hit)) {
+                    bnd = ButtonBinding::fromCapture(hit);
                     g_app.bindings.save(g_app.settings);
-                    s_state     = BindState::Normal;
+                    s_state     = BindState_Normal;
                     s_listenIdx = -1;
                 }
 
                 // Poll keyboard
-                if (s_state == BindState::Listening) {
+                if (s_state == BindState_Listening) {
                     int vk = pollKeyboardPress(s_prevKeys);
                     if (vk >= 0) {
                         ButtonBinding kb;
@@ -432,7 +431,7 @@ static void renderButtonsTab() {
                         bnd = kb;
                         g_app.bindings.save(g_app.settings);
                         g_app.input->stopCapture();
-                        s_state     = BindState::Normal;
+                        s_state     = BindState_Normal;
                         s_listenIdx = -1;
                     }
                 }
@@ -441,7 +440,7 @@ static void renderButtonsTab() {
                 s_listenTimer -= ImGui::GetIO().DeltaTime;
                 if (s_listenTimer <= 0.0f) {
                     g_app.input->stopCapture();
-                    s_state = BindState::Normal;
+                    s_state = BindState_Normal;
                 }
             } else {
                 // Normal row
@@ -465,7 +464,7 @@ static void renderButtonsTab() {
                 ImGui::TableSetColumnIndex(2);
 
                 if (ImGui::Button("Bind")) {
-                    s_state       = BindState::Listening;
+                    s_state       = BindState_Listening;
                     s_listenIdx   = i;
                     s_listenTimer = 5.0f;
                     // Prime prev keys to avoid spurious immediate trigger
@@ -825,9 +824,9 @@ static void renderVttKeyBind(const char* label, const char* bindId, const char* 
     ImGui::SameLine();
     if (capturing) {
         ImGui::TextColored(ImVec4(1,1,0,1), "[Press button or key...]");
-        auto hit = g_app.input->pollCapture();
-        if (hit) {
-            key = ButtonBinding::fromCapture(*hit);
+        CaptureResult hit;
+        if (g_app.input->pollCapture(hit)) {
+            key = ButtonBinding::fromCapture(hit);
             g_app.bindings.save(g_app.settings);
             g_app.input->stopCapture();
             capturing = false;

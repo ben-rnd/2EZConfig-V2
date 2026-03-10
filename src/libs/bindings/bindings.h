@@ -10,7 +10,6 @@
 #include "../settings/settings.h"    // SettingsManager
 #include <nlohmann/json.hpp>
 #include <string>
-#include <array>
 #include <vector>
 #include <unordered_map>
 
@@ -119,10 +118,10 @@ struct BindingStore {
     static constexpr int ANALOG_COUNT = 2;    // p1_turntable + p2_turntable
     static constexpr int LIGHT_COUNT  = 23;   // lightNames[] length in strings.h
 
-    std::array<ButtonBinding, BUTTON_COUNT> buttons;
-    std::array<ButtonBinding, DANCER_COUNT> dancerButtons;
-    std::array<AnalogBinding, ANALOG_COUNT> analogs;
-    std::array<LightBinding,  LIGHT_COUNT>  lights;
+    ButtonBinding buttons[BUTTON_COUNT];
+    ButtonBinding dancerButtons[DANCER_COUNT];
+    AnalogBinding analogs[ANALOG_COUNT];
+    LightBinding  lights[LIGHT_COUNT];
 
     InputManager* mgr = nullptr;
 

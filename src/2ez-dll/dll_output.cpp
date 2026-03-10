@@ -1,7 +1,7 @@
 #include "dll_output.h"
 #include "bindings.h"
 #include "input_manager.h"
-#include "strings.h"
+#include "game_defs.h"
 #include <windows.h>
 #include <atomic>
 
@@ -16,35 +16,35 @@ void handleDJOut(uint16_t port, uint8_t value, const BindingStore& bs) {
     (void)bs;
     switch (port) {
         case 0x100: // Lamps + Neons
-            setLight(LIGHT_RED_LAMP_L,   value & 0x01);
-            setLight(LIGHT_RED_LAMP_R,   value & 0x02);
-            setLight(LIGHT_BLUE_LAMP_L,  value & 0x04);
-            setLight(LIGHT_BLUE_LAMP_R,  value & 0x08);
-            setLight(LIGHT_NEONS,        value & 0x10);
+            setLight((int)Light::RED_LAMP_L,   value & 0x01);
+            setLight((int)Light::RED_LAMP_R,   value & 0x02);
+            setLight((int)Light::BLUE_LAMP_L,  value & 0x04);
+            setLight((int)Light::BLUE_LAMP_R,  value & 0x08);
+            setLight((int)Light::NEONS,        value & 0x10);
             break;
         case 0x101: // Starts + Effectors
-            setLight(LIGHT_P1_START,     value & 0x01);
-            setLight(LIGHT_P2_START,     value & 0x02);
-            setLight(LIGHT_EFFECTOR_1,   value & 0x04);
-            setLight(LIGHT_EFFECTOR_2,   value & 0x08);
-            setLight(LIGHT_EFFECTOR_3,   value & 0x10);
-            setLight(LIGHT_EFFECTOR_4,   value & 0x20);
+            setLight((int)Light::P1_START,     value & 0x01);
+            setLight((int)Light::P2_START,     value & 0x02);
+            setLight((int)Light::EFFECTOR_1,   value & 0x04);
+            setLight((int)Light::EFFECTOR_2,   value & 0x08);
+            setLight((int)Light::EFFECTOR_3,   value & 0x10);
+            setLight((int)Light::EFFECTOR_4,   value & 0x20);
             break;
         case 0x102: // P1 Buttons + Turntable
-            setLight(LIGHT_P1_1,         value & 0x01);
-            setLight(LIGHT_P1_2,         value & 0x02);
-            setLight(LIGHT_P1_3,         value & 0x04);
-            setLight(LIGHT_P1_4,         value & 0x08);
-            setLight(LIGHT_P1_5,         value & 0x10);
-            setLight(LIGHT_P1_TURNTABLE, value & 0x20);
+            setLight((int)Light::P1_1,         value & 0x01);
+            setLight((int)Light::P1_2,         value & 0x02);
+            setLight((int)Light::P1_3,         value & 0x04);
+            setLight((int)Light::P1_4,         value & 0x08);
+            setLight((int)Light::P1_5,         value & 0x10);
+            setLight((int)Light::P1_TURNTABLE, value & 0x20);
             break;
         case 0x103: // P2 Buttons + Turntable
-            setLight(LIGHT_P2_1,         value & 0x01);
-            setLight(LIGHT_P2_2,         value & 0x02);
-            setLight(LIGHT_P2_3,         value & 0x04);
-            setLight(LIGHT_P2_4,         value & 0x08);
-            setLight(LIGHT_P2_5,         value & 0x10);
-            setLight(LIGHT_P2_TURNTABLE, value & 0x20);
+            setLight((int)Light::P2_1,         value & 0x01);
+            setLight((int)Light::P2_2,         value & 0x02);
+            setLight((int)Light::P2_3,         value & 0x04);
+            setLight((int)Light::P2_4,         value & 0x08);
+            setLight((int)Light::P2_5,         value & 0x10);
+            setLight((int)Light::P2_TURNTABLE, value & 0x20);
             break;
         default:
             return;

@@ -20,7 +20,7 @@ extern "C" {
 #include "input_manager.h"
 #include "patch_store.h"
 #include "settings.h"
-#include "strings.h"
+#include "game_defs.h"
 
 static HMODULE       s_dllModule  = nullptr;
 static InputManager* s_mgr        = nullptr;

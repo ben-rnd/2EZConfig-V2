@@ -2,7 +2,6 @@
 
 #include "device.h"
 #include <vector>
-#include <optional>
 #include <cstdint>
 #include <string>
 
@@ -45,7 +44,7 @@ public:
     // Capture mode: queue edge-detected button presses for pollCapture().
     void startCapture();
     void stopCapture();
-    std::optional<CaptureResult> pollCapture();
+    bool pollCapture(CaptureResult& out);
 
     // Set light output. output_idx is flat index: button_output_caps first, then value_output_caps.
     // value in [0.0, 1.0]. Button outputs: value > 0.5 = on. Value outputs: written as float intensity.
