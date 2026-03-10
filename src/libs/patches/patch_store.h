@@ -44,6 +44,7 @@ public:
     std::vector<std::string> gameIds() const;
     void loadState(const nlohmann::json& patchState);
     nlohmann::json saveState() const;
+    nlohmann::json saveState(const std::string& gameId) const;
     void applyEarlyPatches(const std::string& gameId);
     void applyPatches(const std::string& gameId);
     void applyPatches(const std::string& gameId, bool applyEarly);

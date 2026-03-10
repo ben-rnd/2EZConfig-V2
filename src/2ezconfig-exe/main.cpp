@@ -33,7 +33,7 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevs);
 static void renderLightsTab();
 static void renderLightBindPopup(const std::vector<Device>& outputDevs);
 static void renderPatchesTab();
-static void renderPatchRow(Patch& patch, SettingsManager& settings);
+static void renderPatchRow(Patch& patch);
 static int  pollKeyboardPress(bool* prevKeys);
 static void renderVttKeyBind(const char* label, const char* bindId, const char* clearId,
                              ButtonBinding& key, bool& capturing, bool& otherCapturing, bool* prevKeys);
@@ -265,13 +265,13 @@ static void renderPatchesTab() {
     ImGui::BeginChild("##patchScroll", ImVec2(0, 0), false);
     for (auto& patch : patches) {
         ImGui::PushID(patch.id.c_str());
-        renderPatchRow(patch, g_app.settings);
+        renderPatchRow(patch);
         ImGui::PopID();
     }
     ImGui::EndChild();
 }
 
-static void renderPatchRow(Patch& patch, SettingsManager& settings) {
+static void renderPatchRow(Patch& patch) {
     bool changed = ImGui::Checkbox(patch.name.c_str(), &patch.enabled);
 
     if (patch.type == PatchType::Value) {
@@ -287,8 +287,9 @@ static void renderPatchRow(Patch& patch, SettingsManager& settings) {
         ImGui::SetTooltip("%s", patch.description.c_str());
 
     if (changed) {
-        settings.gameSettings()["patches"] = settings.patchStore().saveState();
-        settings.save();
+        std::string gameId = g_app.settings.gameSettings().value("game_id", "");
+        g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
+        g_app.settings.save();
     }
 
     // Children rendered only when parent is enabled
@@ -296,7 +297,7 @@ static void renderPatchRow(Patch& patch, SettingsManager& settings) {
         ImGui::Indent(16.0f);
         for (auto& child : patch.children) {
             ImGui::PushID(child.id.c_str());
-            renderPatchRow(child, settings);
+            renderPatchRow(child);
             ImGui::PopID();
         }
         ImGui::Unindent(16.0f);

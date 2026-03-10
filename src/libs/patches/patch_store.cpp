@@ -197,6 +197,17 @@ json PatchStore::saveState() const {
     return out;
 }
 
+json PatchStore::saveState(const std::string& gameId) const {
+    json out = json::object();
+    auto it = m_patches.find(gameId);
+    if (it != m_patches.end()) {
+        json gameOut = json::object();
+        saveStateHelper(it->second, gameOut);
+        out[gameId] = gameOut;
+    }
+    return out;
+}
+
 void PatchStore::applyTogglePatch(const Patch& p) {
     LPVOID base = GetModuleHandle(NULL);
     for (const auto& pw : p.writes) {
