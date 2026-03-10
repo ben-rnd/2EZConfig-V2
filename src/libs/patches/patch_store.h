@@ -28,6 +28,7 @@ struct Patch {
     std::vector<std::string>   options;
     int                        value   = 0;
 
+    std::vector<int16_t> scan;        // byte scan pattern: -1 = wildcard, 0-255 = exact byte
     std::string          pattern;
     std::string          replacement;
 

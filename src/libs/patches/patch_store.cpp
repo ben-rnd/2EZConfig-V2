@@ -23,6 +23,19 @@ static uint32_t parseHexOffset(const std::string& hexStr) {
     return static_cast<uint32_t>(std::stoul(hexStr, nullptr, 16));
 }
 
+static std::vector<int16_t> parseScan(const std::string& hexStr) {
+    std::vector<int16_t> result;
+    std::istringstream ss(hexStr);
+    std::string token;
+    while (ss >> token) {
+        if (token == "??")
+            result.push_back(-1);
+        else
+            result.push_back(static_cast<int16_t>(std::stoul(token, nullptr, 16)));
+    }
+    return result;
+}
+
 Patch PatchStore::parseSinglePatch(const json& j) {
     Patch p;
     p.id          = j.value("id",          "");
@@ -38,6 +51,9 @@ Patch PatchStore::parseSinglePatch(const json& j) {
     p.apply = (applyStr == "early") ? PatchApply::Early : PatchApply::Normal;
 
     p.enabled = false;
+
+    if (j.contains("scan"))
+        p.scan = parseScan(j.value("scan", ""));
 
     if (p.type == PatchType::Toggle) {
         if (j.contains("writes") && j["writes"].is_array()) {
@@ -91,6 +107,7 @@ void PatchStore::load(const std::string& dir) {
             try {
                 f >> j;
                 for (auto it = j.begin(); it != j.end(); ++it) {
+                    if (it.key() == "ver") continue;
                     parseGamePatches(it.value(), m_patches[it.key()]);
                 }
             } catch (...) {
@@ -209,10 +226,38 @@ json PatchStore::saveState(const std::string& gameId) const {
 }
 
 void PatchStore::applyTogglePatch(const Patch& p) {
-    LPVOID base = GetModuleHandle(NULL);
+    HMODULE base = GetModuleHandle(NULL);
+
+    uint8_t* writeBase = reinterpret_cast<uint8_t*>(base);
+
+    if (!p.scan.empty()) {
+        MODULEINFO mi = {};
+        if (!GetModuleInformation(GetCurrentProcess(), base, &mi, sizeof(mi))) return;
+
+        const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
+        const size_t   scanLen    = p.scan.size();
+        writeBase = nullptr;
+
+        for (size_t i = 0; i + scanLen <= mi.SizeOfImage; ++i) {
+            bool match = true;
+            for (size_t k = 0; k < scanLen; ++k) {
+                if (p.scan[k] != -1 && imageStart[i + k] != static_cast<uint8_t>(p.scan[k])) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                writeBase = const_cast<uint8_t*>(imageStart + i);
+                break;
+            }
+        }
+
+        if (!writeBase) return;  // pattern not found — silent no-op
+    }
+
     for (const auto& pw : p.writes) {
-        LPVOID target = reinterpret_cast<uint8_t*>(base) + pw.offset;
-        DWORD  old    = 0;
+        uint8_t* target = writeBase + pw.offset;
+        DWORD    old    = 0;
         VirtualProtect(target, pw.bytes.size(), PAGE_EXECUTE_READWRITE, &old);
         memcpy(target, pw.bytes.data(), pw.bytes.size());
         VirtualProtect(target, pw.bytes.size(), old, &old);
