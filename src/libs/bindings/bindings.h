@@ -12,6 +12,7 @@
 #include <string>
 #include <array>
 #include <vector>
+#include <unordered_map>
 
 // JSON key for analog port (matches CONTEXT.md schema)
 static inline const char* analogPortKey(int port) {
@@ -134,6 +135,11 @@ struct BindingStore {
 
     // Input queries — use these instead of calling InputManager directly.
     bool isHeld(const ButtonBinding& b) const;
+
+    // Snapshot-based queries (no locking; use with a SnapMap built by dll_input).
+    using SnapMap = std::unordered_map<std::string, DeviceSnapshot>;
+    bool    isHeldSnapshot(const ButtonBinding& b, const SnapMap& snap) const;
+    uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vtt_pos, const SnapMap& snap) const;
 
     // Display strings for UI rendering.
     std::string getDisplayString(const ButtonBinding& b) const;

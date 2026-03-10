@@ -9,6 +9,13 @@
 // Forward declaration — defined only in input_manager.cpp
 struct InputManagerImpl;
 
+// Immutable snapshot of a device's button and axis states.
+// Copied from live state in a single cs_input acquisition.
+struct DeviceSnapshot {
+    std::vector<bool>  buttons;  // copy of button_states
+    std::vector<float> values;   // copy of value_states (includes hat axes)
+};
+
 class InputManager {
 public:
     InputManager();
@@ -47,6 +54,15 @@ public:
 
     // Disable output for a device — stops flush thread from sending reports.
     void disableOutput(const std::string& path);
+
+    // Copy all button and axis states for one device in a single cs_input acquisition.
+    // Returns false if the device is not found.
+    bool snapshotDevice(const std::string& path, DeviceSnapshot& out) const;
+
+    // Register a callback fired from the TIME_CRITICAL message pump thread
+    // immediately after each WM_INPUT event (all locks released).
+    // Used by the DLL to update the port cache without a polling thread.
+    void setInputCallback(void(*fn)(void*), void* userdata);
 
 private:
     InputManagerImpl* impl;

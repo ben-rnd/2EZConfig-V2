@@ -185,6 +185,10 @@ struct InputManagerImpl {
     // Flush thread — periodic 500ms writes for all output-enabled devices.
     HANDLE flush_thread   = nullptr;
 
+    // Optional callback fired after each WM_INPUT update (all locks released).
+    void  (*input_cb)(void*) = nullptr;
+    void*   input_cb_ud      = nullptr;
+
     InputManagerImpl() {
         InitializeCriticalSection(&devices_lock);
         InitializeCriticalSection(&capture_lock);
@@ -878,6 +882,9 @@ static void handle_wm_input(InputManagerImpl* impl, HRAWINPUT hri) {
             LeaveCriticalSection(&dev->cs_input);
         }
     }
+
+    if (impl->input_cb)
+        impl->input_cb(impl->input_cb_ud);
 }
 
 // ---------------------------------------------------------------------------
@@ -1148,6 +1155,27 @@ std::vector<Device> InputManager::getDevices() const {
     std::vector<Device> snapshot = impl->devices;
     LeaveCriticalSection(&impl->devices_lock);
     return snapshot;
+}
+
+bool InputManager::snapshotDevice(const std::string& path, DeviceSnapshot& out) const {
+    EnterCriticalSection(&impl->devices_lock);
+    for (auto& d : impl->devices) {
+        if (d.path == path && d.hid) {
+            EnterCriticalSection(&d.cs_input);
+            out.buttons = d.hid->button_states;
+            out.values  = d.hid->value_states;
+            LeaveCriticalSection(&d.cs_input);
+            LeaveCriticalSection(&impl->devices_lock);
+            return true;
+        }
+    }
+    LeaveCriticalSection(&impl->devices_lock);
+    return false;
+}
+
+void InputManager::setInputCallback(void(*fn)(void*), void* ud) {
+    impl->input_cb    = fn;
+    impl->input_cb_ud = ud;
 }
 
 bool InputManager::getButtonState(const std::string& path, int button_idx) const {

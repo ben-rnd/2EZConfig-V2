@@ -339,3 +339,27 @@ uint8_t BindingStore::getPosition(const AnalogBinding& a, uint8_t vtt_pos) const
     if (a.reverse) raw = 1.0f - raw;
     return (uint8_t)((int)(raw * 255.0f) + (int)vtt_pos - 128);
 }
+
+bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const SnapMap& snap) const {
+    if (!b.isSet()) return false;
+    if (b.isKeyboard()) return (GetAsyncKeyState(b.vk_code) & 0x8000) != 0;
+    auto it = snap.find(b.device_path);
+    if (it == snap.end()) return false;
+    const DeviceSnapshot& ds = it->second;
+    if (b.analog_type != ButtonAnalogType::NONE) {
+        if (b.button_idx < 0 || b.button_idx >= (int)ds.values.size()) return false;
+        return isHatDirectionActive(ds.values[b.button_idx], b.analog_type);
+    }
+    if (b.button_idx < 0 || b.button_idx >= (int)ds.buttons.size()) return false;
+    return ds.buttons[b.button_idx];
+}
+
+uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vtt_pos, const SnapMap& snap) const {
+    if (!a.isSet()) return vtt_pos;
+    float raw = 0.5f;
+    auto it = snap.find(a.device_path);
+    if (it != snap.end() && a.axis_idx >= 0 && a.axis_idx < (int)it->second.values.size())
+        raw = it->second.values[a.axis_idx];
+    if (a.reverse) raw = 1.0f - raw;
+    return (uint8_t)((int)(raw * 255.0f) + (int)vtt_pos - 128);
+}
