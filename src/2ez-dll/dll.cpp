@@ -13,7 +13,6 @@ extern "C" {
 #include "io.hardlock.emulator.h"
 }
 
-#include "ddraw_hook.h"
 #include "dll_input.h"
 #include "dll_output.h"
 #include "bindings.h"
@@ -140,9 +139,6 @@ static DWORD WINAPI InitThread(void*) {
 
     std::vector<HANDLE> suspended;
     suspendOtherThreads(suspended);
-
-    if (settings.globalSettings().value("force_60hz", false))
-        installDDrawHook(true);
 
     if (settings.globalSettings().value("io_emu", true))
         AddVectoredExceptionHandler(1, IOHandler);

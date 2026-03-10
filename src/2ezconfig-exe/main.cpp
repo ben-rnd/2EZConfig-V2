@@ -380,7 +380,6 @@ static void renderSettingsTab() {
     ImGui::TextUnformatted("Global Settings");
     ImGui::Separator();
     globalCheckbox("Enable IO Emulation",                "io_emu",       true);
-    globalCheckbox("Force 60Hz (experimental)",          "force_60hz",   false);
     globalCheckbox("Force High Priority (experimental)", "high_priority", false);
 
     ImGui::Separator();
