@@ -49,6 +49,7 @@ enum class DJButton {
     P1_START, P2_START,
     P1_1, P1_2, P1_3, P1_4, P1_5, P1_PEDAL,
     P2_1, P2_2, P2_3, P2_4, P2_5, P2_PEDAL,
+    COUNT,
 };
 
 static const char* djButtonNames[] = {
@@ -62,6 +63,7 @@ static const char* djButtonNames[] = {
 enum class Analog {
     P1_TURNTABLE = 0,
     P2_TURNTABLE,
+    COUNT,
 };
 
 static const char* analogNames[] = {
@@ -78,6 +80,7 @@ enum class Light {
     P2_1, P2_2, P2_3, P2_4, P2_5,
     NEONS,
     RED_LAMP_L, RED_LAMP_R, BLUE_LAMP_L, BLUE_LAMP_R,
+    COUNT,
 };
 
 static const char* lightNames[] = {
@@ -100,6 +103,7 @@ enum class DancerButton {
     P1_R_SENSOR_TOP, P1_R_SENSOR_BOT,
     P2_L_SENSOR_TOP, P2_L_SENSOR_BOT,
     P2_R_SENSOR_TOP, P2_R_SENSOR_BOT,
+    COUNT,
 };
 
 static const char* dancerButtonNames[] = {

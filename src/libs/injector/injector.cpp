@@ -1,7 +1,5 @@
 #include <windows.h>
 #include <tlhelp32.h>
-#include <shlobj.h>
-#include <shlwapi.h>
 #include <stdio.h>
 #include <string.h>
 #include <vector>

@@ -5,15 +5,14 @@
 #include <windows.h>
 #include <atomic>
 
-static float            s_lightState[BindingStore::LIGHT_COUNT] = {};
+static float s_lightState[BindingStore::LIGHT_COUNT] = {};
 static std::atomic<bool> s_lightDirty{ false };
 
 static void setLight(int channel, bool on) {
     s_lightState[channel] = on ? 1.0f : 0.0f;
 }
 
-void handleDJOut(uint16_t port, uint8_t value, const BindingStore& bs) {
-    (void)bs;
+void handleDJOut(uint16_t port, uint8_t value) {
     switch (port) {
         case 0x100: // Lamps + Neons
             setLight((int)Light::RED_LAMP_L,   value & 0x01);
@@ -52,12 +51,12 @@ void handleDJOut(uint16_t port, uint8_t value, const BindingStore& bs) {
     s_lightDirty.store(true);
 }
 
-void handleDancerOut(uint16_t port, uint8_t value, const BindingStore& bs) {
-    (void)port; (void)value; (void)bs;
+void handleDancerOut(uint16_t port, uint8_t value) {
+    //TODO
 }
 
 static DWORD WINAPI lightFlushThread(void* arg) {
-    const BindingStore& bs = *static_cast<const BindingStore*>(arg);
+    const BindingStore& bindings = *static_cast<const BindingStore*>(arg);
 
     while (true) {
         Sleep(1);
@@ -65,14 +64,14 @@ static DWORD WINAPI lightFlushThread(void* arg) {
         s_lightDirty.store(false);
 
         for (int i = 0; i < BindingStore::LIGHT_COUNT; ++i) {
-            const LightBinding& lb = bs.lights[i];
+            const LightBinding& lb = bindings.lights[i];
             if (!lb.isSet()) continue;
-            bs.mgr->setLight(lb.device_path, lb.output_idx, s_lightState[i]);
+            bindings.mgr->setLight(lb.device_path, lb.output_idx, s_lightState[i]);
         }
     }
     return 0;
 }
 
-void startLightFlushThread(const BindingStore& bs) {
-    CreateThread(nullptr, 0, lightFlushThread, const_cast<BindingStore*>(&bs), 0, nullptr);
+void startLightFlushThread(const BindingStore& bindings) {
+    CreateThread(nullptr, 0, lightFlushThread, const_cast<BindingStore*>(&bindings), 0, nullptr);
 }

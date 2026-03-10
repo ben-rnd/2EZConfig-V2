@@ -1,15 +1,7 @@
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #include <windows.h>
-
-#include "bindings.h"
-#include "game_defs.h"
 #include <algorithm>
 #include <cstring>
+#include "bindings.h"
 
 static std::string truncate(const std::string& s, size_t maxLen) {
     if (s.size() <= maxLen) return s;
@@ -311,14 +303,14 @@ std::string BindingStore::getDisplayString(const LightBinding& l) const {
     return "[Disconnected] " + l.device_name;
 }
 
-uint8_t BindingStore::getPosition(const AnalogBinding& a, uint8_t vtt_pos) const {
+uint8_t BindingStore::getAnalogPosition(const AnalogBinding& a, uint8_t vtt_pos) const {
     if (!a.isSet() || !mgr) return vtt_pos;
     float raw = mgr->getAxisValue(a.device_path, a.axis_idx);
     if (a.reverse) raw = 1.0f - raw;
     return (uint8_t)((int)(raw * 255.0f) + (int)vtt_pos - 128);
 }
 
-bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const SnapMap& snap) const {
+bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& snap) const {
     if (!b.isSet()) return false;
     if (b.isKeyboard()) return (GetAsyncKeyState(b.vk_code) & 0x8000) != 0;
     auto it = snap.find(b.device_path);
@@ -332,7 +324,7 @@ bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const SnapMap& snap) c
     return ds.buttons[b.button_idx];
 }
 
-uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vtt_pos, const SnapMap& snap) const {
+uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vtt_pos, const DeviceSnapshotMap& snap) const {
     if (!a.isSet()) return vtt_pos;
     float raw = 0.5f;
     auto it = snap.find(a.device_path);

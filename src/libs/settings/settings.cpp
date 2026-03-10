@@ -1,8 +1,6 @@
 #include "settings.h"
 #include "patch_store.h"
 #include <fstream>
-#include <iostream>
-#include <cstdint>
 
 void SettingsManager::load(const std::string& gameDir, const std::string& userSettingsDir) {
     m_gameDir = gameDir;

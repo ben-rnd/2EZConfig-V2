@@ -1,17 +1,13 @@
 #pragma once
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
+
 #include <windows.h>
-#include "../input/input_manager.h"   // InputManager, Device, CaptureResult
-#include "../settings/settings.h"    // SettingsManager
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include "input_manager.h"
+#include "settings.h" 
+#include "game_defs.h"
 
 // JSON key for analog port
 static inline const char* analogPortKey(int port) {
@@ -95,10 +91,10 @@ struct LightBinding : BindingBase {
 };
 
 struct BindingStore {
-    static constexpr int BUTTON_COUNT = 20;
-    static constexpr int DANCER_COUNT = 16;
-    static constexpr int ANALOG_COUNT = 2;
-    static constexpr int LIGHT_COUNT  = 23;
+    static constexpr int BUTTON_COUNT = static_cast<int>(DJButton::COUNT);
+    static constexpr int DANCER_COUNT = static_cast<int>(DancerButton::COUNT);
+    static constexpr int ANALOG_COUNT = static_cast<int>(Analog::COUNT);
+    static constexpr int LIGHT_COUNT  = static_cast<int>(Light::COUNT);
 
     ButtonBinding buttons[BUTTON_COUNT];
     ButtonBinding dancerButtons[DANCER_COUNT];
@@ -112,14 +108,13 @@ struct BindingStore {
 
     bool isHeld(const ButtonBinding& b) const;
 
-    using SnapMap = std::unordered_map<std::string, DeviceSnapshot>;
-    bool    isHeldSnapshot(const ButtonBinding& b, const SnapMap& snap) const;
-    uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vtt_pos, const SnapMap& snap) const;
+    using DeviceSnapshotMap = std::unordered_map<std::string, DeviceSnapshot>;
+    bool    isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& deviceSnapshots) const;
+    uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vtt_pos, const DeviceSnapshotMap& deviceSnapshots) const;
 
     std::string getDisplayString(const ButtonBinding& b) const;
     std::string getDisplayString(const AnalogBinding& a) const;
     std::string getDisplayString(const LightBinding& l) const;
 
-    // Turntable position [0,255] incorporating axis and VTT offset.
-    uint8_t getPosition(const AnalogBinding& a, uint8_t vtt_pos) const;
+    uint8_t getAnalogPosition(const AnalogBinding& a, uint8_t vtt_pos) const;
 };

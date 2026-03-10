@@ -70,12 +70,12 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
             return EXCEPTION_CONTINUE_EXECUTION;
 
         case 0xEE: // OUT DX, AL — DJ write (8-bit)
-            handleDJOut(port, static_cast<uint8_t>(ctx->Eax & 0xFF), s_bindings);
+            handleDJOut(port, static_cast<uint8_t>(ctx->Eax & 0xFF));
             ctx->Eip += instrLen;
             return EXCEPTION_CONTINUE_EXECUTION;
 
         case 0xEF: // OUT DX, AX — Dancer write (16-bit)
-            handleDancerOut(port, static_cast<uint8_t>(ctx->Eax & 0xFF), s_bindings);
+            handleDancerOut(port, static_cast<uint8_t>(ctx->Eax & 0xFF));
             ctx->Eip += instrLen;
             return EXCEPTION_CONTINUE_EXECUTION;
 
@@ -203,6 +203,5 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         tryInitHardlock(hModule);
         CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)InitThread, nullptr, 0, nullptr);
     }
-    (void)reason;
     return TRUE;
 }

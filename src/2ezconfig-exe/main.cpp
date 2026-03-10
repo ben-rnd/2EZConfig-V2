@@ -40,14 +40,13 @@ static void renderVttKeyBind(const char* label, const char* bindId, const char* 
                              ButtonBinding& key, bool& capturing, bool& otherCapturing, bool* prevKeys);
 static void globalCheckbox(const char* label, const char* key, bool defaultVal);
 
-// All app-wide state grouped in one place
 struct AppState {
     SettingsManager settings;
     InputManager*   input    = nullptr;
     BindingStore    bindings;
     int             gameIdx  = 0;
     bool            isDancer = false;
-    uint8_t         vtt_pos[2] = {128, 128};
+    uint8_t         vtt_pos[BindingStore::ANALOG_COUNT] = {128, 128};
 };
 static AppState    g_app;
 static GLFWwindow* g_window = nullptr;
@@ -98,63 +97,60 @@ int main() {
     std::filesystem::create_directories(appDataDir);
 
     // Extract patches.json from embedded resource to appdata dir if missing or outdated
-    {
-        std::string patchesPath = appDataDir + "\\patches.json";
-        HRSRC hRes = FindResourceA(nullptr, "PATCHES_JSON", MAKEINTRESOURCEA(10));
-        if (hRes) {
-            HGLOBAL hData = LoadResource(nullptr, hRes);
-            if (hData) {
-                DWORD sz = SizeofResource(nullptr, hRes);
-                const char* ptr = static_cast<const char*>(LockResource(hData));
-                if (ptr && sz) {
-                    bool shouldWrite = (GetFileAttributesA(patchesPath.c_str()) == INVALID_FILE_ATTRIBUTES);
-                    if (!shouldWrite) {
-                        try {
-                            auto embedded = nlohmann::json::parse(ptr, ptr + sz);
-                            int embeddedVer = embedded.value("ver", 0);
-                            std::ifstream diskFile(patchesPath);
-                            if (diskFile.is_open()) {
-                                auto diskJson = nlohmann::json::parse(diskFile);
-                                if (!diskJson.contains("ver") || embeddedVer > diskJson.value("ver", 0))
-                                    shouldWrite = true;
-                            }
-                        } catch (...) {}
-                    }
-                    if (shouldWrite) {
-                        HANDLE hFile = CreateFileA(patchesPath.c_str(), GENERIC_WRITE, 0, nullptr,
-                                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-                        if (hFile != INVALID_HANDLE_VALUE) {
-                            DWORD written = 0;
-                            WriteFile(hFile, ptr, sz, &written, nullptr);
-                            CloseHandle(hFile);
+    std::string patchesPath = appDataDir + "\\patches.json";
+    HRSRC hRes = FindResourceA(nullptr, "PATCHES_JSON", MAKEINTRESOURCEA(10));
+    if (hRes) {
+        HGLOBAL hData = LoadResource(nullptr, hRes);
+        if (hData) {
+            DWORD sz = SizeofResource(nullptr, hRes);
+            const char* ptr = static_cast<const char*>(LockResource(hData));
+            if (ptr && sz) {
+                bool shouldWrite = (GetFileAttributesA(patchesPath.c_str()) == INVALID_FILE_ATTRIBUTES);
+                if (!shouldWrite) {
+                    try {
+                        auto embedded = nlohmann::json::parse(ptr, ptr + sz);
+                        int embeddedVer = embedded.value("ver", 0);
+                        std::ifstream diskFile(patchesPath);
+                        if (diskFile.is_open()) {
+                            auto diskJson = nlohmann::json::parse(diskFile);
+                            if (!diskJson.contains("ver") || embeddedVer > diskJson.value("ver", 0))
+                                shouldWrite = true;
                         }
+                    } catch (...) {}
+                }
+                if (shouldWrite) {
+                    HANDLE hFile = CreateFileA(patchesPath.c_str(), GENERIC_WRITE, 0, nullptr,
+                                                CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (hFile != INVALID_HANDLE_VALUE) {
+                        DWORD written = 0;
+                        WriteFile(hFile, ptr, sz, &written, nullptr);
+                        CloseHandle(hFile);
                     }
                 }
             }
         }
     }
+    
 
-    // Load settings: game-settings.json stays local, global-settings + patches in appdata
     g_app.settings.load(".", appDataDir);
 
     g_app.input = new InputManager();
     g_app.bindings.load(g_app.settings, *g_app.input);
 
-    // Initialize game selector state from persisted game_id
-    {
-        std::string gid = g_app.settings.gameSettings().value("game_id", "ez2dj_1st");
-        static const int DJ_COUNT_M     = (int)(sizeof(djGames)     / sizeof(djGames[0]));
-        static const int DANCER_COUNT_M = (int)(sizeof(dancerGames) / sizeof(dancerGames[0]));
-        g_app.gameIdx  = 0;
-        g_app.isDancer = false;
-        bool found = false;
-        for (int i = 0; !found && i < DJ_COUNT_M; i++) {
-            if (gid == djGames[i].id) { g_app.gameIdx = i; found = true; }
-        }
-        for (int i = 0; !found && i < DANCER_COUNT_M; i++) {
-            if (gid == dancerGames[i].id) { g_app.gameIdx = DJ_COUNT_M + i; g_app.isDancer = true; found = true; }
-        }
+    
+    std::string gid = g_app.settings.gameSettings().value("game_id", "ez2dj_1st");
+    static const int DJ_COUNT_M     = (int)(sizeof(djGames)     / sizeof(djGames[0]));
+    static const int DANCER_COUNT_M = (int)(sizeof(dancerGames) / sizeof(dancerGames[0]));
+    g_app.gameIdx  = 0;
+    g_app.isDancer = false;
+    bool found = false;
+    for (int i = 0; !found && i < DJ_COUNT_M; i++) {
+        if (gid == djGames[i].id) { g_app.gameIdx = i; found = true; }
     }
+    for (int i = 0; !found && i < DANCER_COUNT_M; i++) {
+        if (gid == dancerGames[i].id) { g_app.gameIdx = DJ_COUNT_M + i; g_app.isDancer = true; found = true; }
+    }
+
 
     while (!glfwWindowShouldClose(g_window)) {
         glfwPollEvents();
@@ -201,26 +197,26 @@ static void renderUI() {
 
     ImGui::TextUnformatted("2EZConfig ~ It rules once again ~ ");
     ImGui::SameLine();
-    {
-        float btnWidth = 90.0f;
-        float avail = ImGui::GetContentRegionAvail().x;
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btnWidth);
-        // Get current exeName at frame time — use exe_name override if set in game-settings
-        static const int DJ_COUNT_TB = (int)(sizeof(djGames) / sizeof(djGames[0]));
-        const char* defaultExe = (g_app.gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_app.gameIdx].defaultExeName;
-        std::string exeOverride = g_app.settings.gameSettings().value("exe_name", "");
-        const char* tbExeName   = exeOverride.empty() ? defaultExe : exeOverride.c_str();
-        if (ImGui::Button("Play EZ2", ImVec2(btnWidth, 0))) {
-            std::vector<std::string> extraDlls;
-            std::string extraDllsStr = g_app.settings.gameSettings().value("extra_dlls", "");
-            std::istringstream iss(extraDllsStr);
-            std::string token;
-            while (iss >> token)
-                extraDlls.push_back(token);
-            Injector::LaunchAndInject(tbExeName, extraDlls);
-            glfwSetWindowShouldClose(g_window, GLFW_TRUE);
-        }
+    
+    float btnWidth = 90.0f;
+    float avail = ImGui::GetContentRegionAvail().x;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btnWidth);
+    // Get current exeName at frame time — use exe_name override if set in game-settings
+    static const int DJ_COUNT_TB = (int)(sizeof(djGames) / sizeof(djGames[0]));
+    const char* defaultExe = (g_app.gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_app.gameIdx].defaultExeName;
+    std::string exeOverride = g_app.settings.gameSettings().value("exe_name", "");
+    const char* tbExeName   = exeOverride.empty() ? defaultExe : exeOverride.c_str();
+    if (ImGui::Button("Play EZ2", ImVec2(btnWidth, 0))) {
+        std::vector<std::string> extraDlls;
+        std::string extraDllsStr = g_app.settings.gameSettings().value("extra_dlls", "");
+        std::istringstream iss(extraDllsStr);
+        std::string token;
+        while (iss >> token)
+            extraDlls.push_back(token);
+        Injector::LaunchAndInject(tbExeName, extraDlls);
+        glfwSetWindowShouldClose(g_window, GLFW_TRUE);
     }
+    
     ImGui::Separator();
 
     if (ImGui::BeginTabBar("##tabs")) {
@@ -501,7 +497,7 @@ static void renderButtonsTab() {
 
 static void renderAnalogsTab() {
     // Poll VTT keys each frame to drive the live preview
-    for (int port = 0; port < 2; port++) {
+    for (int port = 0; port < BindingStore::ANALOG_COUNT; port++) {
         const AnalogBinding& ab = g_app.bindings.analogs[port];
         if (ab.vtt_plus.isSet()  && g_app.bindings.isHeld(ab.vtt_plus))
             g_app.vtt_pos[port] = (uint8_t)(((int)g_app.vtt_pos[port] + ab.vtt_step) & 0xFF);
@@ -533,7 +529,7 @@ static void renderAnalogsTab() {
             AnalogBinding& ab = g_app.bindings.analogs[p];
             if (ab.isSet() || ab.hasVtt()) {
                 ImGui::SameLine();
-                float display = g_app.bindings.getPosition(ab, g_app.vtt_pos[p]) / 255.0f;
+                float display = g_app.bindings.getAnalogPosition(ab, g_app.vtt_pos[p]) / 255.0f;
                 ImGui::ProgressBar(display, ImVec2(40.0f, 0));
             }
 
@@ -637,7 +633,7 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevs) {
             float display = 0.5f;
             char overlay[32];
             if (ab.isSet() || ab.hasVtt()) {
-                display = g_app.bindings.getPosition(ab, g_app.vtt_pos[p]) / 255.0f;
+                display = g_app.bindings.getAnalogPosition(ab, g_app.vtt_pos[p]) / 255.0f;
                 snprintf(overlay, sizeof(overlay), "%.0f", display * 255.0f);
             } else {
                 snprintf(overlay, sizeof(overlay), "(unbound)");
