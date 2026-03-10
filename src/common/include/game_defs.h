@@ -23,10 +23,9 @@ static DJGame djGames[] = {
     {"Azure ExpressioN",                        "EZ2DJ.exe",          "ez2dj_ae"},
     {"Azure ExpressioN Integral Composition",   "EZ2DJ.exe",          "ez2dj_ae_ic"},
     {"Endless Circulation",                     "EZ2AC.exe",          "ez2ac_ec"},
-    {"Evolve (Win98)",                          "EZ2AC.exe",          "ez2ac_ev_w98"},
     {"Evolve",                                  "EZ2AC.exe",          "ez2ac_ev"},
     {"Night Traveller",                         "EZ2AC.exe",          "ez2ac_nt"},
-    {"Time Traveller (1.83)",                   "EZ2AC.exe",          "ez2ac_tt"},
+    {"Time Traveller",                          "EZ2AC.exe",          "ez2ac_tt"},
     {"Final",                                   "EZ2AC.exe",          "ez2ac_fn"},
     {"Final:EX",                                "EZ2AC.exe",          "ez2ac_fn_ex"},
 };

@@ -1,5 +1,41 @@
 {
-  "ver": 1,
+  "ver": 4,
+  "ez2dj_1st": {
+    "patches": []
+  },
+  "ez2dj_1st_se": {
+    "patches": []
+  },
+  "ez2dj_2nd": {
+    "patches": []
+  },
+  "ez2dj_3rd": {
+    "patches": []
+  },
+  "ez2dj_4th": {
+    "patches": []
+  },
+  "ez2dj_5th": {
+    "patches": []
+  },
+  "ez2dj_6th": {
+    "patches": []
+  },
+  "ez2dj_7th": {
+    "patches": []
+  },
+  "ez2dj_7th_15": {
+    "patches": []
+  },
+  "ez2dj_7th_20": {
+    "patches": []
+  },
+  "ez2dj_cv": {
+    "patches": []
+  },
+  "ez2dj_be": {
+    "patches": []
+  },
   "ez2dj_be_a": {
     "patches": [
       {
@@ -16,6 +52,12 @@
         ]
       }
     ]
+  },
+  "ez2dj_ae": {
+    "patches": []
+  },
+  "ez2dj_ae_ic": {
+    "patches": []
   },
   "ez2ac_ec":{
     "patches": [
