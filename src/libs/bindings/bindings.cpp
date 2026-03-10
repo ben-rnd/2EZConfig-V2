@@ -11,15 +11,11 @@
 #include <algorithm>
 #include <cstring>
 
-// ---- Helpers -------------------------------------------------------
-
-// Truncate a UTF-8/ASCII string to maxLen chars for display.
 static std::string truncate(const std::string& s, size_t maxLen) {
     if (s.size() <= maxLen) return s;
     return s.substr(0, maxLen);
 }
 
-// Map a virtual key code to a short display string like "A", "F5", "Enter".
 static std::string vkToName(int vk) {
     UINT scanCode = MapVirtualKeyA(static_cast<UINT>(vk), MAPVK_VK_TO_VSC);
     if (scanCode == 0) return std::string("VK ") + std::to_string(vk);
@@ -39,7 +35,6 @@ static std::string vkToName(int vk) {
     return std::string("VK ") + std::to_string(vk);
 }
 
-// Hat-switch direction check: returns true if hat_val matches the given direction.
 // hat_val is a normalized [0,1] axis value; directions are evenly spaced at 1/7 intervals.
 static const float HAT_SWITCH_INCREMENT = 1.0f / 7.0f;
 
@@ -54,8 +49,6 @@ static bool isHatDirectionActive(float hat_val, ButtonAnalogType dir) {
             diff <=  HAT_SWITCH_INCREMENT * 0.5f + 0.001f);
 }
 
-// ---- ButtonBinding implementations ----------------------------------
-
 nlohmann::json ButtonBinding::toJson() const {
     nlohmann::json j;
     if (isKeyboard()) {
@@ -67,7 +60,6 @@ nlohmann::json ButtonBinding::toJson() const {
         j["device_name"] = device_name;
         j["button_idx"]  = button_idx;
     }
-    // Serialize analog_type only when non-default (keeps JSON clean for regular buttons).
     if (analog_type != ButtonAnalogType::NONE) {
         j["analog_type"] = (int)analog_type;
     }
@@ -83,7 +75,6 @@ ButtonBinding ButtonBinding::fromJson(const nlohmann::json& j) {
         if (type == "Keyboard") {
             b.vk_code = j.value("vk_code", 0);
         } else if (type == "HidButton") {
-            // New format requires device_path key. Old format used device_id / vendor_id — skip.
             if (!j.contains("device_path")) return b;
             b.device_path  = j.value("device_path", "");
             b.device_name  = j.value("device_name", "");
@@ -93,7 +84,6 @@ ButtonBinding ButtonBinding::fromJson(const nlohmann::json& j) {
             return b;
         }
 
-        // Deserialize analog_type (default NONE if missing — backward compat).
         b.analog_type = (ButtonAnalogType)j.value("analog_type", 0);
 
         return b;
@@ -101,8 +91,6 @@ ButtonBinding ButtonBinding::fromJson(const nlohmann::json& j) {
         return ButtonBinding{};
     }
 }
-
-// ---- AnalogBinding implementations ----------------------------------
 
 nlohmann::json AnalogBinding::toJson() const {
     nlohmann::json j;
@@ -146,8 +134,6 @@ AnalogBinding AnalogBinding::fromJson(const nlohmann::json& j) {
     }
 }
 
-// ---- LightBinding implementations -----------------------------------
-
 nlohmann::json LightBinding::toJson() const {
     nlohmann::json j;
     j["device_path"] = device_path;
@@ -165,14 +151,11 @@ LightBinding LightBinding::fromJson(const nlohmann::json& j) {
     return b;
 }
 
-// ---- BindingStore implementations -----------------------------------
-
 void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
     mgr = &inputMgr;
 
     auto& gs = settings.globalSettings();
-    // io and dancer bindings are stored in separate sub-objects to avoid key
-    // collisions ("Test", "Service" appear in both name arrays).
+
     if (gs.contains("io_button_bindings") && gs["io_button_bindings"].is_object()) {
         const auto& bb = gs["io_button_bindings"];
         for (int i = 0; i < BUTTON_COUNT; ++i) {
@@ -202,7 +185,6 @@ void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
         }
     }
 
-    // Load light_bindings
     if (gs.contains("light_bindings") && gs["light_bindings"].is_object()) {
         const auto& lb = gs["light_bindings"];
         for (int i = 0; i < LIGHT_COUNT; ++i) {
@@ -213,8 +195,6 @@ void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
         }
     }
 
-    // Configure VTT in InputManager for keyboard-only VTT bindings.
-    // HID-button VTT is polled in main.cpp render loop each frame instead.
     for (int p = 0; p < ANALOG_COUNT; ++p) {
         if (analogs[p].vtt_plus.vk_code != 0 || analogs[p].vtt_minus.vk_code != 0) {
             mgr->setVttKeys(p,
@@ -246,7 +226,6 @@ void BindingStore::save(SettingsManager& settings) const {
         }
     }
 
-    // Serialize light_bindings
     gs["light_bindings"] = nlohmann::json::object();
     for (int i = 0; i < LIGHT_COUNT; ++i) {
         if (lights[i].isSet())
@@ -276,7 +255,6 @@ std::string BindingStore::getDisplayString(const ButtonBinding& b) const {
 
     if (!mgr) return std::string("[Disconnected] ") + truncate(b.device_name, 18);
 
-    // HID path
     std::vector<Device> devs = mgr->getDevices();
     for (const Device& dev : devs) {
         if (dev.path == b.device_path) {

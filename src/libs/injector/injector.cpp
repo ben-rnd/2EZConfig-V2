@@ -20,7 +20,6 @@ static BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnable) {
     return (GetLastError() == ERROR_SUCCESS);
 }
 
-// Find the version of the os
 static int OsVersion() {
     OSVERSIONINFO osvi;
     ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
@@ -66,7 +65,6 @@ static DWORD GetProcId(const char* procName) {
     return procId;
 }
 
-// Core injection: write DLL path into target process and call LoadLibraryA
 static int InjectDll(HANDLE hProcess, const char* dllName) {
     FARPROC llAddr = GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "LoadLibraryA");
     if (!llAddr){
@@ -122,14 +120,12 @@ static int Inject(DWORD *pid){
 }
 
 int Injector::LaunchAndInject(const char* exeName) {
-    // Resolve full path (handles both absolute paths and filenames relative to cwd)
     char fullPath[MAX_PATH];
     if (!GetFullPathNameA(exeName, MAX_PATH, fullPath, NULL)) {
         printf("[-] GetFullPathNameA failed\n");
         return 0;
     }
 
-    // Extract game directory (dirname of exe)
     char gameDir[MAX_PATH];
     strncpy(gameDir, fullPath, MAX_PATH);
     char* lastSlash = strrchr(gameDir, '\\');
@@ -156,7 +152,6 @@ int Injector::LaunchAndInject(const char* exeName) {
         return 0;
     }
 
-    // Resume — hooks are already installed by DllMain
     ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);

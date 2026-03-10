@@ -22,50 +22,33 @@ struct Patch {
     PatchApply           apply        = PatchApply::Normal;
     bool                 enabled      = false;
 
-    // Toggle fields
     std::vector<PatchWrite>    writes;
 
-    // Value fields
     uint32_t                   offset  = 0;
     std::vector<std::string>   options;
     int                        value   = 0;
 
-    // Pattern fields
     std::string          pattern;
     std::string          replacement;
 
-    // Children (populated only for parent patches)
     std::vector<Patch>   children;
 };
 
 class PatchStore {
 public:
-    // Load patches.json and optionally user-patches.json from dir.
-    // Merges: user patches override bundled patches by id within same game_id.
+   
     void load(const std::string& dir);
-
-    // Returns patches for a specific game_id (filtered). Empty vector if not found.
     const std::vector<Patch>& patchesForGame(const std::string& gameId) const;
-
     // Non-const overload — returns mutable reference so UI can modify enabled/value directly.
     std::vector<Patch>& patchesForGame(const std::string& gameId);
-
-    // All game_ids that have patches.
     std::vector<std::string> gameIds() const;
-
-    // Load patch state (enabled/value) from game-settings.json "patches" key.
     void loadState(const nlohmann::json& patchState);
-
-    // Serialize current enabled/value state to JSON (for game-settings.json "patches" key).
     nlohmann::json saveState() const;
-
-    // Apply all enabled patches for gameId to process memory.
     void applyEarlyPatches(const std::string& gameId);
     void applyPatches(const std::string& gameId);
     void applyPatches(const std::string& gameId, bool applyEarly);
 
-    // Always applies the version string patch unconditionally (not controlled by patch state).
-    // Replaces "Version %d.%02d" with replacement in the loaded module image.
+    // Replaces "Version %d.%02d" with replacement 2EZConfig version string.
     void applyVersionPatch(const std::string& replacement);
 
 private:

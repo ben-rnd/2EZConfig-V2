@@ -23,8 +23,6 @@ std::atomic<uint16_t> s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
 // Built once in initPortCache(); never changes during DLL lifetime.
 static std::vector<std::string> s_boundDevicePaths;
 
-// --- DJ port computation ----------------------------------------------------
-
 static uint8_t computePort0x101(const BindingStore& bs, const BindingStore::SnapMap& snap) {
     uint8_t r = 0xFF;
     if (bs.isHeldSnapshot(bs.buttons[(int)DJButton::P1_START],   snap)) r &= ~0x01;
@@ -62,8 +60,6 @@ static uint8_t computePort0x106(const BindingStore& bs, const BindingStore::Snap
     return r;
 }
 
-// --- Dancer port computation ------------------------------------------------
-
 static uint16_t computePort0x300(const BindingStore& bs, const BindingStore::SnapMap& snap) {
     uint16_t r = 0x0FFF;
     if (bs.isHeldSnapshot(bs.dancerButtons[(int)DancerButton::P1_LEFT],   snap)) r &= ~0x00F;
@@ -95,17 +91,13 @@ static uint16_t computePort0x306(const BindingStore& bs, const BindingStore::Sna
     return r ^ 0xFF00;
 }
 
-// ---------------------------------------------------------------------------
-
 void updatePortCache(const BindingStore& bs) {
-    // Snapshot all pre-known bound devices — one lock per device.
     BindingStore::SnapMap snap;
     for (const auto& path : s_boundDevicePaths) {
         DeviceSnapshot ds;
         if (bs.mgr->snapshotDevice(path, ds))
             snap[path] = std::move(ds);
     }
-
     // DJ button ports
     s_djPortCache[1].store(computePort0x101(bs, snap));
     s_djPortCache[2].store(computePort0x102(bs, snap));
@@ -131,7 +123,6 @@ static void addUnique(const std::string& p) {
 }
 
 void initPortCache(const BindingStore& bs) {
-    // Build the unique HID device path list from all bound inputs.
     // Bindings never change during DLL lifetime, so this runs exactly once.
     for (auto& b : bs.buttons)
         if (b.isSet() && !b.isKeyboard()) addUnique(b.device_path);
@@ -146,7 +137,6 @@ void initPortCache(const BindingStore& bs) {
     // Populate cache immediately so the game doesn't read stale 0xFF values.
     updatePortCache(bs);
 
-    // Register callback: updatePortCache fires after every WM_INPUT event.
     bs.mgr->setInputCallback([](void* ud) {
         updatePortCache(*static_cast<const BindingStore*>(ud));
     }, const_cast<BindingStore*>(&bs));

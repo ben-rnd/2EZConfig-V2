@@ -13,18 +13,14 @@
 #include <vector>
 #include <unordered_map>
 
-// JSON key for analog port (matches CONTEXT.md schema)
+// JSON key for analog port
 static inline const char* analogPortKey(int port) {
     return port == 0 ? "p1_turntable" : "p2_turntable";
 }
 
-// ---- BindingBase ---------------------------------------------------------
-// Shared device identity fields for all binding types.
-// No virtual methods — just data + common clear helper.
-
 struct BindingBase {
-    std::string device_path;    // full Windows device path from InputManager::getDevices()[i].path
-    std::string device_name;    // informational: for [Disconnected] display fallback
+    std::string device_path;
+    std::string device_name;
 
 protected:
     void clearBase() {
@@ -33,12 +29,7 @@ protected:
     }
 };
 
-// ---- ButtonBinding -------------------------------------------------------
-
 struct ButtonBinding : BindingBase {
-    // HID button: device_path + button_idx (device_path non-empty, vk_code==0)
-    // Keyboard:   vk_code != 0 (device_path empty)
-    // Unbound:    device_path empty AND vk_code == 0
     int              button_idx = -1;
     int              vk_code    = 0;
     ButtonAnalogType analog_type = ButtonAnalogType::NONE;  // hat-as-button direction
@@ -56,7 +47,6 @@ struct ButtonBinding : BindingBase {
     nlohmann::json   toJson()  const;
     static ButtonBinding fromJson(const nlohmann::json& j);
 
-    // Construct from CaptureResult (filled by InputManager::pollCapture())
     static ButtonBinding fromCapture(const CaptureResult& r) {
         ButtonBinding b;
         b.device_path  = r.path;
@@ -66,8 +56,6 @@ struct ButtonBinding : BindingBase {
         return b;
     }
 };
-
-// ---- AnalogBinding -------------------------------------------------------
 
 struct AnalogBinding : BindingBase {
     int           axis_idx = -1;
@@ -92,8 +80,6 @@ struct AnalogBinding : BindingBase {
     static AnalogBinding fromJson(const nlohmann::json& j);
 };
 
-// ---- LightBinding --------------------------------------------------------
-
 struct LightBinding : BindingBase {
     int output_idx = -1;   // flat index: button_output_caps first, value_output_caps after
 
@@ -108,15 +94,11 @@ struct LightBinding : BindingBase {
     static LightBinding fromJson(const nlohmann::json& j);
 };
 
-// ---- BindingStore --------------------------------------------------------
-
-// Owns all binding arrays and the InputManager reference used to query them.
-// Serializes to/from globalSettings() JSON.
 struct BindingStore {
-    static constexpr int BUTTON_COUNT = 20;   // djButtonNames[] length
-    static constexpr int DANCER_COUNT = 16;   // dancerButtonNames[] length
-    static constexpr int ANALOG_COUNT = 2;    // p1_turntable + p2_turntable
-    static constexpr int LIGHT_COUNT  = 23;   // lightNames[] length in strings.h
+    static constexpr int BUTTON_COUNT = 20;
+    static constexpr int DANCER_COUNT = 16;
+    static constexpr int ANALOG_COUNT = 2;
+    static constexpr int LIGHT_COUNT  = 23;
 
     ButtonBinding buttons[BUTTON_COUNT];
     ButtonBinding dancerButtons[DANCER_COUNT];
@@ -125,22 +107,15 @@ struct BindingStore {
 
     InputManager* mgr = nullptr;
 
-    // Load from globalSettings(). Sets mgr for subsequent queries.
-    // Old-format entries (device_id key) silently skipped.
     void load(SettingsManager& settings, InputManager& mgr);
-
-    // Save to globalSettings() and call settings.save().
     void save(SettingsManager& settings) const;
 
-    // Input queries — use these instead of calling InputManager directly.
     bool isHeld(const ButtonBinding& b) const;
 
-    // Snapshot-based queries (no locking; use with a SnapMap built by dll_input).
     using SnapMap = std::unordered_map<std::string, DeviceSnapshot>;
     bool    isHeldSnapshot(const ButtonBinding& b, const SnapMap& snap) const;
     uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vtt_pos, const SnapMap& snap) const;
 
-    // Display strings for UI rendering.
     std::string getDisplayString(const ButtonBinding& b) const;
     std::string getDisplayString(const AnalogBinding& a) const;
     std::string getDisplayString(const LightBinding& l) const;

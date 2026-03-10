@@ -26,7 +26,6 @@ static HMODULE       s_dllModule  = nullptr;
 static InputManager* s_mgr        = nullptr;
 static BindingStore  s_bindings;
 
-// All Important IO handler — intercepts IN/OUT instructions.
 static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
     if (ex->ExceptionRecord->ExceptionCode != EXCEPTION_PRIV_INSTRUCTION)
         return EXCEPTION_CONTINUE_SEARCH;
@@ -46,17 +45,14 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
     switch (opcode) {
 
         case 0xEC: // IN AL, DX — DJ read (8-bit)
-            switch (port) {
+            switch (port) {               
                 //buttons
                 case 0x101: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[1].load(); break;
                 case 0x102: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[2].load(); break;
                 case 0x106: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[6].load(); break;
-
                 //analogs
                 case 0x103: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[3].load(); break;  // P1 turntable
                 case 0x104: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[4].load(); break;  // P2 turntable
-
-                //fall through
                 default:    ctx->Eax = (ctx->Eax & 0xFFFFFF00) | 0xFF; break;
             }
             ctx->Eip += instrLen;
@@ -119,16 +115,13 @@ static std::string getAppDataDir() {
 }
 
 static DWORD WINAPI InitThread(void*) {
-    // Fix innacurate sleep()
     timeBeginPeriod(1);
 
-    // Resolve DLL directory from the DLL's own module handle.
     char dir[MAX_PATH] = {};
     GetModuleFileNameA(s_dllModule, dir, MAX_PATH);
     char* lastSlash = strrchr(dir, '\\');
     if (lastSlash) *lastSlash = '\0';
 
-    // Resolve shared config dir: %APPDATA%\2ezconfig
     std::string appDataDir = getAppDataDir();
     if (appDataDir.empty()) return 0;
 
@@ -145,7 +138,6 @@ static DWORD WINAPI InitThread(void*) {
 
     std::string gameId = settings.gameSettings().value("game_id", "");
 
-    // Suspend all game threads while installing time-critical hooks.
     std::vector<HANDLE> suspended;
     suspendOtherThreads(suspended);
 
@@ -166,7 +158,6 @@ static DWORD WINAPI InitThread(void*) {
     if (!gameId.empty())
         settings.patchStore().applyEarlyPatches(gameId);
 
-    //Setup Input manager and load bindings
     s_mgr = new InputManager();
     try {
         s_bindings.load(settings, *s_mgr);
@@ -175,7 +166,6 @@ static DWORD WINAPI InitThread(void*) {
     initPortCache(s_bindings);
     startLightFlushThread(s_bindings);
 
-    // Wait for game init, then apply patches and version string.
     Sleep(settings.globalSettings().value("patch_delay_ms", 2000));
     settings.patchStore().applyVersionPatch("2EZConfig V2.0");
     if (!gameId.empty())
@@ -208,7 +198,6 @@ static void tryInitHardlock(HMODULE hModule) {
     unsigned short seed3 = (unsigned short)std::stoul(hl.value("Seed3", "0"), nullptr, 16);
 
     if (LoadHardLockInfo(modAd, seed1, seed2, seed3) && InitHooks()) {
-        //DBG_printfA("[io.hardlock]: Started!");
     }
 }
 

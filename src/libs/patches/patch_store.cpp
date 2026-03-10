@@ -9,10 +9,6 @@
 
 using json = nlohmann::json;
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
 static std::vector<uint8_t> parseBytes(const std::string& hexStr) {
     std::vector<uint8_t> result;
     std::istringstream ss(hexStr);
@@ -27,27 +23,20 @@ static uint32_t parseHexOffset(const std::string& hexStr) {
     return static_cast<uint32_t>(std::stoul(hexStr, nullptr, 16));
 }
 
-// ---------------------------------------------------------------------------
-// PatchStore::parseSinglePatch
-// ---------------------------------------------------------------------------
-
 Patch PatchStore::parseSinglePatch(const json& j) {
     Patch p;
     p.id          = j.value("id",          "");
     p.name        = j.value("name",        "");
     p.description = j.value("description", "");
 
-    // Type
     std::string typeStr = j.value("type", "toggle");
     if (typeStr == "value")        p.type = PatchType::Value;
     else if (typeStr == "pattern") p.type = PatchType::Pattern;
     else                           p.type = PatchType::Toggle;
 
-    // Apply timing
     std::string applyStr = j.value("apply", "normal");
     p.apply = (applyStr == "early") ? PatchApply::Early : PatchApply::Normal;
 
-    // Enabled defaults false
     p.enabled = false;
 
     if (p.type == PatchType::Toggle) {
@@ -84,10 +73,6 @@ Patch PatchStore::parseSinglePatch(const json& j) {
     return p;
 }
 
-// ---------------------------------------------------------------------------
-// PatchStore::parseGamePatches
-// ---------------------------------------------------------------------------
-
 void PatchStore::parseGamePatches(const json& gameObj, std::vector<Patch>& out) {
     if (!gameObj.contains("patches") || !gameObj["patches"].is_array()) return;
     for (const auto& patchJson : gameObj["patches"]) {
@@ -95,14 +80,9 @@ void PatchStore::parseGamePatches(const json& gameObj, std::vector<Patch>& out) 
     }
 }
 
-// ---------------------------------------------------------------------------
-// PatchStore::load
-// ---------------------------------------------------------------------------
-
 void PatchStore::load(const std::string& dir) {
     m_patches.clear();
 
-    // Load bundled patches.json
     std::string bundledPath = dir + "/patches.json";
     if (std::filesystem::exists(bundledPath)) {
         std::ifstream f(bundledPath);
@@ -147,10 +127,6 @@ void PatchStore::load(const std::string& dir) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// patchesForGame
-// ---------------------------------------------------------------------------
-
 const std::vector<Patch>& PatchStore::patchesForGame(const std::string& gameId) const {
     static const std::vector<Patch> empty;
     auto it = m_patches.find(gameId);
@@ -162,10 +138,6 @@ std::vector<Patch>& PatchStore::patchesForGame(const std::string& gameId) {
     return m_patches[gameId];  // creates empty vector if key absent
 }
 
-// ---------------------------------------------------------------------------
-// gameIds
-// ---------------------------------------------------------------------------
-
 std::vector<std::string> PatchStore::gameIds() const {
     std::vector<std::string> ids;
     ids.reserve(m_patches.size());
@@ -174,10 +146,6 @@ std::vector<std::string> PatchStore::gameIds() const {
     }
     return ids;
 }
-
-// ---------------------------------------------------------------------------
-// loadState / saveState helpers
-// ---------------------------------------------------------------------------
 
 void PatchStore::loadStateHelper(std::vector<Patch>& patches, const json& state) {
     for (auto& p : patches) {
@@ -188,7 +156,6 @@ void PatchStore::loadStateHelper(std::vector<Patch>& patches, const json& state)
                 p.value = s.value("value", p.value);
             }
         }
-        // Recurse into children
         if (!p.children.empty()) {
             loadStateHelper(p.children, state);
         }
@@ -202,7 +169,6 @@ void PatchStore::saveStateHelper(const std::vector<Patch>& patches, json& out) c
         } else {
             out[p.id] = { {"enabled", p.enabled} };
         }
-        // Recurse into children
         if (!p.children.empty()) {
             saveStateHelper(p.children, out);
         }
@@ -230,10 +196,6 @@ json PatchStore::saveState() const {
     }
     return out;
 }
-
-// ---------------------------------------------------------------------------
-// applyPatches
-// ---------------------------------------------------------------------------
 
 void PatchStore::applyTogglePatch(const Patch& p) {
     LPVOID base = GetModuleHandle(NULL);

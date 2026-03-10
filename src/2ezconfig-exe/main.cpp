@@ -79,7 +79,6 @@ int main() {
     glfwMakeContextCurrent(g_window);
     glfwSwapInterval(1);
 
-    // Set window icon from embedded resource
     HWND hwnd = glfwGetWin32Window(g_window);
     HICON icon = LoadIconA(GetModuleHandleA(nullptr), "IDI_ICON1");
     SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)icon);
@@ -94,7 +93,6 @@ int main() {
 
     setTheme();
 
-    // Resolve shared config dir: %APPDATA%\2ezconfig
     std::string appDataDir = getAppDataDir();
     std::filesystem::create_directories(appDataDir);
 
@@ -138,10 +136,7 @@ int main() {
     // Load settings: game-settings.json stays local, global-settings + patches in appdata
     g_app.settings.load(".", appDataDir);
 
-    // Start input subsystem
     g_app.input = new InputManager();
-
-    // Load bindings from settings
     g_app.bindings.load(g_app.settings, *g_app.input);
 
     // Initialize game selector state from persisted game_id
@@ -205,7 +200,6 @@ static void renderUI() {
 
     ImGui::TextUnformatted("2EZConfig ~ It rules once again ~ ");
     ImGui::SameLine();
-    // Right-align Play EZ2 button: compute position so the button sits at window right edge
     {
         float btnWidth = 90.0f;
         float avail = ImGui::GetContentRegionAvail().x;
@@ -257,9 +251,6 @@ static void renderUI() {
 
 static void renderPatchesTab() {
     std::string gameId = g_app.settings.gameSettings().value("game_id", "");
-    // Use non-const patchesForGame() — patchStore() returns a non-const PatchStore&,
-    // and the non-const patchesForGame() overload returns std::vector<Patch>&
-    // so we can modify enabled/value directly. No const_cast needed.
     auto& patches = g_app.settings.patchStore().patchesForGame(gameId);
 
     if (patches.empty()) {
@@ -317,7 +308,6 @@ static void renderSettingsTab() {
     static const int DANCER_COUNT = (int)(sizeof(dancerGames) / sizeof(dancerGames[0]));
     static const int TOTAL_COUNT  = DJ_COUNT + DANCER_COUNT;
 
-    // Build flat label array once
     static const char* gameComboItems[DJ_COUNT + DANCER_COUNT];
     static bool        gameComboBuilt = false;
     if (!gameComboBuilt) {
@@ -413,7 +403,6 @@ static void renderButtonsTab() {
                     s_listenIdx = -1;
                 }
 
-                // Poll HID capture
                 CaptureResult hit;
                 if (g_app.input->pollCapture(hit)) {
                     bnd = ButtonBinding::fromCapture(hit);
@@ -422,7 +411,6 @@ static void renderButtonsTab() {
                     s_listenIdx = -1;
                 }
 
-                // Poll keyboard
                 if (s_state == BindState_Listening) {
                     int vk = pollKeyboardPress(s_prevKeys);
                     if (vk >= 0) {
@@ -436,17 +424,14 @@ static void renderButtonsTab() {
                     }
                 }
 
-                // Timeout
                 s_listenTimer -= ImGui::GetIO().DeltaTime;
                 if (s_listenTimer <= 0.0f) {
                     g_app.input->stopCapture();
                     s_state = BindState_Normal;
                 }
             } else {
-                // Normal row
                 ImGui::TableSetColumnIndex(0);
 
-                // Active highlight
                 bool active = g_app.bindings.isHeld(bnd);
 
                 if (active)
@@ -506,7 +491,6 @@ static void renderAnalogsTab() {
         if (!d.value_caps_names.empty() && d.hid && d.hid->caps.UsagePage == 0x01)
             axisDevs.push_back(d);
 
-    // 3-column table: [name | binding | Edit button]
     if (ImGui::BeginTable("##analogTable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Turntable", ImGuiTableColumnFlags_WidthFixed, 120.0f);
         ImGui::TableSetupColumn("Binding",   ImGuiTableColumnFlags_WidthStretch);
@@ -517,7 +501,6 @@ static void renderAnalogsTab() {
             ImGui::PushID(p);
             ImGui::TableNextRow();
 
-            // Col 0: name + live preview bar
             ImGui::TableSetColumnIndex(0);
             ImGui::Text("P%d", p+1);
             AnalogBinding& ab = g_app.bindings.analogs[p];
@@ -527,14 +510,12 @@ static void renderAnalogsTab() {
                 ImGui::ProgressBar(display, ImVec2(40.0f, 0));
             }
 
-            // Col 1: binding label
             ImGui::TableSetColumnIndex(1);
             if (!ab.isSet() && ab.hasVtt())
                 ImGui::TextUnformatted("Virtual TT keys Assigned");
             else
                 ImGui::TextUnformatted(g_app.bindings.getDisplayString(ab).c_str());
 
-            // Col 2: [Edit] [Clear] buttons
             ImGui::TableSetColumnIndex(2);
             if (ImGui::Button("Edit")) {
                 s_editPort       = p;
@@ -571,7 +552,6 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevs) {
         ImGui::Separator();
         AnalogBinding& ab = g_app.bindings.analogs[p];
 
-        // Initialize combo selection once per popup open
         if (!s_initialized[p]) {
             s_initialized[p] = true;
             s_devIdx[p] = 0; s_axisIdx[p] = 0;
@@ -586,7 +566,6 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevs) {
             }
         }
 
-        // Device combo (axes-only devices + "(none)")
         std::vector<const char*> devLabels;
         devLabels.push_back("(none)");
         for (auto& d : axisDevs) devLabels.push_back(d.name.c_str());
@@ -599,7 +578,6 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevs) {
             g_app.bindings.save(g_app.settings);
         }
 
-        // Axis combo (value_caps_names[] of selected device)
         if (s_devIdx[p] > 0) {
             const Device& d = axisDevs[(size_t)(s_devIdx[p] - 1)];
             int axCount = (int)d.value_caps_names.size();
@@ -613,7 +591,6 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevs) {
             ImGui::TextDisabled("Axis: (select device first)");
         }
 
-        // Reverse checkbox
         if (ImGui::Checkbox("Reverse", &ab.reverse))
             g_app.bindings.save(g_app.settings);
 
@@ -624,13 +601,11 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevs) {
         renderVttKeyBind("Virtual TT+:", "Bind##vttp", "Clear##vttp",
                          ab.vtt_plus,  s_capturingVtt[p][0], s_capturingVtt[p][1], s_vttPrevKeys);
 
-        // VTT Step
         if (ImGui::SliderInt("Virtual TT Step Amount", &ab.vtt_step, 1, 10))
             g_app.bindings.save(g_app.settings);
 
         ImGui::Separator();
 
-        // Live preview
         {
             float display = 0.5f;
             char overlay[32];
@@ -673,7 +648,6 @@ static void renderLightsTab() {
     }
 
     // Get output-capable devices for bind popup.
-    // Show all devices with at least one output cap (matches spice2x filter).
     std::vector<Device> allDevs = g_app.input->getDevices();
     std::vector<Device> outputDevs;
     for (auto& d : allDevs) {
@@ -681,7 +655,6 @@ static void renderLightsTab() {
             outputDevs.push_back(d);
     }
 
-    // Table: 23 light channels
     ImGui::BeginChild("##lightsScroll", ImVec2(0, ImGui::GetWindowHeight() - 85), false);
     if (ImGui::BeginTable("##lighttable", 3,
             ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
@@ -753,7 +726,6 @@ static void renderLightBindPopup(const std::vector<Device>& outputDevs) {
     ImGui::Text("Bind Light: %s", (s_bindLightIdx >= 0 ? lightNames[s_bindLightIdx] : "?"));
     ImGui::Separator();
 
-    // Device combo — output-capable devices only
     std::vector<const char*> devLabels;
     devLabels.push_back("(none)");
     for (auto& d : outputDevs) devLabels.push_back(d.name.c_str());
@@ -776,7 +748,6 @@ static void renderLightBindPopup(const std::vector<Device>& outputDevs) {
         s_lightOutIdx = -1;
     }
 
-    // Instant-save on any combo change (matching Buttons tab pattern)
     if ((prevDevIdx != s_lightDevIdx || prevOutIdx != s_lightOutIdx)
         && s_lightDevIdx > 0 && s_lightOutIdx >= 0 && s_bindLightIdx >= 0) {
         LightBinding& lb = g_app.bindings.lights[s_bindLightIdx];
@@ -867,7 +838,7 @@ static void globalCheckbox(const char* label, const char* key, bool defaultVal) 
 }
 
 static void setTheme() {
-    // Night Traveller theme — dark charcoal/black base, warm amber-orange accents
+    // Night Traveller theme
     ImGuiStyle& style = ImGui::GetStyle();
     style.FrameRounding    = 4.0f;
     style.WindowBorderSize = 0.0f;

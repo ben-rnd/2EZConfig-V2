@@ -8,14 +8,12 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
     m_gameDir = gameDir;
     m_userSettingsDir = userSettingsDir;
 
-    // Ensure config directories exist
     std::filesystem::create_directories(userSettingsDir);
     std::filesystem::create_directories(gameDir);
 
     std::string gamePath   = gameDir + "/game-settings.json";
     std::string globalPath = userSettingsDir + "/global-settings.json";
 
-    // Load or create game-settings.json
     bool gameNew = !std::filesystem::exists(gamePath);
     if (!gameNew) {
         std::ifstream file(gamePath);
@@ -33,7 +31,6 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
         };
     }
 
-    // Load or create global-settings.json
     bool globalNew = !std::filesystem::exists(globalPath);
     if (!globalNew) {
         std::ifstream file(globalPath);
@@ -55,12 +52,10 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
 }
 
 void SettingsManager::save() const {
-    // Write game-settings.json
     std::string gamePath = m_gameDir + "/game-settings.json";
     std::ofstream gameFile(gamePath);
     gameFile << m_gameSettings.dump(2);
 
-    // Write global-settings.json
     std::string globalPath = m_userSettingsDir + "/global-settings.json";
     std::ofstream globalFile(globalPath);
     globalFile << m_globalSettings.dump(2);

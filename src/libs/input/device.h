@@ -17,7 +17,6 @@ extern "C" {
 
 // Analog type for hat-as-button bindings.
 // Regular digital buttons use NONE. Hat switch directions use HS_* values.
-// Matches spice2x ButtonAnalogType.
 enum class ButtonAnalogType {
     NONE = 0,
     HS_UP,
@@ -32,7 +31,6 @@ enum class ButtonAnalogType {
 
 // HID-specific data for a device. Heap-allocated, owned by Device.
 // Null if device has no usable HID caps (keyboard, mouse, vendor-specific).
-// Matches spice2x DeviceHIDInfo pattern.
 struct DeviceHIDInfo {
     PHIDP_PREPARSED_DATA preparsed  = nullptr;
     HIDP_CAPS            caps       = {};

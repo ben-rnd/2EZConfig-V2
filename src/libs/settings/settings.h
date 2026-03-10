@@ -13,12 +13,9 @@ class SettingsManager {
 public:
     // Load game-settings.json, global-settings.json, patches.json, and user-patches.json.
     void load(const std::string& gameDir, const std::string& userSettingsDir);
-    // Save game-settings.json and global-settings.json.
     void save() const;
-    // Access to the two main JSON sections
     json& globalSettings();
     json& gameSettings();
-    // Access to the typed patch store (loaded from patches.json + user-patches.json)
     PatchStore& patchStore();
 private:
     std::string m_gameDir;

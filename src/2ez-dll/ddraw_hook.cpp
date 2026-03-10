@@ -8,7 +8,6 @@ static SetDisplayModeFn s_origDD2 = nullptr;
 static SetDisplayModeFn s_origDD4 = nullptr;
 static SetDisplayModeFn s_origDD7 = nullptr;
 
-// Shared logic: if force60hz, try 60Hz first; on failure fall back to original rate.
 static HRESULT setDisplayModeCommon(
     void* pThis, DWORD dwWidth, DWORD dwHeight, DWORD dwBPP,
     DWORD dwRefreshRate, DWORD dwFlags, SetDisplayModeFn orig)
@@ -57,7 +56,6 @@ void installDDrawHook(bool force60hz) {
     IDirectDraw7* pDD7 = nullptr;
     if (FAILED(fnCreateEx(nullptr, reinterpret_cast<void**>(&pDD7), IID_IDirectDraw7, nullptr))) return;
 
-    // Hook DD7 directly
     hookSlot(pDD7, 21, reinterpret_cast<void*>(HookedSetDisplayModeDD7), &s_origDD7);
 
     // QI to DD4 and hook (games using DirectDrawCreateEx with IID_IDirectDraw4)
