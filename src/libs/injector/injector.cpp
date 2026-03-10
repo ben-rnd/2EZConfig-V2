@@ -4,6 +4,8 @@
 #include <shlwapi.h>
 #include <stdio.h>
 #include <string.h>
+#include <vector>
+#include <string>
 #include "injector.h"
 
 static BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnable) {
@@ -119,7 +121,7 @@ static int Inject(DWORD *pid){
     return 1;
 }
 
-int Injector::LaunchAndInject(const char* exeName) {
+int Injector::LaunchAndInject(const char* exeName, const std::vector<std::string>& extraDlls) {
     char fullPath[MAX_PATH];
     if (!GetFullPathNameA(exeName, MAX_PATH, fullPath, NULL)) {
         printf("[-] GetFullPathNameA failed\n");
@@ -150,6 +152,11 @@ int Injector::LaunchAndInject(const char* exeName) {
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
         return 0;
+    }
+
+    for (const auto& dll : extraDlls) {
+        if (!dll.empty())
+            InjectDll(pi.hProcess, dll.c_str());
     }
 
     ResumeThread(pi.hThread);

@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -210,7 +211,13 @@ static void renderUI() {
         std::string exeOverride = g_app.settings.gameSettings().value("exe_name", "");
         const char* tbExeName   = exeOverride.empty() ? defaultExe : exeOverride.c_str();
         if (ImGui::Button("Play EZ2", ImVec2(btnWidth, 0))) {
-            Injector::LaunchAndInject(tbExeName);
+            std::vector<std::string> extraDlls;
+            std::string extraDllsStr = g_app.settings.gameSettings().value("extra_dlls", "");
+            std::istringstream iss(extraDllsStr);
+            std::string token;
+            while (iss >> token)
+                extraDlls.push_back(token);
+            Injector::LaunchAndInject(tbExeName, extraDlls);
             glfwSetWindowShouldClose(g_window, GLFW_TRUE);
         }
     }
@@ -328,6 +335,7 @@ static void renderSettingsTab() {
         }
         g_app.settings.gameSettings()["game_id"] = gameId;
         g_app.settings.gameSettings().erase("exe_name");  // reset override when game changes
+        g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
         g_app.settings.save();
     }
 
@@ -347,6 +355,25 @@ static void renderSettingsTab() {
                 g_app.settings.gameSettings().erase("exe_name");
             g_app.settings.save();
         }
+    }
+
+    {
+        static char extraDllsBuf[2048] = {};
+        static int  lastGameIdxDlls = -1;
+        if (lastGameIdxDlls != g_app.gameIdx) {
+            lastGameIdxDlls = g_app.gameIdx;
+            std::string stored = g_app.settings.gameSettings().value("extra_dlls", "");
+            strncpy(extraDllsBuf, stored.c_str(), sizeof(extraDllsBuf) - 1);
+            extraDllsBuf[sizeof(extraDllsBuf) - 1] = '\0';
+        }
+        if (ImGui::InputText("Extra DLLs", extraDllsBuf, sizeof(extraDllsBuf))) {
+            if (extraDllsBuf[0])
+                g_app.settings.gameSettings()["extra_dlls"] = std::string(extraDllsBuf);
+            else
+                g_app.settings.gameSettings().erase("extra_dlls");
+            g_app.settings.save();
+        }
+        ImGui::TextDisabled("Space-separated DLL paths injected after 2EZ.dll");
     }
 
     ImGui::Separator();
