@@ -2,13 +2,19 @@
 #include "logger.h"
 
 #include <windows.h>
-#include <psapi.h>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
+
+static SIZE_T getImageSize(HMODULE base) {
+    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    auto* nt  = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+                    reinterpret_cast<const uint8_t*>(base) + dos->e_lfanew);
+    return nt->OptionalHeader.SizeOfImage;
+}
 
 static std::vector<uint8_t> parseBytes(const std::string& hexStr) {
     std::vector<uint8_t> result;
@@ -49,7 +55,9 @@ Patch PatchStore::parseSinglePatch(const json& j) {
     else                           p.type = PatchType::Toggle;
 
     std::string applyStr = j.value("apply", "normal");
-    p.apply = (applyStr == "early") ? PatchApply::Early : PatchApply::Normal;
+    if (applyStr == "super_early")    p.apply = PatchApply::SuperEarly;
+    else if (applyStr == "early")     p.apply = PatchApply::Early;
+    else                              p.apply = PatchApply::Normal;
 
     p.enabled = false;
 
@@ -232,14 +240,12 @@ void PatchStore::applyTogglePatch(const Patch& p) {
     uint8_t* writeBase = reinterpret_cast<uint8_t*>(base);
 
     if (!p.scan.empty()) {
-        MODULEINFO mi = {};
-        if (!GetModuleInformation(GetCurrentProcess(), base, &mi, sizeof(mi))) return;
-
         const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
+        const SIZE_T   imageSize  = getImageSize(base);
         const size_t   scanLen    = p.scan.size();
         writeBase = nullptr;
 
-        for (size_t i = 0; i + scanLen <= mi.SizeOfImage; ++i) {
+        for (size_t i = 0; i + scanLen <= imageSize; ++i) {
             bool match = true;
             for (size_t k = 0; k < scanLen; ++k) {
                 if (p.scan[k] != -1 && imageStart[i + k] != static_cast<uint8_t>(p.scan[k])) {
@@ -278,11 +284,8 @@ void PatchStore::applyPatternPatch(const Patch& p) {
     if (p.pattern.empty() || p.replacement.empty()) return;
 
     HMODULE    base = GetModuleHandle(NULL);
-    MODULEINFO mi   = {};
-    if (!GetModuleInformation(GetCurrentProcess(), base, &mi, sizeof(mi))) return;
-
     const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
-    const uint8_t* imageEnd   = imageStart + mi.SizeOfImage;
+    const uint8_t* imageEnd   = imageStart + getImageSize(base);
     const size_t   patternLen = p.pattern.size();
 
     MEMORY_BASIC_INFORMATION mbi = {};
@@ -343,22 +346,25 @@ void PatchStore::applyVersionPatch(const std::string& replacement) {
     applyPatternPatch(p);
 }
 
+void PatchStore::applySuperEarlyPatches(const std::string& gameId) {
+    Logger::info("[PatchStore] Applying 'super_early' patches");
+    applyPatches(gameId, PatchApply::SuperEarly);
+}
+
 void PatchStore::applyEarlyPatches(const std::string& gameId) {
     Logger::info("[PatchStore] Applying 'early' patches");
-    applyPatches(gameId, true);
+    applyPatches(gameId, PatchApply::Early);
 }
 
 void PatchStore::applyPatches(const std::string& gameId) {
     Logger::info("[PatchStore] Applying patches");
-    applyPatches(gameId, false);
+    applyPatches(gameId, PatchApply::Normal);
 }
 
-
-void PatchStore::applyPatches(const std::string& gameId, bool applyEarly) {
+void PatchStore::applyPatches(const std::string& gameId, PatchApply timing) {
     const auto& patches = patchesForGame(gameId);
-    PatchApply  target  = applyEarly ? PatchApply::Early : PatchApply::Normal;
     for (const auto& p : patches) {
-        if (p.enabled && p.apply == target) {
+        if (p.enabled && p.apply == timing) {
             applyPatch(p);
         }
     }

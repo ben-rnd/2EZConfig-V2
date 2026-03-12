@@ -7,7 +7,7 @@
 #include <nlohmann/json.hpp>
 
 enum class PatchType  { Toggle, Value, Pattern };
-enum class PatchApply { Normal, Early };
+enum class PatchApply { Normal, Early, SuperEarly };
 
 struct PatchWrite {
     uint32_t             offset;  // relative to GetModuleHandle(NULL), parsed from hex string
@@ -46,9 +46,9 @@ public:
     void loadState(const nlohmann::json& patchState);
     nlohmann::json saveState() const;
     nlohmann::json saveState(const std::string& gameId) const;
+    void applySuperEarlyPatches(const std::string& gameId);
     void applyEarlyPatches(const std::string& gameId);
     void applyPatches(const std::string& gameId);
-    void applyPatches(const std::string& gameId, bool applyEarly);
 
     // Replaces "Version %d.%02d" with replacement 2EZConfig version string.
     void applyVersionPatch(const std::string& replacement);
@@ -58,6 +58,7 @@ private:
 
     void        parseGamePatches(const nlohmann::json& gameObj, std::vector<Patch>& out);
     Patch       parseSinglePatch(const nlohmann::json& j);
+    void        applyPatches(const std::string& gameId, PatchApply timing);
     void        applyPatch(const Patch& p);
     void        applyTogglePatch(const Patch& p);
     void        applyValuePatch(const Patch& p);

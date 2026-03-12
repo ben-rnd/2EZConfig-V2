@@ -22,9 +22,12 @@ extern "C" {
 #include "game_defs.h"
 #include "logger.h"
 
-static HMODULE       s_dllModule  = nullptr;
-static InputManager* s_mgr        = nullptr;
-static BindingStore  s_bindings;
+static HMODULE          s_dllModule  = nullptr;
+static InputManager*    s_mgr       = nullptr;
+static BindingStore     s_bindings;
+static SettingsManager* s_settings   = nullptr;
+static std::string      s_currDirectory;
+static std::string      s_gameId;
 
 static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
     if (ex->ExceptionRecord->ExceptionCode != EXCEPTION_PRIV_INSTRUCTION)
@@ -45,7 +48,7 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
     switch (opcode) {
 
         case 0xEC: // IN AL, DX — DJ read (8-bit)
-            switch (port) {               
+            switch (port) {
                 //buttons
                 case 0x101: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[1].load(); break;
                 case 0x102: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[2].load(); break;
@@ -117,69 +120,38 @@ static std::string getAppDataDir() {
 }
 
 static DWORD WINAPI InitThread(void*) {
+    if (!s_settings) {
+        Logger::error("[-] Settings not loaded, InitThread aborting");
+        return 0;
+    }
+
     std::vector<HANDLE> suspended;
     suspendOtherThreads(suspended);
 
     timeBeginPeriod(1);
 
-    char dir[MAX_PATH] = {};
-    GetModuleFileNameA(s_dllModule, dir, MAX_PATH);
-    char* lastSlash = strrchr(dir, '\\');
-    if (lastSlash) *lastSlash = '\0';
-
-    std::string appDataDir = getAppDataDir();
-    if (appDataDir.empty()) return 0;
-
-    // Exit early if shared config dir doesn't exist — 2EZConfig has never been run.
-    if (GetFileAttributesA(appDataDir.c_str()) == INVALID_FILE_ATTRIBUTES){
-        Logger::error("[-] 2EZConfig settings unitialised, please configure 2EZConfig.");
-        return 0;
-    }
-
-    SettingsManager settings;
-    try {
-        settings.load(dir, appDataDir);
-    } catch (...) {
-        Logger::error("[-] Unable to load Settings");
-        return 0;
-    }
-
-    // If tryInitHardlock couldn't open game-settings.json (first run, missing file, etc.)
-    // Logger won't have been initialised yet — do it now with the fully loaded settings.
-    if (!Logger::isEnabled()) {
-        bool loggingEnabled = settings.gameSettings().value("logging_enabled", false);
-        Logger::init(dir, loggingEnabled, "2ez-logs.txt");
-    }
-    Logger::info("[+] Settings loaded successfully");
-
-    std::string gameId = settings.gameSettings().value("game_id", "");
-
-
-    if (settings.globalSettings().value("io_emu", true)){
+    if (s_settings->globalSettings().value("io_emu", true)){
         AddVectoredExceptionHandler(1, IOHandler);
         Logger::info("[+] IO Hook initilaised");
     }
 
-    if (settings.globalSettings().value("high_priority", false)){
+    if (s_settings->globalSettings().value("high_priority", false)){
         SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
         Logger::info("[+] High Priority process initilaised");
     }
 
-    if (!gameId.empty()){
-        //settings.patchStore().applyEarlyPatches(gameId);
-    } 
     resumeThreads(suspended);
 
     // Allow dongle/hardware to stabilize before continuing.
-    Sleep(settings.globalSettings().value("shim_delay", 10));
+    Sleep(s_settings->globalSettings().value("shim_delay", 10));
 
-    if (!gameId.empty()){
-        settings.patchStore().applyEarlyPatches(gameId);
+    if (!s_gameId.empty()){
+        s_settings->patchStore().applyEarlyPatches(s_gameId);
     }
 
     s_mgr = new InputManager();
     try {
-        s_bindings.load(settings, *s_mgr);
+        s_bindings.load(*s_settings, *s_mgr);
         Logger::info("[+] Bindings loaded successfully");
     } catch (...) {
         Logger::error("[-] Bindings failed to load");
@@ -188,56 +160,76 @@ static DWORD WINAPI InitThread(void*) {
     initPortCache(s_bindings);
     startLightFlushThread(s_bindings);
 
-    Sleep(settings.globalSettings().value("patch_delay_ms", 2000));
-    settings.patchStore().applyVersionPatch("2EZConfig V2.0");
-    if (!gameId.empty()){
-        settings.patchStore().applyPatches(gameId);
+    Sleep(s_settings->globalSettings().value("patch_delay_ms", 2000));
+    s_settings->patchStore().applyVersionPatch("2EZConfig V2.0");
+    if (!s_gameId.empty()){
+        s_settings->patchStore().applyPatches(s_gameId);
     }
 
     return 0;
 }
 
-static void tryInitHardlock(HMODULE hModule) {
-    char dllPath[MAX_PATH] = {};
-    GetModuleFileNameA(hModule, dllPath, MAX_PATH);
-    char* lastSlash = strrchr(dllPath, '\\');
-    if (!lastSlash) return;
-    *lastSlash = '\0';
+static void applySuperEarlyPatches() {
+    if (!s_settings || s_gameId.empty()) return;
+    s_settings->patchStore().applySuperEarlyPatches(s_gameId);
+}
 
-    char settingsPath[MAX_PATH];
-    snprintf(settingsPath, MAX_PATH, "%s\\game-settings.json", dllPath);
+static void initHardlock() {
+    if (!s_settings) return;
+    if (!s_settings->gameSettings().value("hardlock_enabled", false)) return;
 
-    std::ifstream f(settingsPath);
-    if (!f.is_open()) return;
-    nlohmann::json j;
-    try { j = nlohmann::json::parse(f); } catch (...) { return; }
-
-    bool loggingEnabled = j.value("logging_enabled", false);
-    Logger::init(dllPath, loggingEnabled, "2ez-logs.txt");
-
-    if (!j.value("hardlock_enabled", false)) return;
-    Logger::info("[+]Hardlock enabled");
-
-    auto hl = j.value("hardlock", nlohmann::json::object());
+    auto hl = s_settings->gameSettings().value("hardlock", nlohmann::json::object());
     unsigned short modAd = (unsigned short)std::stoul(hl.value("ModAd", "0"), nullptr, 16);
     unsigned short seed1 = (unsigned short)std::stoul(hl.value("Seed1", "0"), nullptr, 16);
     unsigned short seed2 = (unsigned short)std::stoul(hl.value("Seed2", "0"), nullptr, 16);
     unsigned short seed3 = (unsigned short)std::stoul(hl.value("Seed3", "0"), nullptr, 16);
 
-    Logger::info("[+]Hardlock values"); //todo
-
-
     if (LoadHardLockInfo(modAd, seed1, seed2, seed3) && InitHooks()) {
-        Logger::info("[+]Hardlock initialised");
-    }else{
-        Logger::error("[-]Hardlock initialisation failed");
+        Logger::info("[+] Hardlock initialised");
+    } else {
+        Logger::error("[-] Hardlock initialisation failed");
     }
+}
+
+static void initLogger() {
+    if (!s_settings) return;
+    bool loggingEnabled = s_settings->gameSettings().value("logging_enabled", false);
+    Logger::init(s_currDirectory, loggingEnabled, "2ez-logs.txt");
+}
+
+static void loadSettings(HMODULE hModule) {
+    char dllPath[MAX_PATH] = {};
+    GetModuleFileNameA(hModule, dllPath, MAX_PATH);
+    char* lastSlash = strrchr(dllPath, '\\');
+    if (!lastSlash) return;
+    *lastSlash = '\0';
+    s_currDirectory = dllPath;
+
+    std::string appDataDir = getAppDataDir();
+    if (appDataDir.empty()) return;
+
+    // Exit early if shared config dir doesn't exist — 2EZConfig has never been run.
+    if (GetFileAttributesA(appDataDir.c_str()) == INVALID_FILE_ATTRIBUTES) return;
+
+    s_settings = new SettingsManager();
+    try {
+        s_settings->load(s_currDirectory, appDataDir);
+    } catch (...) {
+        delete s_settings;
+        s_settings = nullptr;
+        return;
+    }
+
+    s_gameId = s_settings->gameSettings().value("game_id", "");
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         s_dllModule = hModule;
-        tryInitHardlock(hModule);
+        loadSettings(hModule);
+        initLogger();
+        initHardlock();
+        applySuperEarlyPatches();
         CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)InitThread, nullptr, 0, nullptr);
     }
     return TRUE;
