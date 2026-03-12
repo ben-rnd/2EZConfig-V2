@@ -14,6 +14,7 @@ target_link_libraries(2EZ PRIVATE
     hardlock
     bindings
     patches
+    logger
     kernel32
     user32
     winmm

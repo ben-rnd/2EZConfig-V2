@@ -1,4 +1,5 @@
 #include "patch_store.h"
+#include "logger.h"
 
 #include <windows.h>
 #include <psapi.h>
@@ -319,6 +320,7 @@ void PatchStore::applyPatternPatch(const Patch& p) {
 }
 
 void PatchStore::applyPatch(const Patch& p) {
+    Logger::info("[PatchStore] Applying Patch " + p.id);
     switch (p.type) {
         case PatchType::Toggle:  applyTogglePatch(p);  break;
         case PatchType::Value:   applyValuePatch(p);   break;
@@ -333,6 +335,7 @@ void PatchStore::applyPatch(const Patch& p) {
 }
 
 void PatchStore::applyVersionPatch(const std::string& replacement) {
+    Logger::info("[PatchStore] Applying 2EZconfig Version patch");
     Patch p;
     p.type        = PatchType::Pattern;
     p.pattern     = "Version %d.%02d";
@@ -341,10 +344,12 @@ void PatchStore::applyVersionPatch(const std::string& replacement) {
 }
 
 void PatchStore::applyEarlyPatches(const std::string& gameId) {
+    Logger::info("[PatchStore] Applying 'early' patches");
     applyPatches(gameId, true);
 }
 
 void PatchStore::applyPatches(const std::string& gameId) {
+    Logger::info("[PatchStore] Applying patches");
     applyPatches(gameId, false);
 }
 

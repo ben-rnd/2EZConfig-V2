@@ -20,6 +20,7 @@ extern "C" {
 #include "patch_store.h"
 #include "settings.h"
 #include "game_defs.h"
+#include "logger.h"
 
 static HMODULE       s_dllModule  = nullptr;
 static InputManager* s_mgr        = nullptr;
@@ -99,11 +100,13 @@ static void suspendOtherThreads(std::vector<HANDLE>& out) {
         } while (Thread32Next(snap, &te));
     }
     CloseHandle(snap);
+    Logger::info("[+] Application suspended");
 }
 
 static void resumeThreads(std::vector<HANDLE>& handles) {
     for (HANDLE h : handles) { ResumeThread(h); CloseHandle(h); }
     handles.clear();
+    Logger::info("[+] Application resumed");
 }
 
 static std::string getAppDataDir() {
@@ -114,6 +117,9 @@ static std::string getAppDataDir() {
 }
 
 static DWORD WINAPI InitThread(void*) {
+    std::vector<HANDLE> suspended;
+    suspendOtherThreads(suspended);
+
     timeBeginPeriod(1);
 
     char dir[MAX_PATH] = {};
@@ -125,47 +131,68 @@ static DWORD WINAPI InitThread(void*) {
     if (appDataDir.empty()) return 0;
 
     // Exit early if shared config dir doesn't exist — 2EZConfig has never been run.
-    if (GetFileAttributesA(appDataDir.c_str()) == INVALID_FILE_ATTRIBUTES)
+    if (GetFileAttributesA(appDataDir.c_str()) == INVALID_FILE_ATTRIBUTES){
+        Logger::error("[-] 2EZConfig settings unitialised, please configure 2EZConfig.");
         return 0;
+    }
 
     SettingsManager settings;
     try {
         settings.load(dir, appDataDir);
     } catch (...) {
+        Logger::error("[-] Unable to load Settings");
         return 0;
     }
 
+    // If tryInitHardlock couldn't open game-settings.json (first run, missing file, etc.)
+    // Logger won't have been initialised yet — do it now with the fully loaded settings.
+    if (!Logger::isEnabled()) {
+        bool loggingEnabled = settings.gameSettings().value("logging_enabled", false);
+        Logger::init(dir, loggingEnabled, "2ez-logs.txt");
+    }
+    Logger::info("[+] Settings loaded successfully");
+
     std::string gameId = settings.gameSettings().value("game_id", "");
 
-    std::vector<HANDLE> suspended;
-    suspendOtherThreads(suspended);
 
-    if (settings.globalSettings().value("io_emu", true))
+    if (settings.globalSettings().value("io_emu", true)){
         AddVectoredExceptionHandler(1, IOHandler);
+        Logger::info("[+] IO Hook initilaised");
+    }
 
-    if (settings.globalSettings().value("high_priority", false))
+    if (settings.globalSettings().value("high_priority", false)){
         SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+        Logger::info("[+] High Priority process initilaised");
+    }
 
+    if (!gameId.empty()){
+        //settings.patchStore().applyEarlyPatches(gameId);
+    } 
     resumeThreads(suspended);
 
     // Allow dongle/hardware to stabilize before continuing.
     Sleep(settings.globalSettings().value("shim_delay", 10));
 
-    if (!gameId.empty())
+    if (!gameId.empty()){
         settings.patchStore().applyEarlyPatches(gameId);
+    }
 
     s_mgr = new InputManager();
     try {
         s_bindings.load(settings, *s_mgr);
-    } catch (...) {}
+        Logger::info("[+] Bindings loaded successfully");
+    } catch (...) {
+        Logger::error("[-] Bindings failed to load");
+    }
 
     initPortCache(s_bindings);
     startLightFlushThread(s_bindings);
 
     Sleep(settings.globalSettings().value("patch_delay_ms", 2000));
     settings.patchStore().applyVersionPatch("2EZConfig V2.0");
-    if (!gameId.empty())
+    if (!gameId.empty()){
         settings.patchStore().applyPatches(gameId);
+    }
 
     return 0;
 }
@@ -185,7 +212,11 @@ static void tryInitHardlock(HMODULE hModule) {
     nlohmann::json j;
     try { j = nlohmann::json::parse(f); } catch (...) { return; }
 
+    bool loggingEnabled = j.value("logging_enabled", false);
+    Logger::init(dllPath, loggingEnabled, "2ez-logs.txt");
+
     if (!j.value("hardlock_enabled", false)) return;
+    Logger::info("[+]Hardlock enabled");
 
     auto hl = j.value("hardlock", nlohmann::json::object());
     unsigned short modAd = (unsigned short)std::stoul(hl.value("ModAd", "0"), nullptr, 16);
@@ -193,7 +224,13 @@ static void tryInitHardlock(HMODULE hModule) {
     unsigned short seed2 = (unsigned short)std::stoul(hl.value("Seed2", "0"), nullptr, 16);
     unsigned short seed3 = (unsigned short)std::stoul(hl.value("Seed3", "0"), nullptr, 16);
 
+    Logger::info("[+]Hardlock values"); //todo
+
+
     if (LoadHardLockInfo(modAd, seed1, seed2, seed3) && InitHooks()) {
+        Logger::info("[+]Hardlock initialised");
+    }else{
+        Logger::error("[-]Hardlock initialisation failed");
     }
 }
 

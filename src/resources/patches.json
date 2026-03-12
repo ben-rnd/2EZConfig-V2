@@ -177,6 +177,19 @@
         "writes": [
           { "offset": "0x4", "bytes": "6a 3c 90 90" }
         ]
+      },
+      {
+        "id": "use_io_card_force",
+        "name": "Force UseIOCard Enabled",
+        "description": "Patches all UseIOCard checks to always proceed as if UseIOCard=1, regardless of INI value.",
+        "type": "toggle",
+        "apply": "early",
+        "writes": [
+          { "offset": "0xac8b", "bytes": "90 90 90 90 90 90" },
+          { "offset": "0xad7e", "bytes": "90 90 90 90 90 90" },
+          { "offset": "0xb278", "bytes": "90 90" },
+          { "offset": "0x14863", "bytes": "90 90 90 90 90 90" }
+        ]
       }
     ]
   },
