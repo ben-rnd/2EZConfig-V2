@@ -2,6 +2,7 @@
 build/
 build-check/
 out/
+tools/
 
 #proj reference
 references/
