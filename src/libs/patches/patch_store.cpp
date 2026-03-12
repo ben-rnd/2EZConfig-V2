@@ -116,8 +116,28 @@ void PatchStore::load(const std::string& dir) {
             try {
                 f >> j;
                 for (auto it = j.begin(); it != j.end(); ++it) {
-                    if (it.key() == "ver") continue;
+                    if (it.key() == "ver" || it.key() == "shared") continue;
                     parseGamePatches(it.value(), m_patches[it.key()]);
+                }
+                // Distribute shared patches into each game's vector
+                if (j.contains("shared") && j["shared"].is_array()) {
+                    for (const auto& group : j["shared"]) {
+                        if (!group.contains("patches") || !group["patches"].is_array()) continue;
+
+                        for (const auto& patchJson : group["patches"]) {
+                            if (!patchJson.contains("games") || !patchJson["games"].is_array()) continue;
+
+                            Patch sp = parseSinglePatch(patchJson);
+                            for (const auto& gid : patchJson["games"]) {
+                                auto& gamePatchList = m_patches[gid.get<std::string>()];
+                                bool exists = false;
+                                for (const auto& existing : gamePatchList)
+                                    if (existing.id == sp.id) { exists = true; break; }
+                                if (!exists)
+                                    gamePatchList.push_back(sp);
+                            }
+                        }
+                    }
                 }
             } catch (...) {
                 // Malformed JSON — skip silently

@@ -1,10 +1,56 @@
 {
-  "ver": 7,
+  "ver": 8,
+  "shared": [
+    {
+      "patches": [
+        {
+          "id": "force_60hz",
+          "name": "Force 60Hz",
+          "notes": "EZ2AC engine (EV, NT, TT, FN, FN_EX). Replaces mov edx,[edi+0x18]; push ebx(flags=0); push edx(refreshRate) with push ebx(0); push 0x3c(60); nop; nop.",
+          "games": ["ez2ac_ev", "ez2ac_nt", "ez2ac_tt", "ez2ac_fn", "ez2ac_fn_ex"],
+          "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
+          "type": "toggle",
+          "apply": "early",
+          "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
+          "writes": [
+            { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
+          ]
+        },
+        {
+          "id": "force_60hz",
+          "name": "Force 60Hz",
+          "notes": "BE engine (3rd, 4th, 5th, BE, BE-A, EC). Uses large negative EBP stack offsets. Replaces mov ecx,[eax+0x18]; push ecx(refreshRate) with push 0x3c(60); nop; nop.",
+          "games": ["ez2dj_3rd", "ez2dj_4th", "ez2dj_5th", "ez2dj_be", "ez2dj_be_a", "ez2ac_ec"],
+          "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
+          "type": "toggle",
+          "apply": "early",
+          "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
+          "writes": [
+            { "offset": "0x4", "bytes": "6a 3c 90 90" }
+          ]
+        },
+        {
+          "id": "force_60hz",
+          "name": "Force 60Hz",
+          "notes": "7th series engine (6th, 7th, 7th 1.5, 7th 2.0, CV). Uses call [ebp+0x54]. Replaces mov ebx,[edi+0x18] with push 0x3c; pop ebx (3-byte trick to set ebx=60).",
+          "games": ["ez2dj_6th", "ez2dj_7th", "ez2dj_7th_15", "ez2dj_7th_20", "ez2dj_cv"],
+          "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
+          "type": "toggle",
+          "apply": "early",
+          "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
+          "writes": [
+            { "offset": "0x4", "bytes": "6a 3c 5b" }
+          ]
+        }
+      ]
+    }
+  ],
   "ez2dj_1st": {
     "patches": [
       {
         "id": "force_60hz",
         "name": "Force 60Hz",
+        "notes": "1st only — unique scan pattern with absolute memory address loads.",
         "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
         "type": "toggle",
         "apply": "early",
@@ -20,6 +66,7 @@
       {
         "id": "force_60hz",
         "name": "Force 60Hz",
+        "notes": "1st SE only — uses DirectDrawCreate (not DirectDrawCreateEx). refreshRate is hardcoded push 0, changed to push 0x3c.",
         "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
         "type": "toggle",
         "apply": "early",
@@ -35,6 +82,7 @@
       {
         "id": "force_60hz",
         "name": "Force 60Hz",
+        "notes": "2nd only — same structure as BE engine but uses small EBP stack offsets [ebp-N] instead of large negative offsets.",
         "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
         "type": "toggle",
         "apply": "early",
@@ -46,166 +94,33 @@
     ]
   },
   "ez2dj_3rd": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 90 90" }
-        ]
-      }
-    ]
+    "patches": []
   },
   "ez2dj_4th": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 90 90" }
-        ]
-      }
-    ]
+    "patches": []
   },
   "ez2dj_5th": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 90 90" }
-        ]
-      }
-    ]
+    "patches": []
   },
   "ez2dj_6th": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 5b" }
-        ]
-      }
-    ]
+    "patches": []
   },
   "ez2dj_7th": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 5b" }
-        ]
-      }
-    ]
+    "patches": []
   },
   "ez2dj_7th_15": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 5b" }
-        ]
-      }
-    ]
+    "patches": []
   },
   "ez2dj_7th_20": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 5b" }
-        ]
-      }
-    ]
+    "patches": []
   },
   "ez2dj_cv": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 5b" }
-        ]
-      }
-    ]
+    "patches": []
   },
   "ez2dj_be": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 90 90" }
-        ]
-      },
-      {
-        "id": "use_io_card_force",
-        "name": "Force UseIOCard Enabled",
-        "description": "Patches all UseIOCard checks to always proceed as if UseIOCard=1, regardless of INI value.",
-        "type": "toggle",
-        "apply": "early",
-        "writes": [
-          { "offset": "0xac8b", "bytes": "90 90 90 90 90 90" },
-          { "offset": "0xad7e", "bytes": "90 90 90 90 90 90" },
-          { "offset": "0xb278", "bytes": "90 90" },
-          { "offset": "0x14863", "bytes": "90 90 90 90 90 90" }
-        ]
-      }
-    ]
   },
   "ez2dj_be_a": {
     "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 90 90" }
-        ]
-      },
       {
         "id": "use_io_card_force",
         "name": "Force UseIOCard Enabled",
@@ -230,17 +145,6 @@
   "ez2ac_ec":{
     "patches": [
       {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 90 90" }
-        ]
-      },
-      {
         "id": "timer_freeze",
         "name": "Timer Freeze",
         "description": "Freezes the countdown timer in mode and song select.",
@@ -254,17 +158,6 @@
   },
   "ez2ac_ev": {
     "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
-        "writes": [
-          { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
-        ]
-      },
       {
         "id": "use_io_card_force",
         "name": "Force UseIOCard Enabled",
@@ -305,17 +198,6 @@
   "ez2ac_nt": {
     "patches": [
       {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
-        "writes": [
-          { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
-        ]
-      },
-      {
         "id": "timer_freeze",
         "name": "Timer Freeze",
         "description": "Freezes the countdown timer in mode and song select.",
@@ -349,20 +231,9 @@
   "ez2ac_tt":{
     "patches": [
       {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
-        "writes": [
-          { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
-        ]
-      },
-      {
-        "id": "timer_freeze",
-        "name": "Timer Freeze",
-        "description": "Freezes the countdown timer in mode and song select.",
+        "id": "timer_freeze_183",
+        "name": "Timer Freeze (1.83)",
+        "description": "Freezes the countdown timer in mode and song select. for TT 1.83",
         "type": "toggle",
         "writes": [
           { "offset": "0x4740A", "bytes": "00" },
@@ -373,17 +244,6 @@
   },
   "ez2ac_fn": {
     "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
-        "writes": [
-          { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
-        ]
-      },
       {
         "id": "timer_freeze",
         "name": "Timer Freeze",
@@ -491,17 +351,6 @@
   },
   "ez2ac_fn_ex": {
     "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
-        "writes": [
-          { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
-        ]
-      },
       {
         "id": "keyboard_fix",
         "name": "Fix Keyboard",
