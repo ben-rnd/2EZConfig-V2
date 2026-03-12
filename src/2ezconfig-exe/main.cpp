@@ -28,6 +28,7 @@ static std::string getAppDataDir() {
 static void renderUI();
 static void setTheme();
 static void renderSettingsTab();
+static void gameCheckbox(const char* label, const char* key, bool defaultVal);
 static void renderButtonsTab();
 static void renderAnalogsTab();
 static void renderAnalogEditPopup(const std::vector<Device>& axisDevs);
@@ -377,6 +378,11 @@ static void renderSettingsTab() {
     ImGui::Separator();
     globalCheckbox("Enable IO Emulation",                "io_emu",       true);
     globalCheckbox("Force High Priority (experimental)", "high_priority", false);
+
+    ImGui::Separator();
+    ImGui::TextUnformatted("Debug");
+    ImGui::Separator();
+    gameCheckbox("Enable Logging", "logging_enabled", false);
 
     ImGui::Separator();
     ImGui::TextUnformatted("Game Patches");
@@ -856,6 +862,14 @@ static void globalCheckbox(const char* label, const char* key, bool defaultVal) 
     bool val = g_app.settings.globalSettings().value(key, defaultVal);
     if (ImGui::Checkbox(label, &val)) {
         g_app.settings.globalSettings()[key] = val;
+        g_app.settings.save();
+    }
+}
+
+static void gameCheckbox(const char* label, const char* key, bool defaultVal) {
+    bool val = g_app.settings.gameSettings().value(key, defaultVal);
+    if (ImGui::Checkbox(label, &val)) {
+        g_app.settings.gameSettings()[key] = val;
         g_app.settings.save();
     }
 }

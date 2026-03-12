@@ -13,11 +13,11 @@ static EHardlockEntry HardLockTable[] = {
 // Uncomment this if you have some preloaded tables to include.
 // #include "zdqUxer9.inl"
     {
-        "4th",
-        0x4C53,
-        0xBE03,
-        0xA335,
-        0xDCB0
+        "",
+        0,
+        0,
+        0,
+        0
     }
 };
 
