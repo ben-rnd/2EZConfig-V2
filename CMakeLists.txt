@@ -7,6 +7,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Build date stamp (YYYY.MM.DD)
+string(TIMESTAMP BUILD_DATE "%Y.%m.%d")
+
 # Windows XP target
 add_compile_definitions(
     _WIN32_WINNT=0x0501
@@ -16,6 +19,7 @@ add_compile_definitions(
     UNICODE
     _UNICODE
     __USE_MINGW_ANSI_STDIO=1
+    BUILD_DATE="${BUILD_DATE}"
 )
 
 # MinGW cross-compile flags
@@ -39,6 +43,11 @@ add_link_options(
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_options(-O2 -ffunction-sections -fdata-sections)
     add_link_options(-s -Wl,--gc-sections)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-g -O0)
+    add_compile_definitions(DEBUG)
 endif()
 
 # Dependencies

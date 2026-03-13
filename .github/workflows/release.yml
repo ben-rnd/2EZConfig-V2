@@ -1,0 +1,39 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW cross-compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-i686 g++-mingw-w64-i686
+
+      - name: Configure
+        run: cmake --preset release
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Package release
+        run: |
+          VERSION=$(date +%Y.%m.%d)
+          mkdir -p release
+          cp build/release/bin/2EZ.dll release/
+          cp build/release/bin/2EZConfig.exe release/
+          cd release && zip ../2EZConfig-${VERSION}.zip *
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: 2EZConfig ${{ env.VERSION }}
+          files: 2EZConfig-${{ env.VERSION }}.zip
+          generate_release_notes: true

@@ -41,6 +41,8 @@ static void renderVttKeyBind(const char* label, const char* bindId, const char* 
                              ButtonBinding& key, bool& capturing, bool& otherCapturing, bool* prevKeys);
 static void globalCheckbox(const char* label, const char* key, bool defaultVal);
 
+static const char* s_buildDate = BUILD_DATE;
+
 struct AppState {
     SettingsManager settings;
     InputManager*   input    = nullptr;
@@ -75,7 +77,7 @@ int main() {
     glfwSetErrorCallback([](int e, const char* d) { fprintf(stderr, "GLFW error %d: %s\n", e, d); });
     if (!glfwInit()) return 1;
 
-    g_window = glfwCreateWindow(640, 480, "2EZConfig V2.0", nullptr, nullptr);
+    g_window = glfwCreateWindow(640, 480, "2EZConfig", nullptr, nullptr);
     if (!g_window) { glfwTerminate(); return 1; }
     glfwMakeContextCurrent(g_window);
     glfwSwapInterval(1);
@@ -247,8 +249,8 @@ static void renderUI() {
         ImGui::EndTabBar();
     }
 
-    ImGui::SetCursorPos({ ImGui::GetWindowWidth() - 250, ImGui::GetWindowHeight() - 20 });
-    ImGui::TextDisabled("Made by kasaski (kissass) - 2026");
+    ImGui::SetCursorPos({ ImGui::GetWindowWidth() - 280, ImGui::GetWindowHeight() - 20 });
+    ImGui::TextDisabled("Made by kasaski (kissAss) - %s",  s_buildDate);
 
     ImGui::End();
 }

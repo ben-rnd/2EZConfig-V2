@@ -2,22 +2,40 @@
     "version": 3,
     "configurePresets": [
         {
-            "name": "default",
-            "binaryDir": "${sourceDir}/build",
+            "name": "_base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
                 "CMAKE_SYSTEM_NAME": "Windows",
                 "CMAKE_SYSTEM_PROCESSOR": "i686",
                 "CMAKE_C_COMPILER": "i686-w64-mingw32-gcc",
                 "CMAKE_CXX_COMPILER": "i686-w64-mingw32-g++",
-                "CMAKE_RC_COMPILER": "i686-w64-mingw32-windres",
+                "CMAKE_RC_COMPILER": "i686-w64-mingw32-windres"
+            }
+        },
+        {
+            "name": "release",
+            "inherits": "_base",
+            "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "debug",
+            "inherits": "_base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
             }
         }
     ],
     "buildPresets": [
         {
-            "name": "default",
-            "configurePreset": "default"
+            "name": "release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "debug",
+            "configurePreset": "debug"
         }
     ]
 }
