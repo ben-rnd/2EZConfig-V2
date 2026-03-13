@@ -1,487 +1,402 @@
 {
   "ver": 8,
-  "shared": [
-    {
-      "patches": [
-        {
-          "id": "force_60hz",
-          "name": "Force 60Hz",
-          "notes": "EZ2AC engine (EV, NT, TT, FN, FN_EX). Replaces mov edx,[edi+0x18]; push ebx(flags=0); push edx(refreshRate) with push ebx(0); push 0x3c(60); nop; nop.",
-          "games": ["ez2ac_ev", "ez2ac_nt", "ez2ac_tt", "ez2ac_fn", "ez2ac_fn_ex"],
-          "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-          "type": "toggle",
-          "apply": "early",
-          "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
-          "writes": [
-            { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
-          ]
-        },
-        {
-          "id": "force_60hz",
-          "name": "Force 60Hz",
-          "notes": "BE engine (3rd, 4th, 5th, BE, BE-A, EC). Uses large negative EBP stack offsets. Replaces mov ecx,[eax+0x18]; push ecx(refreshRate) with push 0x3c(60); nop; nop.",
-          "games": ["ez2dj_3rd", "ez2dj_4th", "ez2dj_5th", "ez2dj_be", "ez2dj_be_a", "ez2ac_ec"],
-          "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-          "type": "toggle",
-          "apply": "early",
-          "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-          "writes": [
-            { "offset": "0x4", "bytes": "6a 3c 90 90" }
-          ]
-        },
-        {
-          "id": "force_60hz",
-          "name": "Force 60Hz",
-          "notes": "7th series engine (6th, 7th, 7th 1.5, 7th 2.0, CV). Uses call [ebp+0x54]. Replaces mov ebx,[edi+0x18] with push 0x3c; pop ebx (3-byte trick to set ebx=60).",
-          "games": ["ez2dj_6th", "ez2dj_7th", "ez2dj_7th_15", "ez2dj_7th_20", "ez2dj_cv"],
-          "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-          "type": "toggle",
-          "apply": "early",
-          "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
-          "writes": [
-            { "offset": "0x4", "bytes": "6a 3c 5b" }
-          ]
-        }
-      ]
-    }
-  ],
-  "ez2dj_1st": {
-    "patches": [
-      {
-        "id": "force_60hz",
+  "shared": {
+    "force_60hz_v1": {
         "name": "Force 60Hz",
-        "notes": "1st only — unique scan pattern with absolute memory address loads.",
+        "notes": "7th series engine (6th, 7th, 7th 1.5, 7th 2.0, CV). Uses call [ebp+0x54]. Replaces mov ebx,[edi+0x18] with push 0x3c; pop ebx (3-byte trick to set ebx=60).",
+        "games": ["ez2dj_6th", "ez2dj_7th", "ez2dj_7th_15", "ez2dj_7th_20", "ez2dj_cv"],
         "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
         "type": "toggle",
         "apply": "early",
-        "scan": "8b 15 ?? ?? ?? ?? a1 ?? ?? ?? ?? 6a 00 6a 00 8b 08 52 8b 15 ?? ?? ?? ?? 52 8b 15 ?? ?? ?? ?? 52 50 ff 51 54",
+        "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
         "writes": [
-          { "offset": "0xd", "bytes": "6a 3c" }
+          { "offset": "0x4", "bytes": "6a 3c 5b" }
         ]
-      }
-    ]
-  },
-  "ez2dj_1st_se": {
-    "patches": [
-      {
-        "id": "force_60hz",
+      },
+      "force_60hz_v2": {
         "name": "Force 60Hz",
-        "notes": "1st SE only — uses DirectDrawCreate (not DirectDrawCreateEx). refreshRate is hardcoded push 0, changed to push 0x3c.",
+        "notes": "BE engine (3rd, 4th, 5th, BE, BE-A, EC). Uses large negative EBP stack offsets. Replaces mov ecx,[eax+0x18]; push ecx(refreshRate) with push 0x3c(60); nop; nop.",
+        "games": ["ez2dj_3rd", "ez2dj_4th", "ez2dj_5th", "ez2dj_be", "ez2dj_be_a", "ez2ac_ec"],
         "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
         "type": "toggle",
         "apply": "early",
-        "scan": "6a 00 6a 00 8b 0d ?? ?? ?? ?? 51 8b 15 ?? ?? ?? ?? 52 a1 ?? ?? ?? ?? 50 8b 0d ?? ?? ?? ?? 51 8b 15 ?? ?? ?? ?? 8b 02 ff 50 54",
-        "writes": [
-          { "offset": "0x2", "bytes": "6a 3c" }
-        ]
-      }
-    ]
-  },
-  "ez2dj_2nd": {
-    "patches": [
-      {
-        "id": "force_60hz",
-        "name": "Force 60Hz",
-        "notes": "2nd only — same structure as BE engine but uses small EBP stack offsets [ebp-N] instead of large negative offsets.",
-        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
-        "type": "toggle",
-        "apply": "early",
-        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 4d ?? 8b 51 ?? 52 8b 45 ?? 8b 48 ?? 51 8b 55 ?? 8b 42 ?? 8b 4d ?? 8b 51 ?? 8b 0a 50 ff 51 54",
+        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
         "writes": [
           { "offset": "0x4", "bytes": "6a 3c 90 90" }
         ]
-      }
-    ]
-  },
-  "ez2dj_3rd": {
-    "patches": []
-  },
-  "ez2dj_4th": {
-    "patches": []
-  },
-  "ez2dj_5th": {
-    "patches": []
-  },
-  "ez2dj_6th": {
-    "patches": []
-  },
-  "ez2dj_7th": {
-    "patches": []
-  },
-  "ez2dj_7th_15": {
-    "patches": []
-  },
-  "ez2dj_7th_20": {
-    "patches": []
-  },
-  "ez2dj_cv": {
-    "patches": []
-  },
-  "ez2dj_be": {
-  },
-  "ez2dj_be_a": {
-    "patches": [
-      {
-        "id": "use_io_card_force",
-        "name": "Force UseIOCard Enabled",
-        "description": "Patches all UseIOCard checks to always proceed as if UseIOCard=1, regardless of INI value.",
+      },
+      "force_60hz_v3": {
+        "name": "Force 60Hz",
+        "notes": "EZ2AC engine (EV, NT, TT, FN, FN_EX). Replaces mov edx,[edi+0x18]; push ebx(flags=0); push edx(refreshRate) with push ebx(0); push 0x3c(60); nop; nop.",
+        "games": ["ez2ac_ev", "ez2ac_nt", "ez2ac_tt", "ez2ac_fn", "ez2ac_fn_ex"],
+        "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
         "type": "toggle",
         "apply": "early",
+        "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
         "writes": [
-          { "offset": "0x18538", "bytes": "eb 05" },
-          { "offset": "0x186e3", "bytes": "eb 05" },
-          { "offset": "0x19145", "bytes": "eb 02" },
-          { "offset": "0x2ae54", "bytes": "90 90 90 90 90 90" }
+          { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
         ]
-      }
-    ]
+    }
   },
-  "ez2dj_ae": {
-    "patches": []
+  "ez2dj_1st": {
+    "force_60hz": {
+      "name": "Force 60Hz",
+      "notes": "1st only — unique scan pattern with absolute memory address loads.",
+      "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
+      "type": "toggle",
+      "apply": "early",
+      "scan": "8b 15 ?? ?? ?? ?? a1 ?? ?? ?? ?? 6a 00 6a 00 8b 08 52 8b 15 ?? ?? ?? ?? 52 8b 15 ?? ?? ?? ?? 52 50 ff 51 54",
+      "writes": [
+        { "offset": "0xd", "bytes": "6a 3c" }
+      ]
+    }
   },
-  "ez2dj_ae_ic": {
-    "patches": []
+  "ez2dj_1st_se": {
+    "force_60hz": {
+      "name": "Force 60Hz",
+      "notes": "1st SE only — uses DirectDrawCreate (not DirectDrawCreateEx). refreshRate is hardcoded push 0, changed to push 0x3c.",
+      "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
+      "type": "toggle",
+      "apply": "early",
+      "scan": "6a 00 6a 00 8b 0d ?? ?? ?? ?? 51 8b 15 ?? ?? ?? ?? 52 a1 ?? ?? ?? ?? 50 8b 0d ?? ?? ?? ?? 51 8b 15 ?? ?? ?? ?? 8b 02 ff 50 54",
+      "writes": [
+        { "offset": "0x2", "bytes": "6a 3c" }
+      ]
+    }
   },
-  "ez2ac_ec":{
-    "patches": [
-      {
-        "id": "timer_freeze",
-        "name": "Timer Freeze",
-        "description": "Freezes the countdown timer in mode and song select.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x5978A", "bytes": "00" },
-          { "offset": "0x53289", "bytes": "00" }
-        ]
-      }
-    ]
+  "ez2dj_2nd": {
+    "force_60hz": {
+      "name": "Force 60Hz",
+      "notes": "2nd only — same structure as BE engine but uses small EBP stack offsets [ebp-N] instead of large negative offsets.",
+      "description": "Forces DirectDraw SetDisplayMode to request 60Hz. Scans for the call site pattern so it works across versions.",
+      "type": "toggle",
+      "apply": "early",
+      "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 4d ?? 8b 51 ?? 52 8b 45 ?? 8b 48 ?? 51 8b 55 ?? 8b 42 ?? 8b 4d ?? 8b 51 ?? 8b 0a 50 ff 51 54",
+      "writes": [
+        { "offset": "0x4", "bytes": "6a 3c 90 90" }
+      ]
+    }
+  },
+  "ez2dj_3rd": {},
+  "ez2dj_4th": {},
+  "ez2dj_5th": {},
+  "ez2dj_6th": {},
+  "ez2dj_7th": {},
+  "ez2dj_7th_15": {},
+  "ez2dj_7th_20": {},
+  "ez2dj_cv": {},
+  "ez2dj_be": {},
+  "ez2dj_be_a": {
+    "use_io_card_force": {
+      "name": "Force UseIOCard Enabled",
+      "description": "Patches all UseIOCard checks to always proceed as if UseIOCard=1, regardless of INI value.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x18538", "bytes": "eb 05" },
+        { "offset": "0x186e3", "bytes": "eb 05" },
+        { "offset": "0x19145", "bytes": "eb 02" },
+        { "offset": "0x2ae54", "bytes": "90 90 90 90 90 90" }
+      ]
+    }
+  },
+  "ez2dj_ae": {},
+  "ez2dj_ae_ic": {},
+  "ez2ac_ec": {
+    "timer_freeze": {
+      "name": "Timer Freeze",
+      "description": "Freezes the countdown timer in mode and song select.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x5978A", "bytes": "00" },
+        { "offset": "0x53289", "bytes": "00" }
+      ]
+    }
   },
   "ez2ac_ev": {
-    "patches": [
-      {
-        "id": "use_io_card_force",
-        "name": "Force UseIOCard Enabled",
-        "description": "Patches all UseIOCard checks to always proceed as if UseIOCard=1, regardless of INI value.",
-        "type": "toggle",
-        "apply": "early",
-        "writes": [
-          { "offset": "0xb4dc", "bytes": "90 90 90 90 90 90" },
-          { "offset": "0xb85b", "bytes": "90 90 90 90 90 90" },
-          { "offset": "0xbca0", "bytes": "90 90" },
-          { "offset": "0xbda5", "bytes": "90 90" },
-          { "offset": "0xbe06", "bytes": "90 90" },
-          { "offset": "0x172cb", "bytes": "90 90 90 90 90 90" }
-        ]
-      },
-      {
-        "id": "win10_fix",
-        "name": "Win10 Fix",
-        "description": "Fixes a compatibility issue that causes crashing on Windows 10.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x11757", "bytes": "90 90 90" },
-          { "offset": "0x11770", "bytes": "90 90" }
-        ]
-      },
-      {
-        "id": "timer_freeze",
-        "name": "Timer Freeze",
-        "description": "Freezes the countdown timer in mode and song select.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x3A0DE", "bytes": "00" },
-          { "offset": "0x38257", "bytes": "00" }
-        ]
-      }
-    ]
+    "use_io_card_force": {
+      "name": "Force UseIOCard Enabled",
+      "description": "Patches all UseIOCard checks to always proceed as if UseIOCard=1, regardless of INI value.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0xb4dc", "bytes": "90 90 90 90 90 90" },
+        { "offset": "0xb85b", "bytes": "90 90 90 90 90 90" },
+        { "offset": "0xbca0", "bytes": "90 90" },
+        { "offset": "0xbda5", "bytes": "90 90" },
+        { "offset": "0xbe06", "bytes": "90 90" },
+        { "offset": "0x172cb", "bytes": "90 90 90 90 90 90" }
+      ]
+    },
+    "win10_fix": {
+      "name": "Win10 Fix",
+      "description": "Fixes a compatibility issue that causes crashing on Windows 10.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x11757", "bytes": "90 90 90" },
+        { "offset": "0x11770", "bytes": "90 90" }
+      ]
+    },
+    "timer_freeze": {
+      "name": "Timer Freeze",
+      "description": "Freezes the countdown timer in mode and song select.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x3A0DE", "bytes": "00" },
+        { "offset": "0x38257", "bytes": "00" }
+      ]
+    }
   },
   "ez2ac_nt": {
-    "patches": [
-      {
-        "id": "timer_freeze",
-        "name": "Timer Freeze",
-        "description": "Freezes the countdown timer in mode and song select.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x42A6D", "bytes": "00" },
-          { "offset": "0x41854", "bytes": "00" }
-        ]
-      },
-      {
-        "id": "stage_lock_nofail",
-        "name": "Stage Lock: No Fail",
-        "description": "Freeze at stage 1 — cannot fail out. Offset TBD — verify against 2EZ.h NT set before use.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "3B" },
-          { "offset": "0x00000000", "bytes": "00" }
-        ]
-      },
-      {
-        "id": "stage_lock_no_game_over",
-        "name": "Stage Lock: No Game Over",
-        "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h NT set before use.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "90" }
-        ]
-      }
-    ]
+    "timer_freeze": {
+      "name": "Timer Freeze",
+      "description": "Freezes the countdown timer in mode and song select.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x42A6D", "bytes": "00" },
+        { "offset": "0x41854", "bytes": "00" }
+      ]
+    },
+    "stage_lock_nofail": {
+      "name": "Stage Lock: No Fail",
+      "description": "Freeze at stage 1 — cannot fail out. Offset TBD — verify against 2EZ.h NT set before use.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "3B" },
+        { "offset": "0x00000000", "bytes": "00" }
+      ]
+    },
+    "stage_lock_no_game_over": {
+      "name": "Stage Lock: No Game Over",
+      "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h NT set before use.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "90" }
+      ]
+    }
   },
-  "ez2ac_tt":{
-    "patches": [
-      {
-        "id": "timer_freeze_183",
-        "name": "Timer Freeze (1.83)",
-        "description": "Freezes the countdown timer in mode and song select. for TT 1.83",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x4740A", "bytes": "00" },
-          { "offset": "0x45F6C", "bytes": "00" }
-        ]
-      }
-    ]
+  "ez2ac_tt": {
+    "timer_freeze_183": {
+      "name": "Timer Freeze (1.83)",
+      "description": "Freezes the countdown timer in mode and song select. for TT 1.83",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x4740A", "bytes": "00" },
+        { "offset": "0x45F6C", "bytes": "00" }
+      ]
+    }
   },
   "ez2ac_fn": {
-    "patches": [
-      {
-        "id": "timer_freeze",
-        "name": "Timer Freeze",
-        "description": "Freezes the countdown timer in mode and song select.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x4A693", "bytes": "00" },
-          { "offset": "0x46C75", "bytes": "00" }
-        ]
-      },
-      {
-        "id": "stage_lock_nofail",
-        "name": "Stage Lock: No Fail",
-        "description": "Freeze at stage 1 — cannot fail out. Offsets TBD — verify against 2EZ.h FN set before use.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "3B" },
-          { "offset": "0x00000000", "bytes": "00" }
-        ]
-      },
-      {
-        "id": "stage_lock_no_game_over",
-        "name": "Stage Lock: No Game Over",
-        "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h FN set before use.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "90" }
-        ]
-      },
-      {
-        "id": "keep_settings",
-        "name": "Keep Settings",
-        "description": "Prevents the game from resetting note skin, panel skin, and visual settings between sessions. NOP offsets TBD — verify against 2EZ.h FnKeepSettings() before use.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "90 90" }
-        ],
-        "children": [
-          {
-            "id": "keep_note_skin",
-            "name": "Keep Note Skin",
-            "description": "Persist the selected note skin across sessions.",
-            "type": "value",
-            "offset": "0x00000000",
-            "options": ["Default", "2nd", "1st SE", "Simple", "Steel", "3S", "3S RB", "Circle", "Disc", "Star", "Turtle", "Gem"],
-            "default": 0
-          },
-          {
-            "id": "keep_panel_skin",
-            "name": "Keep Panel Skin",
-            "description": "Persist the selected panel skin across sessions.",
-            "type": "value",
-            "offset": "0x00000000",
-            "options": ["FN", "TT Blue", "TT Green", "NT", "EV", "EC", "AEIC", "3S", "CV", "7th", "6th", "5th", "4th", "3rd - Silver", "3rd - Gold", "3rd - Green", "2nd - Silver", "2nd - Green", "2nd - Black", "1st SE", "1st"],
-            "default": 0
-          },
-          {
-            "id": "keep_visual",
-            "name": "Keep Visual",
-            "description": "Persist the selected visual setting across sessions.",
-            "type": "value",
-            "offset": "0x00000000",
-            "options": ["Default", "Black Panel", "BGA Off"],
-            "default": 0
-          },
-          {
-            "id": "keep_random",
-            "name": "Keep Random",
-            "description": "Persist the random note arrangement setting.",
-            "type": "toggle",
-            "writes": [
-              { "offset": "0x00000000", "bytes": "90 90" }
-            ]
-          },
-          {
-            "id": "keep_auto",
-            "name": "Keep Auto",
-            "description": "Persist the auto play setting.",
-            "type": "toggle",
-            "writes": [
-              { "offset": "0x00000000", "bytes": "90 90" }
-            ]
-          },
-          {
-            "id": "keep_fade",
-            "name": "Keep Fade",
-            "description": "Persist the fade setting.",
-            "type": "toggle",
-            "writes": [
-              { "offset": "0x00000000", "bytes": "90 90" }
-            ]
-          },
-          {
-            "id": "keep_scroll",
-            "name": "Keep Scroll",
-            "description": "Persist the scroll speed setting.",
-            "type": "toggle",
-            "writes": [
-              { "offset": "0x00000000", "bytes": "90 90" }
-            ]
-          }
-        ]
+    "timer_freeze": {
+      "name": "Timer Freeze",
+      "description": "Freezes the countdown timer in mode and song select.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x4A693", "bytes": "00" },
+        { "offset": "0x46C75", "bytes": "00" }
+      ]
+    },
+    "stage_lock_nofail": {
+      "name": "Stage Lock: No Fail",
+      "description": "Freeze at stage 1 — cannot fail out. Offsets TBD — verify against 2EZ.h FN set before use.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "3B" },
+        { "offset": "0x00000000", "bytes": "00" }
+      ]
+    },
+    "stage_lock_no_game_over": {
+      "name": "Stage Lock: No Game Over",
+      "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h FN set before use.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "90" }
+      ]
+    },
+    "keep_settings": {
+      "name": "Keep Settings",
+      "description": "Prevents the game from resetting note skin, panel skin, and visual settings between sessions. NOP offsets TBD — verify against 2EZ.h FnKeepSettings() before use.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "90 90" }
+      ],
+      "children": {
+        "keep_note_skin": {
+          "name": "Keep Note Skin",
+          "description": "Persist the selected note skin across sessions.",
+          "type": "value",
+          "offset": "0x00000000",
+          "options": ["Default", "2nd", "1st SE", "Simple", "Steel", "3S", "3S RB", "Circle", "Disc", "Star", "Turtle", "Gem"],
+          "default": 0
+        },
+        "keep_panel_skin": {
+          "name": "Keep Panel Skin",
+          "description": "Persist the selected panel skin across sessions.",
+          "type": "value",
+          "offset": "0x00000000",
+          "options": ["FN", "TT Blue", "TT Green", "NT", "EV", "EC", "AEIC", "3S", "CV", "7th", "6th", "5th", "4th", "3rd - Silver", "3rd - Gold", "3rd - Green", "2nd - Silver", "2nd - Green", "2nd - Black", "1st SE", "1st"],
+          "default": 0
+        },
+        "keep_visual": {
+          "name": "Keep Visual",
+          "description": "Persist the selected visual setting across sessions.",
+          "type": "value",
+          "offset": "0x00000000",
+          "options": ["Default", "Black Panel", "BGA Off"],
+          "default": 0
+        },
+        "keep_random": {
+          "name": "Keep Random",
+          "description": "Persist the random note arrangement setting.",
+          "type": "toggle",
+          "writes": [
+            { "offset": "0x00000000", "bytes": "90 90" }
+          ]
+        },
+        "keep_auto": {
+          "name": "Keep Auto",
+          "description": "Persist the auto play setting.",
+          "type": "toggle",
+          "writes": [
+            { "offset": "0x00000000", "bytes": "90 90" }
+          ]
+        },
+        "keep_fade": {
+          "name": "Keep Fade",
+          "description": "Persist the fade setting.",
+          "type": "toggle",
+          "writes": [
+            { "offset": "0x00000000", "bytes": "90 90" }
+          ]
+        },
+        "keep_scroll": {
+          "name": "Keep Scroll",
+          "description": "Persist the scroll speed setting.",
+          "type": "toggle",
+          "writes": [
+            { "offset": "0x00000000", "bytes": "90 90" }
+          ]
+        }
       }
-    ]
+    }
   },
   "ez2ac_fn_ex": {
-    "patches": [
-      {
-        "id": "keyboard_fix",
-        "name": "Fix Keyboard",
-        "description": "Re-enables keyboard input that the game disables on startup.",
-        "type": "toggle",
-        "apply": "early",
-        "writes": [
-          { "offset": "0x15D51", "bytes": "00" }
-        ]
-      },
-      {
-        "id": "timer_freeze",
-        "name": "Timer Freeze",
-        "description": "Freezes the countdown timer in mode and song select.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x4B773", "bytes": "00" },
-          { "offset": "0x47CBA", "bytes": "00" }
-        ]
-      },
-      {
-        "id": "stage_lock_nofail",
-        "name": "Stage Lock: No Fail",
-        "description": "Freeze at stage 1 — cannot fail out.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x16D15", "bytes": "3B" },
-          { "offset": "0x16D20", "bytes": "00" }
-        ]
-      },
-      {
-        "id": "stage_lock_no_game_over",
-        "name": "Stage Lock: No Game Over",
-        "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h before use.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "90" }
-        ]
-      },
-      {
-        "id": "keep_settings",
-        "name": "Keep Settings",
-        "description": "Prevents the game from resetting note skin, panel skin, and visual settings between sessions.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "90 90" }
-        ],
-        "children": [
-          {
-            "id": "keep_note_skin",
-            "name": "Keep Note Skin",
-            "description": "Persist the selected note skin across sessions.",
-            "type": "value",
-            "offset": "0x33D0EC4",
-            "options": ["Default", "2nd", "1st SE", "Simple", "Steel", "3S", "3S RB", "Circle", "Disc", "Star", "Turtle", "Gem"],
-            "default": 0
-          },
-          {
-            "id": "keep_panel_skin",
-            "name": "Keep Panel Skin",
-            "description": "Persist the selected panel skin across sessions.",
-            "type": "value",
-            "offset": "0x33D0F3C",
-            "options": ["FN", "TT Blue", "TT Green", "NT", "EV", "EC", "AEIC", "3S", "CV", "7th", "6th", "5th", "4th", "3rd - Silver", "3rd - Gold", "3rd - Green", "2nd - Silver", "2nd - Green", "2nd - Black", "1st SE", "1st"],
-            "default": 0
-          },
-          {
-            "id": "keep_visual",
-            "name": "Keep Visual",
-            "description": "Persist the selected visual setting across sessions.",
-            "type": "value",
-            "offset": "0x33D0EF0",
-            "options": ["Default", "Black Panel", "BGA Off"],
-            "default": 0
-          },
-          {
-            "id": "keep_random",
-            "name": "Keep Random",
-            "description": "Persist the random note arrangement setting.",
-            "type": "toggle",
-            "writes": [
-              { "offset": "0x00000000", "bytes": "90 90" }
-            ]
-          },
-          {
-            "id": "keep_auto",
-            "name": "Keep Auto",
-            "description": "Persist the auto play setting.",
-            "type": "toggle",
-            "writes": [
-              { "offset": "0x00000000", "bytes": "90 90" }
-            ]
-          },
-          {
-            "id": "keep_fade",
-            "name": "Keep Fade",
-            "description": "Persist the fade setting.",
-            "type": "toggle",
-            "writes": [
-              { "offset": "0x00000000", "bytes": "90 90" }
-            ]
-          },
-          {
-            "id": "keep_scroll",
-            "name": "Keep Scroll",
-            "description": "Persist the scroll speed setting.",
-            "type": "toggle",
-            "writes": [
-              { "offset": "0x00000000", "bytes": "90 90" }
-            ]
-          }
-        ]
-      },
-      {
-        "id": "mode_select_timer_freeze",
-        "name": "Mode Select Timer Freeze",
-        "description": "Freezes the mode selection countdown timer. Offset TBD — verify against 2EZ.h before use.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "00" }
-        ]
-      },
-      {
-        "id": "song_select_timer_freeze",
-        "name": "Song Select Timer Freeze",
-        "description": "Freezes the song selection countdown timer. Offset TBD — verify against 2EZ.h before use.",
-        "type": "toggle",
-        "writes": [
-          { "offset": "0x00000000", "bytes": "00" }
-        ]
+    "keyboard_fix": {
+      "name": "Fix Keyboard",
+      "description": "Re-enables keyboard input that the game disables on startup.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x15D51", "bytes": "00" }
+      ]
+    },
+    "timer_freeze": {
+      "name": "Timer Freeze",
+      "description": "Freezes the countdown timer in mode and song select.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x4B773", "bytes": "00" },
+        { "offset": "0x47CBA", "bytes": "00" }
+      ]
+    },
+    "stage_lock_nofail": {
+      "name": "Stage Lock: No Fail",
+      "description": "Freeze at stage 1 — cannot fail out.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x16D15", "bytes": "3B" },
+        { "offset": "0x16D20", "bytes": "00" }
+      ]
+    },
+    "stage_lock_no_game_over": {
+      "name": "Stage Lock: No Game Over",
+      "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h before use.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "90" }
+      ]
+    },
+    "keep_settings": {
+      "name": "Keep Settings",
+      "description": "Prevents the game from resetting note skin, panel skin, and visual settings between sessions.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "90 90" }
+      ],
+      "children": {
+        "keep_note_skin": {
+          "name": "Keep Note Skin",
+          "description": "Persist the selected note skin across sessions.",
+          "type": "value",
+          "offset": "0x33D0EC4",
+          "options": ["Default", "2nd", "1st SE", "Simple", "Steel", "3S", "3S RB", "Circle", "Disc", "Star", "Turtle", "Gem"],
+          "default": 0
+        },
+        "keep_panel_skin": {
+          "name": "Keep Panel Skin",
+          "description": "Persist the selected panel skin across sessions.",
+          "type": "value",
+          "offset": "0x33D0F3C",
+          "options": ["FN", "TT Blue", "TT Green", "NT", "EV", "EC", "AEIC", "3S", "CV", "7th", "6th", "5th", "4th", "3rd - Silver", "3rd - Gold", "3rd - Green", "2nd - Silver", "2nd - Green", "2nd - Black", "1st SE", "1st"],
+          "default": 0
+        },
+        "keep_visual": {
+          "name": "Keep Visual",
+          "description": "Persist the selected visual setting across sessions.",
+          "type": "value",
+          "offset": "0x33D0EF0",
+          "options": ["Default", "Black Panel", "BGA Off"],
+          "default": 0
+        },
+        "keep_random": {
+          "name": "Keep Random",
+          "description": "Persist the random note arrangement setting.",
+          "type": "toggle",
+          "writes": [
+            { "offset": "0x00000000", "bytes": "90 90" }
+          ]
+        },
+        "keep_auto": {
+          "name": "Keep Auto",
+          "description": "Persist the auto play setting.",
+          "type": "toggle",
+          "writes": [
+            { "offset": "0x00000000", "bytes": "90 90" }
+          ]
+        },
+        "keep_fade": {
+          "name": "Keep Fade",
+          "description": "Persist the fade setting.",
+          "type": "toggle",
+          "writes": [
+            { "offset": "0x00000000", "bytes": "90 90" }
+          ]
+        },
+        "keep_scroll": {
+          "name": "Keep Scroll",
+          "description": "Persist the scroll speed setting.",
+          "type": "toggle",
+          "writes": [
+            { "offset": "0x00000000", "bytes": "90 90" }
+          ]
+        }
       }
-    ]
+    },
+    "mode_select_timer_freeze": {
+      "name": "Mode Select Timer Freeze",
+      "description": "Freezes the mode selection countdown timer. Offset TBD — verify against 2EZ.h before use.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "00" }
+      ]
+    },
+    "song_select_timer_freeze": {
+      "name": "Song Select Timer Freeze",
+      "description": "Freezes the song selection countdown timer. Offset TBD — verify against 2EZ.h before use.",
+      "type": "toggle",
+      "writes": [
+        { "offset": "0x00000000", "bytes": "00" }
+      ]
+    }
   }
 }

@@ -58,6 +58,7 @@ private:
 
     void        parseGamePatches(const nlohmann::json& gameObj, std::vector<Patch>& out);
     Patch       parseSinglePatch(const nlohmann::json& j);
+    Patch       parseSinglePatch(const std::string& key, const nlohmann::json& j);
     void        applyPatches(const std::string& gameId, PatchApply timing);
     void        applyPatch(const Patch& p);
     void        applyTogglePatch(const Patch& p);

@@ -44,8 +44,12 @@ static std::vector<int16_t> parseScan(const std::string& hexStr) {
 }
 
 Patch PatchStore::parseSinglePatch(const json& j) {
+    return parseSinglePatch("", j);
+}
+
+Patch PatchStore::parseSinglePatch(const std::string& key, const json& j) {
     Patch p;
-    p.id          = j.value("id",          "");
+    p.id          = key.empty() ? j.value("id", "") : key;
     p.name        = j.value("name",        "");
     p.description = j.value("description", "");
 
@@ -88,10 +92,16 @@ Patch PatchStore::parseSinglePatch(const json& j) {
         p.replacement = j.value("replacement", "");
     }
 
-    // Children (recursive)
-    if (j.contains("children") && j["children"].is_array()) {
-        for (const auto& child : j["children"]) {
-            p.children.push_back(parseSinglePatch(child));
+    // Children — object keyed by id, or legacy array
+    if (j.contains("children")) {
+        if (j["children"].is_object()) {
+            for (auto it = j["children"].begin(); it != j["children"].end(); ++it) {
+                p.children.push_back(parseSinglePatch(it.key(), it.value()));
+            }
+        } else if (j["children"].is_array()) {
+            for (const auto& child : j["children"]) {
+                p.children.push_back(parseSinglePatch(child));
+            }
         }
     }
 
@@ -99,9 +109,11 @@ Patch PatchStore::parseSinglePatch(const json& j) {
 }
 
 void PatchStore::parseGamePatches(const json& gameObj, std::vector<Patch>& out) {
-    if (!gameObj.contains("patches") || !gameObj["patches"].is_array()) return;
-    for (const auto& patchJson : gameObj["patches"]) {
-        out.push_back(parseSinglePatch(patchJson));
+    if (!gameObj.is_object()) return;
+    for (auto it = gameObj.begin(); it != gameObj.end(); ++it) {
+        if (it.value().is_object()) {
+            out.push_back(parseSinglePatch(it.key(), it.value()));
+        }
     }
 }
 
@@ -120,22 +132,19 @@ void PatchStore::load(const std::string& dir) {
                     parseGamePatches(it.value(), m_patches[it.key()]);
                 }
                 // Distribute shared patches into each game's vector
-                if (j.contains("shared") && j["shared"].is_array()) {
-                    for (const auto& group : j["shared"]) {
-                        if (!group.contains("patches") || !group["patches"].is_array()) continue;
+                if (j.contains("shared") && j["shared"].is_object()) {
+                    for (auto it = j["shared"].begin(); it != j["shared"].end(); ++it) {
+                        if (!it.value().is_object()) continue;
+                        if (!it.value().contains("games") || !it.value()["games"].is_array()) continue;
 
-                        for (const auto& patchJson : group["patches"]) {
-                            if (!patchJson.contains("games") || !patchJson["games"].is_array()) continue;
-
-                            Patch sp = parseSinglePatch(patchJson);
-                            for (const auto& gid : patchJson["games"]) {
-                                auto& gamePatchList = m_patches[gid.get<std::string>()];
-                                bool exists = false;
-                                for (const auto& existing : gamePatchList)
-                                    if (existing.id == sp.id) { exists = true; break; }
-                                if (!exists)
-                                    gamePatchList.push_back(sp);
-                            }
+                        Patch sp = parseSinglePatch(it.key(), it.value());
+                        for (const auto& gid : it.value()["games"]) {
+                            auto& gamePatchList = m_patches[gid.get<std::string>()];
+                            bool exists = false;
+                            for (const auto& existing : gamePatchList)
+                                if (existing.id == sp.id) { exists = true; break; }
+                            if (!exists)
+                                gamePatchList.push_back(sp);
                         }
                     }
                 }
