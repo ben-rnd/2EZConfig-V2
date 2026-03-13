@@ -34,11 +34,11 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
 
-    auto* context          = ex->ContextRecord;
-    uint8_t* instructionPtr   = reinterpret_cast<uint8_t*>(context->Eip);
-    uint16_t port  = static_cast<uint16_t>(context->Edx & 0xFFFF);
+    auto* context = ex->ContextRecord;
+    uint8_t* instructionPtr = reinterpret_cast<uint8_t*>(context->Eip);
+    uint16_t port = static_cast<uint16_t>(context->Edx & 0xFFFF);
     uint8_t opcode = instructionPtr[0];
-    int instructionLength   = 1;
+    int instructionLength = 1;
 
     // 0x66 prefix = 16-bit operand (Dancer)
     if (opcode == 0x66) {
@@ -48,44 +48,28 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
 
     switch (opcode) {
 
-        case 0xEC: // IN AL, DX — DJ read (8-bit)
-            switch (port) {
-                //buttons
-                case 0x101: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[1].load(); break;
-                case 0x102: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[2].load(); break;
-                case 0x106: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[6].load(); break;
-                //analogs
-                case 0x103: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[3].load(); break;  // P1 turntable
-                case 0x104: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[4].load(); break;  // P2 turntable
-                default:
-                    Logger::warnOnce("[IO] Unexpected DJ port read: 0x" + toHexString(port));
-                    context->Eax = (context->Eax & 0xFFFFFF00) | 0xFF;
-                    break;
-            }
+        case 0xEC: { // IN AL, DX — DJ input (8-bit)
+            uint8_t value;
+            handleDJIn(port, value);
+            context->Eax = (context->Eax & 0xFFFFFF00) | value;
             context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;
+        }
 
-        case 0xED: // IN AX, DX — Dancer read (16-bit)
-            switch (port) {
-                case 0x300: context->Eax = (context->Eax & 0xFFFF0000) | s_dancerPortCache[0].load(); break;
-                case 0x302: context->Eax = (context->Eax & 0xFFFF0000) | s_dancerPortCache[1].load(); break;
-                case 0x304: context->Eax = (context->Eax & 0xFFFF0000) | s_dancerPortCache[2].load(); break;
-                case 0x306: context->Eax = (context->Eax & 0xFFFF0000) | s_dancerPortCache[3].load(); break;
-
-                default:
-                    Logger::warnOnce("[IO] Unexpected Dancer port read: 0x" + toHexString(port));
-                    context->Eax = (context->Eax & 0xFFFF0000) | 0xFFFF;
-                    break;
-            }
+        case 0xED: { // IN AX, DX — Dancer input (16-bit)
+            uint16_t value;
+            handleDancerIn(port, value);
+            context->Eax = (context->Eax & 0xFFFF0000) | value;
             context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;
+        }
 
-        case 0xEE: // OUT DX, AL — DJ write (8-bit)
+        case 0xEE: // OUT DX, AL — DJ lights (8-bit)
             handleDJOut(port, static_cast<uint8_t>(context->Eax & 0xFF));
             context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;
 
-        case 0xEF: // OUT DX, AX — Dancer write (16-bit)
+        case 0xEF: // OUT DX, AX — Dancer lights (16-bit)
             handleDancerOut(port, static_cast<uint8_t>(context->Eax & 0xFF));
             context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;

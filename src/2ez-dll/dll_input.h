@@ -1,10 +1,10 @@
 #pragma once
 #include <cstdint>
-#include <atomic>
 struct BindingStore;
 
-extern std::atomic<uint8_t>  s_djPortCache[7];     // index = port & 0x07 (covers 0x100-0x106)
-extern std::atomic<uint16_t> s_dancerPortCache[4]; // index = (port - 0x300) >> 1
+// Handle IN opcodes — returns the value to load into AL/AX.
+// Returns true if the port was recognized, false otherwise.
+bool handleDJIn(uint16_t port, uint8_t& out);
+bool handleDancerIn(uint16_t port, uint16_t& out);
 
 void initPortCache(const BindingStore& bs);
-void updatePortCache(const BindingStore& bs);
