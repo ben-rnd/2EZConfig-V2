@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <nlohmann/json.hpp>
 
-enum class PatchType  { Toggle, Value, Pattern };
+enum class PatchType  { Toggle, Value };
 enum class PatchApply { Normal, Early, SuperEarly };
 
 struct PatchWrite {
@@ -29,8 +29,6 @@ struct Patch {
     int                        value   = 0;
 
     std::vector<int16_t> scan;        // byte scan pattern: -1 = wildcard, 0-255 = exact byte
-    std::string          pattern;
-    std::string          replacement;
 
     std::vector<Patch>   children;
 };
@@ -63,7 +61,6 @@ private:
     void        applyPatch(const Patch& p);
     void        applyTogglePatch(const Patch& p);
     void        applyValuePatch(const Patch& p);
-    void        applyPatternPatch(const Patch& p);
     void        saveStateHelper(const std::vector<Patch>& patches, nlohmann::json& out) const;
     void        loadStateHelper(std::vector<Patch>& patches, const nlohmann::json& state);
 };

@@ -43,6 +43,30 @@ static std::vector<int16_t> parseScan(const std::string& hexStr) {
     return result;
 }
 
+// Returns pointer to pattern match, or module base if scan is empty, or nullptr if not found.
+static uint8_t* scanForPattern(const std::vector<int16_t>& scan) {
+    HMODULE base = GetModuleHandle(NULL);
+    if (scan.empty())
+        return reinterpret_cast<uint8_t*>(base);
+
+    const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
+    const SIZE_T   imageSize  = getImageSize(base);
+    const size_t   scanLen    = scan.size();
+
+    for (size_t i = 0; i + scanLen <= imageSize; ++i) {
+        bool match = true;
+        for (size_t k = 0; k < scanLen; ++k) {
+            if (scan[k] != -1 && imageStart[i + k] != static_cast<uint8_t>(scan[k])) {
+                match = false;
+                break;
+            }
+        }
+        if (match)
+            return const_cast<uint8_t*>(imageStart + i);
+    }
+    return nullptr;
+}
+
 Patch PatchStore::parseSinglePatch(const json& j) {
     return parseSinglePatch("", j);
 }
@@ -55,7 +79,6 @@ Patch PatchStore::parseSinglePatch(const std::string& key, const json& j) {
 
     std::string typeStr = j.value("type", "toggle");
     if (typeStr == "value")        p.type = PatchType::Value;
-    else if (typeStr == "pattern") p.type = PatchType::Pattern;
     else                           p.type = PatchType::Toggle;
 
     std::string applyStr = j.value("apply", "normal");
@@ -87,9 +110,6 @@ Patch PatchStore::parseSinglePatch(const std::string& key, const json& j) {
             }
         }
         p.value = j.value("default", 0);
-    } else if (p.type == PatchType::Pattern) {
-        p.pattern     = j.value("pattern",     "");
-        p.replacement = j.value("replacement", "");
     }
 
     // Children — object keyed by id, or legacy array
@@ -190,7 +210,7 @@ const std::vector<Patch>& PatchStore::patchesForGame(const std::string& gameId) 
 }
 
 std::vector<Patch>& PatchStore::patchesForGame(const std::string& gameId) {
-    return m_patches[gameId];  // creates empty vector if key absent
+    return m_patches[gameId];
 }
 
 std::vector<std::string> PatchStore::gameIds() const {
@@ -233,7 +253,6 @@ void PatchStore::saveStateHelper(const std::vector<Patch>& patches, json& out) c
 void PatchStore::loadState(const json& patchState) {
     for (auto it = m_patches.begin(); it != m_patches.end(); ++it) {
         const std::string& gameId = it->first;
-        // patchState is scoped by game_id: { "ez2ac_fn_ex": { "patch_id": {...} } }
         if (patchState.contains(gameId) && patchState[gameId].is_object()) {
             loadStateHelper(it->second, patchState[gameId]);
         }
@@ -244,7 +263,6 @@ json PatchStore::saveState() const {
     json out = json::object();
     for (auto it = m_patches.begin(); it != m_patches.end(); ++it) {
         const std::string& gameId = it->first;
-        // Save per game_id so same-named patches across games don't collide.
         json gameOut = json::object();
         saveStateHelper(it->second, gameOut);
         out[gameId] = gameOut;
@@ -264,32 +282,8 @@ json PatchStore::saveState(const std::string& gameId) const {
 }
 
 void PatchStore::applyTogglePatch(const Patch& p) {
-    HMODULE base = GetModuleHandle(NULL);
-
-    uint8_t* writeBase = reinterpret_cast<uint8_t*>(base);
-
-    if (!p.scan.empty()) {
-        const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
-        const SIZE_T   imageSize  = getImageSize(base);
-        const size_t   scanLen    = p.scan.size();
-        writeBase = nullptr;
-
-        for (size_t i = 0; i + scanLen <= imageSize; ++i) {
-            bool match = true;
-            for (size_t k = 0; k < scanLen; ++k) {
-                if (p.scan[k] != -1 && imageStart[i + k] != static_cast<uint8_t>(p.scan[k])) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) {
-                writeBase = const_cast<uint8_t*>(imageStart + i);
-                break;
-            }
-        }
-
-        if (!writeBase) return;  // pattern not found — silent no-op
-    }
+    uint8_t* writeBase = scanForPattern(p.scan);
+    if (!writeBase) return;
 
     for (const auto& pw : p.writes) {
         uint8_t* target = writeBase + pw.offset;
@@ -301,54 +295,14 @@ void PatchStore::applyTogglePatch(const Patch& p) {
 }
 
 void PatchStore::applyValuePatch(const Patch& p) {
-    LPVOID base   = GetModuleHandle(NULL);
-    LPVOID target = reinterpret_cast<uint8_t*>(base) + p.offset;
-    DWORD  old    = 0;
+    uint8_t* writeBase = scanForPattern(p.scan);
+    if (!writeBase) return;
+
+    uint8_t* target = writeBase + p.offset;
+    DWORD    old    = 0;
     VirtualProtect(target, 1, PAGE_EXECUTE_READWRITE, &old);
     *reinterpret_cast<uint8_t*>(target) = static_cast<uint8_t>(p.value);
     VirtualProtect(target, 1, old, &old);
-}
-
-void PatchStore::applyPatternPatch(const Patch& p) {
-    if (p.pattern.empty() || p.replacement.empty()) return;
-
-    HMODULE    base = GetModuleHandle(NULL);
-    const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
-    const uint8_t* imageEnd   = imageStart + getImageSize(base);
-    const size_t   patternLen = p.pattern.size();
-
-    MEMORY_BASIC_INFORMATION mbi = {};
-    const uint8_t* addr = imageStart;
-
-    while (addr < imageEnd) {
-        if (!VirtualQuery(addr, &mbi, sizeof(mbi))) break;
-
-        const uint8_t* regionStart = reinterpret_cast<const uint8_t*>(mbi.BaseAddress);
-        const uint8_t* regionEnd   = regionStart + mbi.RegionSize;
-        if (regionEnd > imageEnd) regionEnd = imageEnd;
-
-        if (mbi.State == MEM_COMMIT &&
-            !(mbi.Protect & PAGE_NOACCESS) &&
-            !(mbi.Protect & PAGE_GUARD))
-        {
-            for (const uint8_t* scan = regionStart;
-                 scan + patternLen <= regionEnd; ++scan)
-            {
-                if (memcmp(scan, p.pattern.c_str(), patternLen) == 0) {
-                    uint8_t* target   = const_cast<uint8_t*>(scan);
-                    size_t   writeLen = p.replacement.size() + 1;
-                    DWORD old = 0;
-                    VirtualProtect(target, writeLen, PAGE_EXECUTE_READWRITE, &old);
-                    memcpy(target, p.replacement.c_str(), writeLen);
-                    VirtualProtect(target, writeLen, old, &old);
-                    scan += patternLen - 1;  // skip past match; ++scan in loop adds 1 more
-                }
-            }
-        }
-
-        addr = regionStart + mbi.RegionSize;
-    }
-    // Not found — silent no-op
 }
 
 void PatchStore::applyPatch(const Patch& p) {
@@ -356,9 +310,7 @@ void PatchStore::applyPatch(const Patch& p) {
     switch (p.type) {
         case PatchType::Toggle:  applyTogglePatch(p);  break;
         case PatchType::Value:   applyValuePatch(p);   break;
-        case PatchType::Pattern: applyPatternPatch(p); break;
     }
-    // Recurse into children only when parent is enabled
     for (const auto& child : p.children) {
         if (child.enabled) {
             applyPatch(child);
@@ -368,11 +320,17 @@ void PatchStore::applyPatch(const Patch& p) {
 
 void PatchStore::applyVersionPatch(const std::string& replacement) {
     Logger::info("[PatchStore] Applying 2EZconfig Version patch");
-    Patch p;
-    p.type        = PatchType::Pattern;
-    p.pattern     = "Version %d.%02d";
-    p.replacement = replacement;
-    applyPatternPatch(p);
+    const std::string target = "Version %d.%02d";
+    std::vector<int16_t> scan(target.begin(), target.end());
+
+    uint8_t* match = scanForPattern(scan);
+    if (!match) return;
+
+    size_t writeLen = replacement.size() + 1;
+    DWORD old = 0;
+    VirtualProtect(match, writeLen, PAGE_EXECUTE_READWRITE, &old);
+    memcpy(match, replacement.c_str(), writeLen);
+    VirtualProtect(match, writeLen, old, &old);
 }
 
 void PatchStore::applySuperEarlyPatches(const std::string& gameId) {
