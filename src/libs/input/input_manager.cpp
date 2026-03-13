@@ -904,13 +904,16 @@ static DWORD WINAPI msgPumpThread(LPVOID param) {
         return 1;
     }
 
-    // Register for all HID input via page-only filter.
-    RAWINPUTDEVICE rid = {};
-    rid.usUsagePage = 0x01;
-    rid.usUsage     = 0x00;
-    rid.dwFlags     = RIDEV_PAGEONLY | RIDEV_INPUTSINK;
-    rid.hwndTarget  = hwnd;
-    RegisterRawInputDevices(&rid, 1, sizeof(RAWINPUTDEVICE));
+    // Register for joystick, gamepad, and multi-axis controller HID input.
+    // Avoid RIDEV_PAGEONLY (usage page 0x01, usage 0x00) because it captures
+    // keyboard and mouse raw input too, which breaks overlays like DDraw Compat
+    // that rely on receiving keyboard raw input (e.g. Shift+F11).
+    RAWINPUTDEVICE rids[] = {
+        { 0x01, 0x04, RIDEV_INPUTSINK, hwnd },  // Joystick
+        { 0x01, 0x05, RIDEV_INPUTSINK, hwnd },  // Gamepad
+        { 0x01, 0x08, RIDEV_INPUTSINK, hwnd },  // Multi-axis Controller
+    };
+    RegisterRawInputDevices(rids, 3, sizeof(RAWINPUTDEVICE));
 
     MSG msg;
     while (impl->running && GetMessageA(&msg, hwnd, 0, 0) > 0) {
