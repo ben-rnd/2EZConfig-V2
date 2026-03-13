@@ -56,8 +56,8 @@ void handleDancerOut(uint16_t port, uint8_t value) {
     //TODO
 }
 
-static DWORD WINAPI lightFlushThread(void* arg) {
-    const BindingStore& bindings = *static_cast<const BindingStore*>(arg);
+static DWORD WINAPI lightFlushThread(void* bindingsPtr) {
+    const BindingStore& bindings = *static_cast<const BindingStore*>(bindingsPtr);
 
     while (true) {
         Sleep(1);
@@ -67,11 +67,11 @@ static DWORD WINAPI lightFlushThread(void* arg) {
         s_lightDirty.store(false);
 
         for (int i = 0; i < BindingStore::LIGHT_COUNT; ++i) {
-            const LightBinding& lb = bindings.lights[i];
-            if (!lb.isSet()) {
+            const LightBinding& lightBinding = bindings.lights[i];
+            if (!lightBinding.isSet()) {
                 continue;
             }
-            bindings.mgr->setLight(lb.devicePath, lb.outputIdx, s_lightState[i]);
+            bindings.mgr->setLight(lightBinding.devicePath, lightBinding.outputIdx, s_lightState[i]);
         }
     }
     return 0;

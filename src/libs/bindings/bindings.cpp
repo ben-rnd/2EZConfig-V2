@@ -17,21 +17,21 @@ static std::string vkToName(int vk) {
                      vk == VK_NUMLOCK || vk == VK_RCONTROL || vk == VK_RMENU ||
                      vk == VK_DIVIDE || vk == VK_SNAPSHOT);
     LONG lParam = (scanCode << 16) | (extended ? (1 << 24) : 0);
-    char buf[64] = {};
-    int len = GetKeyNameTextA(lParam, buf, static_cast<int>(sizeof(buf)));
+    char keyNameBuffer[64] = {};
+    int len = GetKeyNameTextA(lParam, keyNameBuffer, static_cast<int>(sizeof(keyNameBuffer)));
     if (len > 0) {
-        return std::string(buf);
+        return std::string(keyNameBuffer);
     }
     return std::string("VK ") + std::to_string(vk);
 }
 
-static bool isHatDirectionActive(float hat_val, ButtonAnalogType dir) {
-    if (hat_val < 0.0f) {
+static bool isHatDirectionActive(float hatValue, ButtonAnalogType dir) {
+    if (hatValue < 0.0f) {
         return false;
     }
-    int dir_idx = static_cast<int>(dir) - static_cast<int>(ButtonAnalogType::HS_UP);
-    float target = dir_idx * HAT_SWITCH_INCREMENT;
-    float diff = hat_val - target;
+    int directionIndex = static_cast<int>(dir) - static_cast<int>(ButtonAnalogType::HS_UP);
+    float target = directionIndex * HAT_SWITCH_INCREMENT;
+    float diff = hatValue - target;
     if (diff > 0.5f) {
         diff -= 1.0f;
     }
@@ -61,29 +61,29 @@ nlohmann::json ButtonBinding::toJson() const {
 
 ButtonBinding ButtonBinding::fromJson(const nlohmann::json& j) {
     try {
-        ButtonBinding b;
+        ButtonBinding binding;
         if (!j.is_object()) {
-            return b;
+            return binding;
         }
 
         std::string type = j.value("type", "");
         if (type == "Keyboard") {
-            b.vkCode = j.value("vk_code", 0);
+            binding.vkCode = j.value("vk_code", 0);
         } else if (type == "HidButton") {
             if (!j.contains("device_path")) {
-                return b;
+                return binding;
             }
-            b.devicePath  = j.value("device_path", "");
-            b.deviceName  = j.value("device_name", "");
-            b.buttonIdx   = j.value("button_idx", -1);
+            binding.devicePath  = j.value("device_path", "");
+            binding.deviceName  = j.value("device_name", "");
+            binding.buttonIdx   = j.value("button_idx", -1);
         } else {
             // Unknown type — return empty binding silently
-            return b;
+            return binding;
         }
 
-        b.analogType = static_cast<ButtonAnalogType>(j.value("analog_type", 0));
+        binding.analogType = static_cast<ButtonAnalogType>(j.value("analog_type", 0));
 
-        return b;
+        return binding;
     } catch (...) {
         return ButtonBinding{};
     }
@@ -105,33 +105,33 @@ nlohmann::json AnalogBinding::toJson() const {
 
 AnalogBinding AnalogBinding::fromJson(const nlohmann::json& j) {
     try {
-        AnalogBinding a;
+        AnalogBinding analogBinding;
         if (!j.is_object()) {
-            return a;
+            return analogBinding;
         }
 
         // New format requires device_path. Old format used device_id key — skip.
         if (!j.contains("device_path")) {
-            return a;
+            return analogBinding;
         }
 
-        a.devicePath  = j.value("device_path", "");
-        a.deviceName  = j.value("device_name", "");
-        a.axisIdx     = j.value("axis_idx", -1);
-        a.reverse      = j.value("reverse", false);
+        analogBinding.devicePath  = j.value("device_path", "");
+        analogBinding.deviceName  = j.value("device_name", "");
+        analogBinding.axisIdx     = j.value("axis_idx", -1);
+        analogBinding.reverse      = j.value("reverse", false);
 
         if (j.contains("vtt") && j["vtt"].is_object()) {
             const auto& vtt = j["vtt"];
-            a.vttStep = vtt.value("step", 3);
+            analogBinding.vttStep = vtt.value("step", 3);
 
             if (vtt.contains("plus") && vtt["plus"].is_object()) {
-                a.vttPlus  = ButtonBinding::fromJson(vtt["plus"]);
+                analogBinding.vttPlus  = ButtonBinding::fromJson(vtt["plus"]);
             }
             if (vtt.contains("minus") && vtt["minus"].is_object()) {
-                a.vttMinus = ButtonBinding::fromJson(vtt["minus"]);
+                analogBinding.vttMinus = ButtonBinding::fromJson(vtt["minus"]);
             }
         }
-        return a;
+        return analogBinding;
     } catch (...) {
         return AnalogBinding{};
     }
@@ -146,65 +146,65 @@ nlohmann::json LightBinding::toJson() const {
 }
 
 LightBinding LightBinding::fromJson(const nlohmann::json& j) {
-    LightBinding b;
+    LightBinding lightBinding;
     if (!j.is_object()) {
-        return b;
+        return lightBinding;
     }
-    b.devicePath = j.value("device_path", "");
-    b.deviceName = j.value("device_name", "");
-    b.outputIdx  = j.value("output_idx", -1);
-    return b;
+    lightBinding.devicePath = j.value("device_path", "");
+    lightBinding.deviceName = j.value("device_name", "");
+    lightBinding.outputIdx  = j.value("output_idx", -1);
+    return lightBinding;
 }
 
 void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
     mgr = &inputMgr;
 
-    auto& gs = settings.globalSettings();
+    auto& globalSettings = settings.globalSettings();
 
-    if (gs.contains("io_button_bindings") && gs["io_button_bindings"].is_object()) {
-        const auto& bb = gs["io_button_bindings"];
+    if (globalSettings.contains("io_button_bindings") && globalSettings["io_button_bindings"].is_object()) {
+        const auto& buttonBindingsJson = globalSettings["io_button_bindings"];
         for (int i = 0; i < BUTTON_COUNT; ++i) {
-            if (!bb.contains(djButtonNames[i])) {
+            if (!buttonBindingsJson.contains(djButtonNames[i])) {
                 continue;
             }
-            const auto& val = bb[djButtonNames[i]];
-            if (val.is_object()) {
-                buttons[i] = ButtonBinding::fromJson(val);
+            const auto& bindingJson = buttonBindingsJson[djButtonNames[i]];
+            if (bindingJson.is_object()) {
+                buttons[i] = ButtonBinding::fromJson(bindingJson);
             }
         }
     }
-    if (gs.contains("dancer_button_bindings") && gs["dancer_button_bindings"].is_object()) {
-        const auto& bb = gs["dancer_button_bindings"];
+    if (globalSettings.contains("dancer_button_bindings") && globalSettings["dancer_button_bindings"].is_object()) {
+        const auto& buttonBindingsJson = globalSettings["dancer_button_bindings"];
         for (int i = 0; i < DANCER_COUNT; ++i) {
-            if (!bb.contains(dancerButtonNames[i])) {
+            if (!buttonBindingsJson.contains(dancerButtonNames[i])) {
                 continue;
             }
-            const auto& val = bb[dancerButtonNames[i]];
-            if (val.is_object()) {
-                dancerButtons[i] = ButtonBinding::fromJson(val);
+            const auto& bindingJson = buttonBindingsJson[dancerButtonNames[i]];
+            if (bindingJson.is_object()) {
+                dancerButtons[i] = ButtonBinding::fromJson(bindingJson);
             }
         }
     }
 
-    if (gs.contains("analog_bindings") && gs["analog_bindings"].is_object()) {
-        const auto& ab = gs["analog_bindings"];
+    if (globalSettings.contains("analog_bindings") && globalSettings["analog_bindings"].is_object()) {
+        const auto& analogBindingsJson = globalSettings["analog_bindings"];
         for (int p = 0; p < ANALOG_COUNT; ++p) {
             const char* key = analogPortKey(p);
-            if (ab.contains(key)) {
-                analogs[p] = AnalogBinding::fromJson(ab[key]);
+            if (analogBindingsJson.contains(key)) {
+                analogs[p] = AnalogBinding::fromJson(analogBindingsJson[key]);
             }
         }
     }
 
-    if (gs.contains("light_bindings") && gs["light_bindings"].is_object()) {
-        const auto& lb = gs["light_bindings"];
+    if (globalSettings.contains("light_bindings") && globalSettings["light_bindings"].is_object()) {
+        const auto& lightBindingsJson = globalSettings["light_bindings"];
         for (int i = 0; i < LIGHT_COUNT; ++i) {
-            if (!lb.contains(lightNames[i])) {
+            if (!lightBindingsJson.contains(lightNames[i])) {
                 continue;
             }
-            const auto& val = lb[lightNames[i]];
-            if (val.is_object()) {
-                lights[i] = LightBinding::fromJson(val);
+            const auto& bindingJson = lightBindingsJson[lightNames[i]];
+            if (bindingJson.is_object()) {
+                lights[i] = LightBinding::fromJson(bindingJson);
             }
         }
     }
@@ -263,8 +263,8 @@ bool BindingStore::isHeld(const ButtonBinding& b) const {
         return false;
     }
     if (b.analogType != ButtonAnalogType::NONE) {
-        float hat_val = mgr->getAxisValue(b.devicePath, b.buttonIdx);
-        return isHatDirectionActive(hat_val, b.analogType);
+        float hatValue = mgr->getAxisValue(b.devicePath, b.buttonIdx);
+        return isHatDirectionActive(hatValue, b.analogType);
     }
     return mgr->getButtonState(b.devicePath, b.buttonIdx);
 }
@@ -337,13 +337,13 @@ std::string BindingStore::getDisplayString(const LightBinding& l) const {
         if (dev.path != l.devicePath) {
             continue;
         }
-        int btnCount = static_cast<int>(dev.buttonOutputCapsNames.size());
-        if (l.outputIdx < btnCount) {
+        int buttonCount = static_cast<int>(dev.buttonOutputCapsNames.size());
+        if (l.outputIdx < buttonCount) {
             return dev.buttonOutputCapsNames[l.outputIdx] + " (" + dev.name + ")";
         }
-        int valIdx = l.outputIdx - btnCount;
-        if (valIdx < static_cast<int>(dev.valueOutputCapsNames.size())) {
-            return dev.valueOutputCapsNames[valIdx] + " (" + dev.name + ")";
+        int valueIndex = l.outputIdx - buttonCount;
+        if (valueIndex < static_cast<int>(dev.valueOutputCapsNames.size())) {
+            return dev.valueOutputCapsNames[valueIndex] + " (" + dev.name + ")";
         }
         return "Output " + std::to_string(l.outputIdx) + " (" + dev.name + ")";
     }
@@ -361,15 +361,15 @@ uint8_t BindingStore::getAnalogPosition(const AnalogBinding& a, uint8_t vttPos) 
     return static_cast<uint8_t>(static_cast<int>(raw * 255.0f) + static_cast<int>(vttPos) - 128);
 }
 
-bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& snap) const {
+bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& deviceSnapshots) const {
     if (!b.isSet()) {
         return false;
     }
     if (b.isKeyboard()) {
         return (GetAsyncKeyState(b.vkCode) & 0x8000) != 0;
     }
-    auto it = snap.find(b.devicePath);
-    if (it == snap.end()) {
+    auto it = deviceSnapshots.find(b.devicePath);
+    if (it == deviceSnapshots.end()) {
         return false;
     }
     const DeviceSnapshot& ds = it->second;
@@ -385,13 +385,13 @@ bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMa
     return ds.buttons[b.buttonIdx];
 }
 
-uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, const DeviceSnapshotMap& snap) const {
+uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, const DeviceSnapshotMap& deviceSnapshots) const {
     if (!a.isSet()) {
         return vttPos;
     }
     float raw = 0.5f;
-    auto it = snap.find(a.devicePath);
-    if (it != snap.end() && a.axisIdx >= 0 && a.axisIdx < static_cast<int>(it->second.values.size())) {
+    auto it = deviceSnapshots.find(a.devicePath);
+    if (it != deviceSnapshots.end() && a.axisIdx >= 0 && a.axisIdx < static_cast<int>(it->second.values.size())) {
         raw = it->second.values[a.axisIdx];
     }
     if (a.reverse) {

@@ -63,65 +63,65 @@ Patch PatchStore::parseSinglePatch(const json& j) {
 }
 
 Patch PatchStore::parseSinglePatch(const std::string& key, const json& j) {
-    Patch p;
-    p.id          = key.empty() ? j.value("id", "") : key;
-    p.name        = j.value("name",        "");
-    p.description = j.value("description", "");
+    Patch patch;
+    patch.id          = key.empty() ? j.value("id", "") : key;
+    patch.name        = j.value("name",        "");
+    patch.description = j.value("description", "");
 
     std::string typeStr = j.value("type", "toggle");
     if (typeStr == "value") {
-        p.type = PatchType::Value;
+        patch.type = PatchType::Value;
     }
-    else                           p.type = PatchType::Toggle;
+    else                           patch.type = PatchType::Toggle;
 
     std::string applyStr = j.value("apply", "normal");
     if (applyStr == "super_early") {
-        p.apply = PatchApply::SuperEarly;
+        patch.apply = PatchApply::SuperEarly;
     }
-    else if (applyStr == "early")     p.apply = PatchApply::Early;
-    else                              p.apply = PatchApply::Normal;
+    else if (applyStr == "early")     patch.apply = PatchApply::Early;
+    else                              patch.apply = PatchApply::Normal;
 
-    p.enabled = false;
+    patch.enabled = false;
 
     if (j.contains("scan")) {
-        p.scan = parseScan(j.value("scan", ""));
+        patch.scan = parseScan(j.value("scan", ""));
     }
 
-    if (p.type == PatchType::Toggle) {
+    if (patch.type == PatchType::Toggle) {
         if (j.contains("writes") && j["writes"].is_array()) {
-            for (const auto& w : j["writes"]) {
-                PatchWrite pw;
-                pw.offset = parseHexOffset(w.value("offset", "0x0"));
-                pw.bytes  = parseBytes(w.value("bytes", ""));
-                if (!pw.bytes.empty()) {
-                    p.writes.push_back(pw);
+            for (const auto& writeEntry : j["writes"]) {
+                PatchWrite patchWrite;
+                patchWrite.offset = parseHexOffset(writeEntry.value("offset", "0x0"));
+                patchWrite.bytes  = parseBytes(writeEntry.value("bytes", ""));
+                if (!patchWrite.bytes.empty()) {
+                    patch.writes.push_back(patchWrite);
                 }
             }
         }
-    } else if (p.type == PatchType::Value) {
-        p.offset = parseHexOffset(j.value("offset", "0x0"));
+    } else if (patch.type == PatchType::Value) {
+        patch.offset = parseHexOffset(j.value("offset", "0x0"));
         if (j.contains("options") && j["options"].is_array()) {
             for (const auto& opt : j["options"]) {
-                p.options.push_back(opt.get<std::string>());
+                patch.options.push_back(opt.get<std::string>());
             }
         }
-        p.value = j.value("default", 0);
+        patch.value = j.value("default", 0);
     }
 
     // Children — object keyed by id, or legacy array
     if (j.contains("children")) {
         if (j["children"].is_object()) {
             for (auto it = j["children"].begin(); it != j["children"].end(); ++it) {
-                p.children.push_back(parseSinglePatch(it.key(), it.value()));
+                patch.children.push_back(parseSinglePatch(it.key(), it.value()));
             }
         } else if (j["children"].is_array()) {
             for (const auto& child : j["children"]) {
-                p.children.push_back(parseSinglePatch(child));
+                patch.children.push_back(parseSinglePatch(child));
             }
         }
     }
 
-    return p;
+    return patch;
 }
 
 void PatchStore::parseGamePatches(const json& gameObj, std::vector<Patch>& out) {
@@ -143,20 +143,20 @@ void PatchStore::load(const std::string& dir) {
         Logger::warn("[PatchStore] patches.json not found at " + bundledPath);
     }
     if (std::filesystem::exists(bundledPath)) {
-        std::ifstream f(bundledPath);
-        if (f.is_open()) {
-            json j;
+        std::ifstream file(bundledPath);
+        if (file.is_open()) {
+            json patchesJson;
             try {
-                f >> j;
-                for (auto it = j.begin(); it != j.end(); ++it) {
+                file >> patchesJson;
+                for (auto it = patchesJson.begin(); it != patchesJson.end(); ++it) {
                     if (it.key() == "ver" || it.key() == "shared") {
                         continue;
                     }
                     parseGamePatches(it.value(), m_patches[it.key()]);
                 }
                 // Distribute shared patches into each game's vector
-                if (j.contains("shared") && j["shared"].is_object()) {
-                    for (auto it = j["shared"].begin(); it != j["shared"].end(); ++it) {
+                if (patchesJson.contains("shared") && patchesJson["shared"].is_object()) {
+                    for (auto it = patchesJson["shared"].begin(); it != patchesJson["shared"].end(); ++it) {
                         if (!it.value().is_object()) {
                             continue;
                         }
@@ -164,18 +164,18 @@ void PatchStore::load(const std::string& dir) {
                             continue;
                         }
 
-                        Patch sp = parseSinglePatch(it.key(), it.value());
-                        for (const auto& gid : it.value()["games"]) {
-                            auto& gamePatchList = m_patches[gid.get<std::string>()];
+                        Patch sharedPatch = parseSinglePatch(it.key(), it.value());
+                        for (const auto& gameId : it.value()["games"]) {
+                            auto& gamePatchList = m_patches[gameId.get<std::string>()];
                             bool exists = false;
                             for (const auto& existing : gamePatchList) {
-                                if (existing.id == sp.id) {
+                                if (existing.id == sharedPatch.id) {
                                 exists = true;
                                 break;
                             }
                             }
                             if (!exists) {
-                                gamePatchList.push_back(sp);
+                                gamePatchList.push_back(sharedPatch);
                             }
                         }
                     }
@@ -190,28 +190,28 @@ void PatchStore::load(const std::string& dir) {
     std::string userPath = dir + "/user-patches.json";
     if (std::filesystem::exists(userPath)) {
         Logger::info("[PatchStore] Loading user-patches.json");
-        std::ifstream f(userPath);
-        if (f.is_open()) {
-            json j;
+        std::ifstream file(userPath);
+        if (file.is_open()) {
+            json patchesJson;
             try {
-                f >> j;
-                for (auto jit = j.begin(); jit != j.end(); ++jit) {
+                file >> patchesJson;
+                for (auto jit = patchesJson.begin(); jit != patchesJson.end(); ++jit) {
                     const std::string& gameId = jit.key();
                     std::vector<Patch> userPatches;
                     parseGamePatches(jit.value(), userPatches);
-                    auto& bundled = m_patches[gameId];
-                    for (auto& up : userPatches) {
+                    auto& existingPatches = m_patches[gameId];
+                    for (auto& userPatch : userPatches) {
                         Patch* found = nullptr;
-                        for (int fi = 0; fi < (int)bundled.size(); ++fi) {
-                            if (bundled[fi].id == up.id) {
-                            found = &bundled[fi];
+                        for (int findIdx = 0; findIdx < (int)existingPatches.size(); ++findIdx) {
+                            if (existingPatches[findIdx].id == userPatch.id) {
+                            found = &existingPatches[findIdx];
                             break;
                         }
                         }
                         if (found) {
-                            *found = up;
+                            *found = userPatch;
                         } else {
-                            bundled.push_back(up);
+                            existingPatches.push_back(userPatch);
                         }
                     }
                 }
@@ -221,8 +221,8 @@ void PatchStore::load(const std::string& dir) {
         }
     }
 
-    for (const auto& kv : m_patches) {
-        Logger::info("[PatchStore] Loaded " + std::to_string(kv.second.size()) + " patches for " + kv.first);
+    for (const auto& gameEntry : m_patches) {
+        Logger::info("[PatchStore] Loaded " + std::to_string(gameEntry.second.size()) + " patches for " + gameEntry.first);
     }
 }
 
@@ -242,36 +242,36 @@ std::vector<Patch>& PatchStore::patchesForGame(const std::string& gameId) {
 std::vector<std::string> PatchStore::gameIds() const {
     std::vector<std::string> ids;
     ids.reserve(m_patches.size());
-    for (const auto& kv : m_patches) {
-        ids.push_back(kv.first);
+    for (const auto& gameEntry : m_patches) {
+        ids.push_back(gameEntry.first);
     }
     return ids;
 }
 
 void PatchStore::loadStateHelper(std::vector<Patch>& patches, const json& state) {
-    for (auto& p : patches) {
-        if (state.contains(p.id)) {
-            const auto& s = state[p.id];
-            p.enabled = s.value("enabled", false);
-            if (p.type == PatchType::Value) {
-                p.value = s.value("value", p.value);
+    for (auto& patch : patches) {
+        if (state.contains(patch.id)) {
+            const auto& savedState = state[patch.id];
+            patch.enabled = savedState.value("enabled", false);
+            if (patch.type == PatchType::Value) {
+                patch.value = savedState.value("value", patch.value);
             }
         }
-        if (!p.children.empty()) {
-            loadStateHelper(p.children, state);
+        if (!patch.children.empty()) {
+            loadStateHelper(patch.children, state);
         }
     }
 }
 
 void PatchStore::saveStateHelper(const std::vector<Patch>& patches, json& out) const {
-    for (const auto& p : patches) {
-        if (p.type == PatchType::Value) {
-            out[p.id] = { {"enabled", p.enabled}, {"value", p.value} };
+    for (const auto& patch : patches) {
+        if (patch.type == PatchType::Value) {
+            out[patch.id] = { {"enabled", patch.enabled}, {"value", patch.value} };
         } else {
-            out[p.id] = { {"enabled", p.enabled} };
+            out[patch.id] = { {"enabled", patch.enabled} };
         }
-        if (!p.children.empty()) {
-            saveStateHelper(p.children, out);
+        if (!patch.children.empty()) {
+            saveStateHelper(patch.children, out);
         }
     }
 }
@@ -322,10 +322,10 @@ void PatchStore::applyTogglePatch(const Patch& p) {
     for (auto* writeBase : matches) {
         for (const auto& pw : p.writes) {
             uint8_t* target = writeBase + pw.offset;
-            DWORD    old    = 0;
-            VirtualProtect(target, pw.bytes.size(), PAGE_EXECUTE_READWRITE, &old);
+            DWORD    previousProtection = 0;
+            VirtualProtect(target, pw.bytes.size(), PAGE_EXECUTE_READWRITE, &previousProtection);
             memcpy(target, pw.bytes.data(), pw.bytes.size());
-            VirtualProtect(target, pw.bytes.size(), old, &old);
+            VirtualProtect(target, pw.bytes.size(), previousProtection, &previousProtection);
         }
     }
 }

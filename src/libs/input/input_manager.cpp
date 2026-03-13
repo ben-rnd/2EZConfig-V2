@@ -144,8 +144,8 @@ struct InputManagerImpl {
     HANDLE flushThread = nullptr;
 
     // Optional callback fired after each WM_INPUT update (all locks released).
-    void (*inputCb)(void*) = nullptr;
-    void* inputCbUd = nullptr;
+    void (*inputCallback)(void*) = nullptr;
+    void* inputCallbackUserData = nullptr;
 
     InputManagerImpl() {
         InitializeCriticalSection(&devicesLock);
@@ -167,18 +167,18 @@ static void deviceWriteOutput(Device& dev) {
         return;
     }
 
-    CHAR* report = new CHAR[reportSize]();  // zero-initialized
+    CHAR* outputReport = new CHAR[reportSize]();  // zero-initialized
 
     int stateOffset = 0;
-    for (auto& bc : dev.hid->buttonOutputCapsList) {
-        int btnCount = static_cast<int>(bc.Range.UsageMax - bc.Range.UsageMin + 1);
+    for (auto& buttonCaps : dev.hid->buttonOutputCapsList) {
+        int btnCount = static_cast<int>(buttonCaps.Range.UsageMax - buttonCaps.Range.UsageMin + 1);
         if (btnCount <= 0) {
             continue;
         }
 
         std::vector<USAGE> onUsages, offUsages;
         for (int b = 0; b < btnCount; b++) {
-            USAGE usg = bc.Range.UsageMin + static_cast<USAGE>(b);
+            USAGE usg = buttonCaps.Range.UsageMin + static_cast<USAGE>(b);
             if (stateOffset + b < static_cast<int>(dev.hid->buttonOutputStates.size()) &&
                 dev.hid->buttonOutputStates[stateOffset + b]) {
                 onUsages.push_back(usg);
@@ -189,34 +189,34 @@ static void deviceWriteOutput(Device& dev) {
 
         if (!onUsages.empty()) {
             ULONG usageCount = static_cast<ULONG>(onUsages.size());
-            NTSTATUS st = HidP_SetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+            NTSTATUS st = HidP_SetButtons(HidP_Output, buttonCaps.UsagePage, buttonCaps.LinkCollection,
                                            onUsages.data(), &usageCount,
-                                           dev.hid->preparsed, report, reportSize);
+                                           dev.hid->preparsed, outputReport, reportSize);
             if (st == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
                 // Flush intermediate report via HidD_SetOutputReport, start fresh.
-                HidD_SetOutputReport(dev.hid->hidHandle, report, reportSize);
-                delete[] report;
-                report = new CHAR[reportSize]();
+                HidD_SetOutputReport(dev.hid->hidHandle, outputReport, reportSize);
+                delete[] outputReport;
+                outputReport = new CHAR[reportSize]();
                 usageCount = static_cast<ULONG>(onUsages.size());
-                HidP_SetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+                HidP_SetButtons(HidP_Output, buttonCaps.UsagePage, buttonCaps.LinkCollection,
                                 onUsages.data(), &usageCount,
-                                dev.hid->preparsed, report, reportSize);
+                                dev.hid->preparsed, outputReport, reportSize);
             }
         }
 
         if (!offUsages.empty()) {
             ULONG usageCount = static_cast<ULONG>(offUsages.size());
-            NTSTATUS st = HidP_UnsetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+            NTSTATUS st = HidP_UnsetButtons(HidP_Output, buttonCaps.UsagePage, buttonCaps.LinkCollection,
                                              offUsages.data(), &usageCount,
-                                             dev.hid->preparsed, report, reportSize);
+                                             dev.hid->preparsed, outputReport, reportSize);
             if (st == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
-                HidD_SetOutputReport(dev.hid->hidHandle, report, reportSize);
-                delete[] report;
-                report = new CHAR[reportSize]();
+                HidD_SetOutputReport(dev.hid->hidHandle, outputReport, reportSize);
+                delete[] outputReport;
+                outputReport = new CHAR[reportSize]();
                 usageCount = static_cast<ULONG>(offUsages.size());
-                HidP_UnsetButtons(HidP_Output, bc.UsagePage, bc.LinkCollection,
+                HidP_UnsetButtons(HidP_Output, buttonCaps.UsagePage, buttonCaps.LinkCollection,
                                   offUsages.data(), &usageCount,
-                                  dev.hid->preparsed, report, reportSize);
+                                  dev.hid->preparsed, outputReport, reportSize);
             }
         }
 
@@ -224,37 +224,37 @@ static void deviceWriteOutput(Device& dev) {
     }
 
     for (size_t vi = 0; vi < dev.hid->valueOutputCapsList.size(); vi++) {
-        auto& vc = dev.hid->valueOutputCapsList[vi];
+        auto& valueCaps = dev.hid->valueOutputCapsList[vi];
         if (vi >= dev.hid->valueOutputStates.size() || vi >= dev.hid->valueOutputUsages.size()) {
             break;
         }
         float norm = dev.hid->valueOutputStates[vi];
-        LONG lmin = vc.LogicalMin, lmax = vc.LogicalMax;
-        LONG lval = (lmax > lmin)
-            ? lmin + static_cast<LONG>(lroundf(static_cast<float>(lmax - lmin) * norm)) : lmin;
-        if (lval > lmax) {
-            lval = lmax;
+        LONG logicalMin = valueCaps.LogicalMin, logicalMax = valueCaps.LogicalMax;
+        LONG logicalValue = (logicalMax > logicalMin)
+            ? logicalMin + static_cast<LONG>(lroundf(static_cast<float>(logicalMax - logicalMin) * norm)) : logicalMin;
+        if (logicalValue > logicalMax) {
+            logicalValue = logicalMax;
         }
-        if (lval < lmin) {
-            lval = lmin;
+        if (logicalValue < logicalMin) {
+            logicalValue = logicalMin;
         }
-        ULONG uval = static_cast<ULONG>(lval);
-        NTSTATUS st = HidP_SetUsageValue(HidP_Output, vc.UsagePage, vc.LinkCollection,
-                                          dev.hid->valueOutputUsages[vi], uval,
-                                          dev.hid->preparsed, report, reportSize);
+        ULONG usageValue = static_cast<ULONG>(logicalValue);
+        NTSTATUS st = HidP_SetUsageValue(HidP_Output, valueCaps.UsagePage, valueCaps.LinkCollection,
+                                          dev.hid->valueOutputUsages[vi], usageValue,
+                                          dev.hid->preparsed, outputReport, reportSize);
         if (st == HIDP_STATUS_INCOMPATIBLE_REPORT_ID) {
-            HidD_SetOutputReport(dev.hid->hidHandle, report, reportSize);
-            delete[] report;
-            report = new CHAR[reportSize]();
-            HidP_SetUsageValue(HidP_Output, vc.UsagePage, vc.LinkCollection,
-                               dev.hid->valueOutputUsages[vi], uval,
-                               dev.hid->preparsed, report, reportSize);
+            HidD_SetOutputReport(dev.hid->hidHandle, outputReport, reportSize);
+            delete[] outputReport;
+            outputReport = new CHAR[reportSize]();
+            HidP_SetUsageValue(HidP_Output, valueCaps.UsagePage, valueCaps.LinkCollection,
+                               dev.hid->valueOutputUsages[vi], usageValue,
+                               dev.hid->preparsed, outputReport, reportSize);
         }
     }
 
-    DWORD written = 0;
-    WriteFile(dev.hid->hidHandle, report, reportSize, &written, nullptr);
-    delete[] report;
+    DWORD bytesWritten = 0;
+    WriteFile(dev.hid->hidHandle, outputReport, reportSize, &bytesWritten, nullptr);
+    delete[] outputReport;
 }
 
 static void devicesReload(InputManagerImpl* impl) {
@@ -350,20 +350,20 @@ static void devicesReload(InputManagerImpl* impl) {
         {
             bool gotName = false;
             if (dev.hid->hidHandle != INVALID_HANDLE_VALUE) {
-                wchar_t wbuf[256] = {};
-                if (HidD_GetProductString(dev.hid->hidHandle, wbuf, sizeof(wbuf))) {
-                    std::string s = wideToUtf8(wbuf);
-                    if (!s.empty()) {
-                        dev.name = s;
+                wchar_t wideNameBuffer[256] = {};
+                if (HidD_GetProductString(dev.hid->hidHandle, wideNameBuffer, sizeof(wideNameBuffer))) {
+                    std::string utf8Name = wideToUtf8(wideNameBuffer);
+                    if (!utf8Name.empty()) {
+                        dev.name = utf8Name;
                         gotName = true;
                     }
                 }
                 if (!gotName) {
-                    wchar_t mbuf[256] = {};
-                    if (HidD_GetManufacturerString(dev.hid->hidHandle, mbuf, sizeof(mbuf))) {
-                        std::string s = wideToUtf8(mbuf);
-                        if (!s.empty()) {
-                            dev.name = s;
+                    wchar_t wideManufacturerBuffer[256] = {};
+                    if (HidD_GetManufacturerString(dev.hid->hidHandle, wideManufacturerBuffer, sizeof(wideManufacturerBuffer))) {
+                        std::string utf8Name = wideToUtf8(wideManufacturerBuffer);
+                        if (!utf8Name.empty()) {
+                            dev.name = utf8Name;
                             gotName = true;
                         }
                     }
@@ -375,26 +375,26 @@ static void devicesReload(InputManagerImpl* impl) {
         }
 
         {
-            USHORT btnCapCount = caps.NumberInputButtonCaps;
-            std::vector<HIDP_BUTTON_CAPS> btnCapData(btnCapCount);
-            if (btnCapCount > 0 &&
-                HidP_GetButtonCaps(HidP_Input, btnCapData.data(), &btnCapCount, preparsed) != HIDP_STATUS_SUCCESS)
+            USHORT buttonCapsCount = caps.NumberInputButtonCaps;
+            std::vector<HIDP_BUTTON_CAPS> buttonCapsData(buttonCapsCount);
+            if (buttonCapsCount > 0 &&
+                HidP_GetButtonCaps(HidP_Input, buttonCapsData.data(), &buttonCapsCount, preparsed) != HIDP_STATUS_SUCCESS)
             {
                 dev.destroy();
                 continue;
             }
 
-            for (int capNum = 0; capNum < static_cast<int>(btnCapCount); capNum++) {
-                auto& bc = btnCapData[capNum];
+            for (int capsIndex = 0; capsIndex < static_cast<int>(buttonCapsCount); capsIndex++) {
+                auto& buttonCaps = buttonCapsData[capsIndex];
 
                 // IsRange normalization — fill Range from NotRange
                 // so all downstream code can assume Range.* is valid.
-                if (!bc.IsRange) {
-                    bc.Range.UsageMin = bc.NotRange.Usage;
-                    bc.Range.UsageMax = bc.NotRange.Usage;
+                if (!buttonCaps.IsRange) {
+                    buttonCaps.Range.UsageMin = buttonCaps.NotRange.Usage;
+                    buttonCaps.Range.UsageMax = buttonCaps.NotRange.Usage;
                 }
 
-                int btnCount = static_cast<int>(bc.Range.UsageMax - bc.Range.UsageMin + 1);
+                int btnCount = static_cast<int>(buttonCaps.Range.UsageMax - buttonCaps.Range.UsageMin + 1);
                 if (btnCount <= 0 || btnCount >= 0xffff) {
                     continue;
                 }
@@ -403,11 +403,11 @@ static void devicesReload(InputManagerImpl* impl) {
                 // No DPad promotion. If hat appears as button cap, add as normal buttons.
 
                 // Skip vendor-specific usage pages.
-                if ((bc.UsagePage >> 8) == 0xFF) {
+                if ((buttonCaps.UsagePage >> 8) == 0xFF) {
                     continue;
                 }
 
-                dev.hid->buttonCapsList.push_back(bc);
+                dev.hid->buttonCapsList.push_back(buttonCaps);
                 for (int b = 0; b < btnCount; b++) {
                     int buttonNumber = static_cast<int>(dev.hid->buttonStates.size()) + 1;
                     dev.buttonCapsNames.push_back("Button " + std::to_string(buttonNumber));
@@ -418,145 +418,145 @@ static void devicesReload(InputManagerImpl* impl) {
 
         // Value caps (input). Hat switches included as float valueStates.
         {
-            USHORT valCapCount = caps.NumberInputValueCaps;
-            std::vector<HIDP_VALUE_CAPS> valCapData(valCapCount);
-            if (valCapCount > 0 &&
-                HidP_GetValueCaps(HidP_Input, valCapData.data(), &valCapCount, preparsed) != HIDP_STATUS_SUCCESS)
+            USHORT valueCapsCount = caps.NumberInputValueCaps;
+            std::vector<HIDP_VALUE_CAPS> valueCapsData(valueCapsCount);
+            if (valueCapsCount > 0 &&
+                HidP_GetValueCaps(HidP_Input, valueCapsData.data(), &valueCapsCount, preparsed) != HIDP_STATUS_SUCCESS)
             {
                 dev.destroy();
                 continue;
             }
 
-            for (int capNum = 0; capNum < static_cast<int>(valCapCount); capNum++) {
-                auto& vc = valCapData[capNum];
+            for (int capsIndex = 0; capsIndex < static_cast<int>(valueCapsCount); capsIndex++) {
+                auto& valueCaps = valueCapsData[capsIndex];
 
-                if (!vc.IsRange) {
-                    vc.Range.UsageMin = vc.NotRange.Usage;
-                    vc.Range.UsageMax = vc.NotRange.Usage;
+                if (!valueCaps.IsRange) {
+                    valueCaps.Range.UsageMin = valueCaps.NotRange.Usage;
+                    valueCaps.Range.UsageMax = valueCaps.NotRange.Usage;
                 }
 
-                USAGE usage = vc.Range.UsageMin;
+                USAGE usage = valueCaps.Range.UsageMin;
 
                 // Sign-extension fix for LogicalMin/Max (sign-extension location 1 of 3).
                 // Applied unconditionally to all value caps including hats.
-                if (vc.BitSize > 0 && vc.BitSize <= static_cast<USHORT>(sizeof(vc.LogicalMin) * 8)) {
-                    auto shiftSize = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
-                    auto mask = (static_cast<uint64_t>(1) << vc.BitSize) - 1;
-                    vc.LogicalMin &= static_cast<LONG>(mask);
-                    vc.LogicalMin <<= shiftSize;
-                    vc.LogicalMin >>= shiftSize;
-                    vc.LogicalMax &= static_cast<LONG>(mask);
+                if (valueCaps.BitSize > 0 && valueCaps.BitSize <= static_cast<USHORT>(sizeof(valueCaps.LogicalMin) * 8)) {
+                    auto shiftSize = sizeof(valueCaps.LogicalMin) * 8 - valueCaps.BitSize + 1;
+                    auto mask = (static_cast<uint64_t>(1) << valueCaps.BitSize) - 1;
+                    valueCaps.LogicalMin &= static_cast<LONG>(mask);
+                    valueCaps.LogicalMin <<= shiftSize;
+                    valueCaps.LogicalMin >>= shiftSize;
+                    valueCaps.LogicalMax &= static_cast<LONG>(mask);
                 }
 
-                if ((vc.UsagePage >> 8) == 0xFF) {
+                if ((valueCaps.UsagePage >> 8) == 0xFF) {
                     continue;
                 }
 
                 // All value caps (including hat switch 0x39) go into valueCapsList.
                 // Hat switches store float in valueStates: -1.0f = neutral.
-                dev.hid->valueCapsList.push_back(vc);
-                dev.valueCapsNames.push_back(axisLabel(vc.UsagePage, usage));
+                dev.hid->valueCapsList.push_back(valueCaps);
+                dev.valueCapsNames.push_back(axisLabel(valueCaps.UsagePage, usage));
 
                 // Hat starts at -1.0f (neutral); regular axes start at 0.5f (center).
-                bool isHat = (vc.UsagePage == 0x01 && usage == 0x39);
+                bool isHat = (valueCaps.UsagePage == 0x01 && usage == 0x39);
                 dev.hid->valueStates.push_back(isHat ? -1.0f : 0.5f);
                 dev.hid->valueStatesRaw.push_back(0);
             }
         }
 
         {
-            USHORT outBtnCount = caps.NumberOutputButtonCaps;
-            std::vector<HIDP_BUTTON_CAPS> outBtnData(outBtnCount);
-            if (outBtnCount > 0 &&
-                HidP_GetButtonCaps(HidP_Output, outBtnData.data(), &outBtnCount, preparsed) == HIDP_STATUS_SUCCESS)
+            USHORT outputButtonCapsCount = caps.NumberOutputButtonCaps;
+            std::vector<HIDP_BUTTON_CAPS> outputButtonCapsData(outputButtonCapsCount);
+            if (outputButtonCapsCount > 0 &&
+                HidP_GetButtonCaps(HidP_Output, outputButtonCapsData.data(), &outputButtonCapsCount, preparsed) == HIDP_STATUS_SUCCESS)
             {
-                int outBtnNum = 1;
-                for (int capNum = 0; capNum < static_cast<int>(outBtnCount); capNum++) {
-                    auto& bc = outBtnData[capNum];
-                    if (!bc.IsRange) {
-                        bc.Range.UsageMin = bc.NotRange.Usage;
-                        bc.Range.UsageMax = bc.NotRange.Usage;
+                int outputButtonNumber = 1;
+                for (int capsIndex = 0; capsIndex < static_cast<int>(outputButtonCapsCount); capsIndex++) {
+                    auto& buttonCaps = outputButtonCapsData[capsIndex];
+                    if (!buttonCaps.IsRange) {
+                        buttonCaps.Range.UsageMin = buttonCaps.NotRange.Usage;
+                        buttonCaps.Range.UsageMax = buttonCaps.NotRange.Usage;
                     }
-                    int btnCount = static_cast<int>(bc.Range.UsageMax - bc.Range.UsageMin + 1);
+                    int btnCount = static_cast<int>(buttonCaps.Range.UsageMax - buttonCaps.Range.UsageMin + 1);
                     if (btnCount <= 0 || btnCount >= 0xffff) {
                         continue;
                     }
-                    if ((bc.UsagePage >> 8) == 0xFF) {
+                    if ((buttonCaps.UsagePage >> 8) == 0xFF) {
                         continue;
                     }
-                    dev.hid->buttonOutputCapsList.push_back(bc);
+                    dev.hid->buttonOutputCapsList.push_back(buttonCaps);
                     for (int b = 0; b < btnCount; b++) {
-                        USAGE usg = bc.Range.UsageMin + static_cast<USAGE>(b);
+                        USAGE usg = buttonCaps.Range.UsageMin + static_cast<USAGE>(b);
                         // Try device-provided string descriptor first.
-                        ULONG strIdx = 0;
-                        if (bc.IsStringRange && bc.Range.StringMin != 0) {
-                            strIdx = static_cast<ULONG>(bc.Range.StringMin) + static_cast<ULONG>(b);
+                        ULONG stringIndex = 0;
+                        if (buttonCaps.IsStringRange && buttonCaps.Range.StringMin != 0) {
+                            stringIndex = static_cast<ULONG>(buttonCaps.Range.StringMin) + static_cast<ULONG>(b);
                         }
-                        else if (!bc.IsRange && bc.NotRange.StringIndex != 0)
-                            strIdx = bc.NotRange.StringIndex;
-                        wchar_t wbuf[256] = {};
-                        if (strIdx > 0 && dev.hid->hidHandle != INVALID_HANDLE_VALUE
-                            && HidD_GetIndexedString(dev.hid->hidHandle, strIdx, wbuf, sizeof(wbuf))
-                            && wbuf[0] != L'\0') {
-                            dev.buttonOutputCapsNames.push_back(wideToUtf8(wbuf));
+                        else if (!buttonCaps.IsRange && buttonCaps.NotRange.StringIndex != 0)
+                            stringIndex = buttonCaps.NotRange.StringIndex;
+                        wchar_t wideNameBuffer[256] = {};
+                        if (stringIndex > 0 && dev.hid->hidHandle != INVALID_HANDLE_VALUE
+                            && HidD_GetIndexedString(dev.hid->hidHandle, stringIndex, wideNameBuffer, sizeof(wideNameBuffer))
+                            && wideNameBuffer[0] != L'\0') {
+                            dev.buttonOutputCapsNames.push_back(wideToUtf8(wideNameBuffer));
                         } else {
-                            dev.buttonOutputCapsNames.push_back(outputLabel(bc.UsagePage, usg));
+                            dev.buttonOutputCapsNames.push_back(outputLabel(buttonCaps.UsagePage, usg));
                         }
-                        outBtnNum++;
+                        outputButtonNumber++;
                     }
                 }
             }
         }
 
         {
-            USHORT outValCount = caps.NumberOutputValueCaps;
-            std::vector<HIDP_VALUE_CAPS> outValData(outValCount);
-            if (outValCount > 0 &&
-                HidP_GetValueCaps(HidP_Output, outValData.data(), &outValCount, preparsed) == HIDP_STATUS_SUCCESS)
+            USHORT outputValueCapsCount = caps.NumberOutputValueCaps;
+            std::vector<HIDP_VALUE_CAPS> outputValueCapsData(outputValueCapsCount);
+            if (outputValueCapsCount > 0 &&
+                HidP_GetValueCaps(HidP_Output, outputValueCapsData.data(), &outputValueCapsCount, preparsed) == HIDP_STATUS_SUCCESS)
             {
-                for (int capNum = 0; capNum < static_cast<int>(outValCount); capNum++) {
-                    auto& vc = outValData[capNum];
+                for (int capsIndex = 0; capsIndex < static_cast<int>(outputValueCapsCount); capsIndex++) {
+                    auto& valueCaps = outputValueCapsData[capsIndex];
 
                     // Sign-extension fix for output LogicalMin/Max (sign-extension location 2 of 3).
-                    if (vc.BitSize > 0 && vc.BitSize <= static_cast<USHORT>(sizeof(vc.LogicalMin) * 8)) {
-                        auto shiftSize = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
-                        auto mask = (static_cast<uint64_t>(1) << vc.BitSize) - 1;
-                        vc.LogicalMin &= static_cast<LONG>(mask);
-                        vc.LogicalMin <<= shiftSize;
-                        vc.LogicalMin >>= shiftSize;
-                        vc.LogicalMax &= static_cast<LONG>(mask);
+                    if (valueCaps.BitSize > 0 && valueCaps.BitSize <= static_cast<USHORT>(sizeof(valueCaps.LogicalMin) * 8)) {
+                        auto shiftSize = sizeof(valueCaps.LogicalMin) * 8 - valueCaps.BitSize + 1;
+                        auto mask = (static_cast<uint64_t>(1) << valueCaps.BitSize) - 1;
+                        valueCaps.LogicalMin &= static_cast<LONG>(mask);
+                        valueCaps.LogicalMin <<= shiftSize;
+                        valueCaps.LogicalMin >>= shiftSize;
+                        valueCaps.LogicalMax &= static_cast<LONG>(mask);
                     }
 
-                    if (!vc.IsRange) {
-                        vc.Range.UsageMin = vc.NotRange.Usage;
-                        vc.Range.UsageMax = vc.NotRange.Usage;
+                    if (!valueCaps.IsRange) {
+                        valueCaps.Range.UsageMin = valueCaps.NotRange.Usage;
+                        valueCaps.Range.UsageMax = valueCaps.NotRange.Usage;
                     }
-                    int rangeCount = static_cast<int>(vc.Range.UsageMax - vc.Range.UsageMin + 1);
-                    if (rangeCount <= 0 || rangeCount >= 0xffff) {
+                    int usageRangeCount = static_cast<int>(valueCaps.Range.UsageMax - valueCaps.Range.UsageMin + 1);
+                    if (usageRangeCount <= 0 || usageRangeCount >= 0xffff) {
                         continue;
                     }
-                    if ((vc.UsagePage >> 8) == 0xFF) {
+                    if ((valueCaps.UsagePage >> 8) == 0xFF) {
                         continue;
                     }
                     // Expand range: one entry per usage so each output is independently addressable.
-                    for (int u = 0; u < rangeCount; u++) {
-                        USAGE specific = vc.Range.UsageMin + static_cast<USAGE>(u);
-                        dev.hid->valueOutputCapsList.push_back(vc);
+                    for (int u = 0; u < usageRangeCount; u++) {
+                        USAGE specific = valueCaps.Range.UsageMin + static_cast<USAGE>(u);
+                        dev.hid->valueOutputCapsList.push_back(valueCaps);
                         dev.hid->valueOutputUsages.push_back(specific);
                         // Try device-provided string descriptor first.
-                        ULONG strIdx = 0;
-                        if (vc.IsStringRange && vc.Range.StringMin != 0) {
-                            strIdx = static_cast<ULONG>(vc.Range.StringMin) + static_cast<ULONG>(u);
+                        ULONG stringIndex = 0;
+                        if (valueCaps.IsStringRange && valueCaps.Range.StringMin != 0) {
+                            stringIndex = static_cast<ULONG>(valueCaps.Range.StringMin) + static_cast<ULONG>(u);
                         }
-                        else if (!vc.IsRange && vc.NotRange.StringIndex != 0)
-                            strIdx = vc.NotRange.StringIndex;
-                        wchar_t wbuf[256] = {};
-                        if (strIdx > 0 && dev.hid->hidHandle != INVALID_HANDLE_VALUE
-                            && HidD_GetIndexedString(dev.hid->hidHandle, strIdx, wbuf, sizeof(wbuf))
-                            && wbuf[0] != L'\0') {
-                            dev.valueOutputCapsNames.push_back(wideToUtf8(wbuf));
+                        else if (!valueCaps.IsRange && valueCaps.NotRange.StringIndex != 0)
+                            stringIndex = valueCaps.NotRange.StringIndex;
+                        wchar_t wideNameBuffer[256] = {};
+                        if (stringIndex > 0 && dev.hid->hidHandle != INVALID_HANDLE_VALUE
+                            && HidD_GetIndexedString(dev.hid->hidHandle, stringIndex, wideNameBuffer, sizeof(wideNameBuffer))
+                            && wideNameBuffer[0] != L'\0') {
+                            dev.valueOutputCapsNames.push_back(wideToUtf8(wideNameBuffer));
                         } else {
-                            dev.valueOutputCapsNames.push_back(outputLabel(vc.UsagePage, specific));
+                            dev.valueOutputCapsNames.push_back(outputLabel(valueCaps.UsagePage, specific));
                         }
                     }
                 }
@@ -585,8 +585,8 @@ static void devicesReload(InputManagerImpl* impl) {
         // Build prevHatStates: one entry per value cap that is a hat switch.
         std::vector<float> hatSnapshot;
         for (size_t vi = 0; vi < dev.hid->valueCapsList.size(); vi++) {
-            auto& vc = dev.hid->valueCapsList[vi];
-            if (vc.UsagePage == 0x01 && vc.Range.UsageMin == 0x39) {
+            auto& valueCaps = dev.hid->valueCapsList[vi];
+            if (valueCaps.UsagePage == 0x01 && valueCaps.Range.UsageMin == 0x39) {
                 hatSnapshot.push_back(-1.0f);
             }
         }
@@ -641,8 +641,8 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
     {
         int stateOffset = 0;
         for (size_t capI = 0; capI < dev->hid->buttonCapsList.size(); capI++) {
-            auto& bc = dev->hid->buttonCapsList[capI];
-            int btnCount = static_cast<int>(bc.Range.UsageMax - bc.Range.UsageMin + 1);
+            auto& buttonCaps = dev->hid->buttonCapsList[capI];
+            int btnCount = static_cast<int>(buttonCaps.Range.UsageMax - buttonCaps.Range.UsageMin + 1);
             if (btnCount <= 0) {
                 continue;
             }
@@ -651,8 +651,8 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
             std::vector<USAGE> usages(btnCount);
             bool queryOk = (HidP_GetUsages(
                 HidP_Input,
-                bc.UsagePage,
-                bc.LinkCollection,
+                buttonCaps.UsagePage,
+                buttonCaps.LinkCollection,
                 usages.data(),
                 &usagesLen,
                 preparsed,
@@ -664,7 +664,7 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
             }
             if (queryOk) {
                 for (ULONG u = 0; u < usagesLen; u++) {
-                    int idx = static_cast<int>(usages[u] - bc.Range.UsageMin);
+                    int idx = static_cast<int>(usages[u] - buttonCaps.Range.UsageMin);
                     if (idx >= 0 && idx < btnCount) {
                         dev->hid->buttonStates[stateOffset + idx] = true;
                     }
@@ -677,14 +677,14 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
 
     // Value states (axes + hat switches as float).
     for (size_t capI = 0; capI < dev->hid->valueCapsList.size(); capI++) {
-        auto& vc = dev->hid->valueCapsList[capI];
+        auto& valueCaps = dev->hid->valueCapsList[capI];
 
         ULONG rawUlong = 0;
         NTSTATUS status = HidP_GetUsageValue(
             HidP_Input,
-            vc.UsagePage,
-            vc.LinkCollection,
-            vc.Range.UsageMin,
+            valueCaps.UsagePage,
+            valueCaps.LinkCollection,
+            valueCaps.Range.UsageMin,
             &rawUlong,
             preparsed,
             reinterpret_cast<PCHAR>(const_cast<BYTE*>(reportBuf)),
@@ -694,7 +694,7 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
             continue;
         }
 
-        bool isHat = (vc.UsagePage == 0x01 && vc.Range.UsageMin == 0x39);
+        bool isHat = (valueCaps.UsagePage == 0x01 && valueCaps.Range.UsageMin == 0x39);
 
         if (isHat) {
             // Hat switch — store as float. -1.0f = neutral.
@@ -702,14 +702,14 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
             LONG rawVal = static_cast<LONG>(rawUlong);
 
             // Sign-extension fix at WM_INPUT — only when LogicalMin < 0 (sign-extension location 3 of 3).
-            if (vc.LogicalMin < 0 && vc.BitSize > 0 &&
-                    vc.BitSize <= static_cast<USHORT>(sizeof(vc.LogicalMin) * 8)) {
-                auto shiftSize = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
+            if (valueCaps.LogicalMin < 0 && valueCaps.BitSize > 0 &&
+                    valueCaps.BitSize <= static_cast<USHORT>(sizeof(valueCaps.LogicalMin) * 8)) {
+                auto shiftSize = sizeof(valueCaps.LogicalMin) * 8 - valueCaps.BitSize + 1;
                 rawVal <<= shiftSize;
                 rawVal >>= shiftSize;
             }
 
-            LONG lmin = vc.LogicalMin, lmax = vc.LogicalMax;
+            LONG lmin = valueCaps.LogicalMin, lmax = valueCaps.LogicalMax;
             float hatVal = -1.0f;  // neutral
             if (lmin <= rawVal && rawVal <= lmax && lmax > lmin) {
                 hatVal = static_cast<float>(rawVal - lmin) / static_cast<float>(lmax - lmin);
@@ -720,10 +720,10 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
 
             // Sign-extension fix — only when LogicalMin < 0
             // (sign-extension location 3 of 3, shared with hat above).
-            if (vc.LogicalMin < 0 &&
-                    vc.BitSize > 0 &&
-                    vc.BitSize <= static_cast<USHORT>(sizeof(vc.LogicalMin) * 8)) {
-                auto shiftSize = sizeof(vc.LogicalMin) * 8 - vc.BitSize + 1;
+            if (valueCaps.LogicalMin < 0 &&
+                    valueCaps.BitSize > 0 &&
+                    valueCaps.BitSize <= static_cast<USHORT>(sizeof(valueCaps.LogicalMin) * 8)) {
+                auto shiftSize = sizeof(valueCaps.LogicalMin) * 8 - valueCaps.BitSize + 1;
                 rawVal <<= shiftSize;
                 rawVal >>= shiftSize;
             }
@@ -731,15 +731,15 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
             dev->hid->valueStatesRaw[capI] = rawVal;
 
             // Auto-calibration: expand range on the fly.
-            if (rawVal < vc.LogicalMin) {
-                vc.LogicalMin = rawVal;
+            if (rawVal < valueCaps.LogicalMin) {
+                valueCaps.LogicalMin = rawVal;
             }
-            if (rawVal > vc.LogicalMax) {
-                vc.LogicalMax = rawVal;
+            if (rawVal > valueCaps.LogicalMax) {
+                valueCaps.LogicalMax = rawVal;
             }
 
-            LONG lmin = vc.LogicalMin;
-            LONG lmax = vc.LogicalMax;
+            LONG lmin = valueCaps.LogicalMin;
+            LONG lmax = valueCaps.LogicalMax;
             float normalized = (lmax > lmin)
                 ? static_cast<float>(rawVal - lmin) / static_cast<float>(lmax - lmin)
                 : 0.5f;
@@ -804,8 +804,8 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
                 auto& prevHats = impl->prevHatStates[dev->path];
                 int hatIdx = 0;
                 for (size_t vi = 0; vi < dev->hid->valueCapsList.size(); vi++) {
-                    auto& vc = dev->hid->valueCapsList[vi];
-                    if (vc.UsagePage != 0x01 || vc.Range.UsageMin != 0x39) {
+                    auto& valueCaps = dev->hid->valueCapsList[vi];
+                    if (valueCaps.UsagePage != 0x01 || valueCaps.Range.UsageMin != 0x39) {
                         continue;
                     }
 
@@ -844,8 +844,8 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
         }
     }
 
-    if (impl->inputCb) {
-        impl->inputCb(impl->inputCbUd);
+    if (impl->inputCallback) {
+        impl->inputCallback(impl->inputCallbackUserData);
     }
 }
 
@@ -1110,8 +1110,8 @@ bool InputManager::snapshotDevice(const std::string& path, DeviceSnapshot& out) 
 }
 
 void InputManager::setInputCallback(void(*fn)(void*), void* ud) {
-    impl->inputCb    = fn;
-    impl->inputCbUd = ud;
+    impl->inputCallback            = fn;
+    impl->inputCallbackUserData   = ud;
 }
 
 bool InputManager::getButtonState(const std::string& path, int buttonIdx) const {

@@ -10,151 +10,151 @@ std::atomic<uint16_t> s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
 static std::vector<std::string> s_boundDevicePaths;
 
 static uint8_t computePort0x101(const BindingStore& bindings, const BindingStore::DeviceSnapshotMap& deviceSnapshots) {
-    uint8_t r = 0xFF;
+    uint8_t portValue = 0xFF;
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P1_START)], deviceSnapshots)) {
-        r &= ~0x01;
+        portValue &= ~0x01;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P2_START)], deviceSnapshots)) {
-        r &= ~0x02;
+        portValue &= ~0x02;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::EFFECTOR_1)], deviceSnapshots)) {
-        r &= ~0x04;
+        portValue &= ~0x04;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::EFFECTOR_2)], deviceSnapshots)) {
-        r &= ~0x08;
+        portValue &= ~0x08;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::EFFECTOR_3)], deviceSnapshots)) {
-        r &= ~0x10;
+        portValue &= ~0x10;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::EFFECTOR_4)], deviceSnapshots)) {
-        r &= ~0x20;
+        portValue &= ~0x20;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::SERVICE)], deviceSnapshots)) {
-        r &= ~0x40;
+        portValue &= ~0x40;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::TEST)], deviceSnapshots)) {
-        r &= ~0x80;
+        portValue &= ~0x80;
     }
-    return r;
+    return portValue;
 }
 
 static uint8_t computePort0x102(const BindingStore& bindings, const BindingStore::DeviceSnapshotMap& deviceSnapshots) {
-    uint8_t r = 0xFF;
+    uint8_t portValue = 0xFF;
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P1_1)], deviceSnapshots)) {
-        r &= ~0x01;
+        portValue &= ~0x01;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P1_2)], deviceSnapshots)) {
-        r &= ~0x02;
+        portValue &= ~0x02;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P1_3)], deviceSnapshots)) {
-        r &= ~0x04;
+        portValue &= ~0x04;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P1_4)], deviceSnapshots)) {
-        r &= ~0x08;
+        portValue &= ~0x08;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P1_5)], deviceSnapshots)) {
-        r &= ~0x10;
+        portValue &= ~0x10;
     }
     // bits 5-6 unused
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P1_PEDAL)], deviceSnapshots)) {
-        r &= ~0x80;
+        portValue &= ~0x80;
     }
-    return r;
+    return portValue;
 }
 
 static uint8_t computePort0x106(const BindingStore& bindings, const BindingStore::DeviceSnapshotMap& deviceSnapshots) {
-    uint8_t r = 0xFF;
+    uint8_t portValue = 0xFF;
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P2_1)], deviceSnapshots)) {
-        r &= ~0x01;
+        portValue &= ~0x01;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P2_2)], deviceSnapshots)) {
-        r &= ~0x02;
+        portValue &= ~0x02;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P2_3)], deviceSnapshots)) {
-        r &= ~0x04;
+        portValue &= ~0x04;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P2_4)], deviceSnapshots)) {
-        r &= ~0x08;
+        portValue &= ~0x08;
     }
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P2_5)], deviceSnapshots)) {
-        r &= ~0x10;
+        portValue &= ~0x10;
     }
     // bits 5-6 unused
     if (bindings.isHeldSnapshot(bindings.buttons[static_cast<int>(DJButton::P2_PEDAL)], deviceSnapshots)) {
-        r &= ~0x80;
+        portValue &= ~0x80;
     }
-    return r;
+    return portValue;
 }
 
 static uint16_t computePort0x300(const BindingStore& bindings, const BindingStore::DeviceSnapshotMap& deviceSnapshots) {
-    uint16_t r = 0x0FFF;
+    uint16_t portValue = 0x0FFF;
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P1_LEFT)], deviceSnapshots)) {
-        r &= ~0x00F;
+        portValue &= ~0x00F;
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P1_CENTRE)], deviceSnapshots)) {
-        r &= ~0x0F0;
+        portValue &= ~0x0F0;
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P1_RIGHT)], deviceSnapshots)) {
-        r &= ~0xF00;
+        portValue &= ~0xF00;
     }
-    return static_cast<uint16_t>(~r);
+    return static_cast<uint16_t>(~portValue);
 }
 
 static uint16_t computePort0x302(const BindingStore& bindings, const BindingStore::DeviceSnapshotMap& deviceSnapshots) {
-    uint16_t r = 0x0FFF;
+    uint16_t portValue = 0x0FFF;
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P2_LEFT)], deviceSnapshots)) {
-        r &= ~0x00F;
+        portValue &= ~0x00F;
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P2_CENTRE)], deviceSnapshots)) {
-        r &= ~0x0F0;
+        portValue &= ~0x0F0;
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P2_RIGHT)], deviceSnapshots)) {
-        r &= ~0xF00;
+        portValue &= ~0xF00;
     }
-    return static_cast<uint16_t>(~r);
+    return static_cast<uint16_t>(~portValue);
 }
 
 static uint16_t computePort0x306(const BindingStore& bindings, const BindingStore::DeviceSnapshotMap& deviceSnapshots) {
-    uint16_t r = 0xFFFF;
+    uint16_t portValue = 0xFFFF;
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P1_L_SENSOR_TOP)], deviceSnapshots)) {
-        r &= ~(1 << 11);
+        portValue &= ~(1 << 11);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P1_L_SENSOR_BOT)], deviceSnapshots)) {
-        r &= ~(1 << 12);
+        portValue &= ~(1 << 12);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P1_R_SENSOR_TOP)], deviceSnapshots)) {
-        r &= ~(1 << 10);
+        portValue &= ~(1 << 10);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P1_R_SENSOR_BOT)], deviceSnapshots)) {
-        r &= ~(1 << 13);
+        portValue &= ~(1 << 13);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P2_L_SENSOR_TOP)], deviceSnapshots)) {
-        r &= ~(1 << 9);
+        portValue &= ~(1 << 9);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P2_L_SENSOR_BOT)], deviceSnapshots)) {
-        r &= ~(1 << 14);
+        portValue &= ~(1 << 14);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P2_R_SENSOR_TOP)], deviceSnapshots)) {
-        r &= ~(1 << 8);
+        portValue &= ~(1 << 8);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::P2_R_SENSOR_BOT)], deviceSnapshots)) {
-        r &= ~(1 << 15);
+        portValue &= ~(1 << 15);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::TEST)], deviceSnapshots)) {
-        r &= 0xFF00 | (1 << 5);
+        portValue &= 0xFF00 | (1 << 5);
     }
     if (bindings.isHeldSnapshot(bindings.dancerButtons[static_cast<int>(DancerButton::SERVICE)], deviceSnapshots)) {
-        r &= 0xFF00 | (1 << 4);
+        portValue &= 0xFF00 | (1 << 4);
     }
-    return r ^ 0xFF00;
+    return portValue ^ 0xFF00;
 }
 
 void updatePortCache(const BindingStore& bindings) {
     BindingStore::DeviceSnapshotMap deviceSnapshots;
     for (const auto& path : s_boundDevicePaths) {
-        DeviceSnapshot ds;
-        if (bindings.mgr->snapshotDevice(path, ds)) {
-            deviceSnapshots[path] = std::move(ds);
+        DeviceSnapshot snapshot;
+        if (bindings.mgr->snapshotDevice(path, snapshot)) {
+            deviceSnapshots[path] = std::move(snapshot);
         }
     }
     // DJ button ports
@@ -172,16 +172,16 @@ void updatePortCache(const BindingStore& bindings) {
     s_dancerPortCache[3].store(computePort0x306(bindings, deviceSnapshots));
 }
 
-static void addUnique(const std::string& p) {
-    if (p.empty()) {
+static void addUnique(const std::string& devicePath) {
+    if (devicePath.empty()) {
         return;
     }
     for (const std::string& existing : s_boundDevicePaths) {
-        if (existing == p) {
+        if (existing == devicePath) {
             return;
         }
     }
-    s_boundDevicePaths.push_back(p);
+    s_boundDevicePaths.push_back(devicePath);
 }
 
 void initPortCache(const BindingStore& bindings) {

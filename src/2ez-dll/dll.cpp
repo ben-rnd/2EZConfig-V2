@@ -34,16 +34,16 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
 
-    auto* ctx      = ex->ContextRecord;
-    uint8_t* eip   = reinterpret_cast<uint8_t*>(ctx->Eip);
-    uint16_t port  = static_cast<uint16_t>(ctx->Edx & 0xFFFF);
-    uint8_t opcode = eip[0];
-    int instrLen   = 1;
+    auto* context          = ex->ContextRecord;
+    uint8_t* instructionPtr   = reinterpret_cast<uint8_t*>(context->Eip);
+    uint16_t port  = static_cast<uint16_t>(context->Edx & 0xFFFF);
+    uint8_t opcode = instructionPtr[0];
+    int instructionLength   = 1;
 
     // 0x66 prefix = 16-bit operand (Dancer)
     if (opcode == 0x66) {
-        opcode = eip[1];
-        instrLen = 2;
+        opcode = instructionPtr[1];
+        instructionLength = 2;
     }
 
     switch (opcode) {
@@ -51,43 +51,43 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
         case 0xEC: // IN AL, DX — DJ read (8-bit)
             switch (port) {
                 //buttons
-                case 0x101: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[1].load(); break;
-                case 0x102: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[2].load(); break;
-                case 0x106: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[6].load(); break;
+                case 0x101: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[1].load(); break;
+                case 0x102: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[2].load(); break;
+                case 0x106: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[6].load(); break;
                 //analogs
-                case 0x103: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[3].load(); break;  // P1 turntable
-                case 0x104: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[4].load(); break;  // P2 turntable
+                case 0x103: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[3].load(); break;  // P1 turntable
+                case 0x104: context->Eax = (context->Eax & 0xFFFFFF00) | s_djPortCache[4].load(); break;  // P2 turntable
                 default:
                     Logger::warnOnce("[IO] Unexpected DJ port read: 0x" + toHexString(port));
-                    ctx->Eax = (ctx->Eax & 0xFFFFFF00) | 0xFF;
+                    context->Eax = (context->Eax & 0xFFFFFF00) | 0xFF;
                     break;
             }
-            ctx->Eip += instrLen;
+            context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;
 
         case 0xED: // IN AX, DX — Dancer read (16-bit)
             switch (port) {
-                case 0x300: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[0].load(); break;
-                case 0x302: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[1].load(); break;
-                case 0x304: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[2].load(); break;
-                case 0x306: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[3].load(); break;
+                case 0x300: context->Eax = (context->Eax & 0xFFFF0000) | s_dancerPortCache[0].load(); break;
+                case 0x302: context->Eax = (context->Eax & 0xFFFF0000) | s_dancerPortCache[1].load(); break;
+                case 0x304: context->Eax = (context->Eax & 0xFFFF0000) | s_dancerPortCache[2].load(); break;
+                case 0x306: context->Eax = (context->Eax & 0xFFFF0000) | s_dancerPortCache[3].load(); break;
 
                 default:
                     Logger::warnOnce("[IO] Unexpected Dancer port read: 0x" + toHexString(port));
-                    ctx->Eax = (ctx->Eax & 0xFFFF0000) | 0xFFFF;
+                    context->Eax = (context->Eax & 0xFFFF0000) | 0xFFFF;
                     break;
             }
-            ctx->Eip += instrLen;
+            context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;
 
         case 0xEE: // OUT DX, AL — DJ write (8-bit)
-            handleDJOut(port, static_cast<uint8_t>(ctx->Eax & 0xFF));
-            ctx->Eip += instrLen;
+            handleDJOut(port, static_cast<uint8_t>(context->Eax & 0xFF));
+            context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;
 
         case 0xEF: // OUT DX, AX — Dancer write (16-bit)
-            handleDancerOut(port, static_cast<uint8_t>(ctx->Eax & 0xFF));
-            ctx->Eip += instrLen;
+            handleDancerOut(port, static_cast<uint8_t>(context->Eax & 0xFF));
+            context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;
 
         default:
@@ -97,40 +97,40 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
 
 static void suspendOtherThreads(std::vector<HANDLE>& out) {
     DWORD myTid = GetCurrentThreadId();
-    DWORD pid   = GetCurrentProcessId();
-    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snap == INVALID_HANDLE_VALUE) {
+    DWORD processId   = GetCurrentProcessId();
+    HANDLE threadSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (threadSnapshot == INVALID_HANDLE_VALUE) {
         return;
     }
-    THREADENTRY32 te = { sizeof(te) };
-    if (Thread32First(snap, &te)) {
+    THREADENTRY32 threadEntry = { sizeof(threadEntry) };
+    if (Thread32First(threadSnapshot, &threadEntry)) {
         do {
-            if (te.th32OwnerProcessID == pid && te.th32ThreadID != myTid) {
-                HANDLE h = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
-                if (h) {
-                    SuspendThread(h);
-                    out.push_back(h);
+            if (threadEntry.th32OwnerProcessID == processId && threadEntry.th32ThreadID != myTid) {
+                HANDLE threadHandle = OpenThread(THREAD_SUSPEND_RESUME, FALSE, threadEntry.th32ThreadID);
+                if (threadHandle) {
+                    SuspendThread(threadHandle);
+                    out.push_back(threadHandle);
                 }
             }
-        } while (Thread32Next(snap, &te));
+        } while (Thread32Next(threadSnapshot, &threadEntry));
     }
-    CloseHandle(snap);
+    CloseHandle(threadSnapshot);
     Logger::info("[+] Application suspended");
 }
 
 static void resumeThreads(std::vector<HANDLE>& handles) {
-    for (HANDLE h : handles) {
-        ResumeThread(h);
-        CloseHandle(h);
+    for (HANDLE threadHandle : handles) {
+        ResumeThread(threadHandle);
+        CloseHandle(threadHandle);
     }
     handles.clear();
     Logger::info("[+] Application resumed");
 }
 
 static std::string getAppDataDir() {
-    char buf[MAX_PATH] = {};
-    if (GetEnvironmentVariableA("APPDATA", buf, MAX_PATH)) {
-        return std::string(buf) + "\\2ezconfig";
+    char pathBuffer[MAX_PATH] = {};
+    if (GetEnvironmentVariableA("APPDATA", pathBuffer, MAX_PATH)) {
+        return std::string(pathBuffer) + "\\2ezconfig";
     }
     return "";
 }
@@ -205,11 +205,11 @@ static void initHardlock() {
         return;
     }
 
-    auto hl = s_settings->gameSettings().value("hardlock", nlohmann::json::object());
-    auto modAd = static_cast<unsigned short>(std::stoul(hl.value("ModAd", "0"), nullptr, 16));
-    auto seed1 = static_cast<unsigned short>(std::stoul(hl.value("Seed1", "0"), nullptr, 16));
-    auto seed2 = static_cast<unsigned short>(std::stoul(hl.value("Seed2", "0"), nullptr, 16));
-    auto seed3 = static_cast<unsigned short>(std::stoul(hl.value("Seed3", "0"), nullptr, 16));
+    auto hardlockConfig = s_settings->gameSettings().value("hardlock", nlohmann::json::object());
+    auto modAd = static_cast<unsigned short>(std::stoul(hardlockConfig.value("ModAd", "0"), nullptr, 16));
+    auto seed1 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed1", "0"), nullptr, 16));
+    auto seed2 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed2", "0"), nullptr, 16));
+    auto seed3 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed3", "0"), nullptr, 16));
 
     Logger::info("[Hardlock] ModAd=0x" + toHexString(modAd) + " Seeds=0x" + toHexString(seed1) + ",0x" + toHexString(seed2) + ",0x" + toHexString(seed3));
 

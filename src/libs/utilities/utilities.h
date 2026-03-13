@@ -11,50 +11,50 @@
 #endif
 
 inline std::string toHexString(const void* ptr) {
-    std::ostringstream ss;
-    ss << std::hex << std::uppercase << reinterpret_cast<uintptr_t>(ptr);
-    return ss.str();
+    std::ostringstream stream;
+    stream << std::hex << std::uppercase << reinterpret_cast<uintptr_t>(ptr);
+    return stream.str();
 }
 
 inline std::string toHexString(uint32_t val) {
-    std::ostringstream ss;
-    ss << std::hex << std::uppercase << val;
-    return ss.str();
+    std::ostringstream stream;
+    stream << std::hex << std::uppercase << val;
+    return stream.str();
 }
 
 inline std::string toHexString(uint16_t val) {
-    std::ostringstream ss;
-    ss << std::hex << std::uppercase << val;
-    return ss.str();
+    std::ostringstream stream;
+    stream << std::hex << std::uppercase << val;
+    return stream.str();
 }
 
 inline std::string toHexStringPadded(unsigned val, int width = 2) {
-    std::ostringstream ss;
-    ss << std::uppercase << std::hex << std::setw(width) << std::setfill('0') << val;
-    return ss.str();
+    std::ostringstream stream;
+    stream << std::uppercase << std::hex << std::setw(width) << std::setfill('0') << val;
+    return stream.str();
 }
 
-inline std::string truncate(const std::string& s, size_t maxLen) {
-    if (s.size() <= maxLen) {
-        return s;
+inline std::string truncate(const std::string& text, size_t maxLength) {
+    if (text.size() <= maxLength) {
+        return text;
     }
-    return s.substr(0, maxLen);
+    return text.substr(0, maxLength);
 }
 
-inline std::string toUpperCase(const std::string& s) {
-    std::string result = s;
-    for (auto& c : result) {
-        c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+inline std::string toUpperCase(const std::string& text) {
+    std::string result = text;
+    for (auto& character : result) {
+        character = static_cast<char>(toupper(static_cast<unsigned char>(character)));
     }
     return result;
 }
 
 inline std::vector<uint8_t> parseBytes(const std::string& hexStr) {
     std::vector<uint8_t> result;
-    std::istringstream ss(hexStr);
-    std::string token;
-    while (ss >> token) {
-        result.push_back(static_cast<uint8_t>(std::stoul(token, nullptr, 16)));
+    std::istringstream stream(hexStr);
+    std::string hexByte;
+    while (stream >> hexByte) {
+        result.push_back(static_cast<uint8_t>(std::stoul(hexByte, nullptr, 16)));
     }
     return result;
 }
@@ -70,12 +70,12 @@ inline std::string wideToUtf8(const wchar_t* src) {
     if (!src || src[0] == L'\0') {
         return {};
     }
-    int len = WideCharToMultiByte(CP_UTF8, 0, src, -1, nullptr, 0, nullptr, nullptr);
-    if (len <= 1) {
+    int bufferLength = WideCharToMultiByte(CP_UTF8, 0, src, -1, nullptr, 0, nullptr, nullptr);
+    if (bufferLength <= 1) {
         return {};
     }
-    std::string result(len - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, src, -1, &result[0], len, nullptr, nullptr);
+    std::string result(bufferLength - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, src, -1, &result[0], bufferLength, nullptr, nullptr);
     return result;
 }
 #endif

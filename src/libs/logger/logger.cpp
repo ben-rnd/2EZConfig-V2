@@ -21,24 +21,24 @@ static void releaseLock() { s_lock.clear(std::memory_order_release); }
 static std::string formatElapsed() {
     using namespace std::chrono;
     auto ms = duration_cast<milliseconds>(steady_clock::now() - s_startTime).count();
-    long long h   = ms / 3600000; ms %= 3600000;
-    long long m   = ms / 60000;   ms %= 60000;
-    long long s   = ms / 1000;    ms %= 1000;
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%02lld:%02lld:%02lld.%03lld", h, m, s, ms);
-    return buf;
+    long long hours   = ms / 3600000; ms %= 3600000;
+    long long minutes = ms / 60000;   ms %= 60000;
+    long long seconds = ms / 1000;    ms %= 1000;
+    char timeBuffer[16];
+    snprintf(timeBuffer, sizeof(timeBuffer), "%02lld:%02lld:%02lld.%03lld", hours, minutes, seconds, ms);
+    return timeBuffer;
 }
 
 static std::string formatWallClock() {
     auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
+    std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         now.time_since_epoch()).count() % 1000;
-    std::tm* tm_info = std::localtime(&t);
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03lld",
-             tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec, (long long)ms);
-    return buf;
+    std::tm* timeInfo = std::localtime(&currentTime);
+    char timeBuffer[16];
+    snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d.%03lld",
+             timeInfo->tm_hour, timeInfo->tm_min, timeInfo->tm_sec, (long long)ms);
+    return timeBuffer;
 }
 
 static const char* levelStr(LogLevel level) {
@@ -55,8 +55,8 @@ static void log(LogLevel level, const std::string& msg) {
         return;
     }
 
-    std::string ts = (s_tsMode == TimestampMode::Elapsed) ? formatElapsed() : formatWallClock();
-    std::string line = std::string("[") + levelStr(level) + "][" + ts + "] " + msg + "\n";
+    std::string timestamp = (s_tsMode == TimestampMode::Elapsed) ? formatElapsed() : formatWallClock();
+    std::string line = std::string("[") + levelStr(level) + "][" + timestamp + "] " + msg + "\n";
 
     acquireLock();
     if (s_file.is_open()) {
