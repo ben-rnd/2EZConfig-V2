@@ -17,20 +17,6 @@ static SIZE_T getImageSize(HMODULE base) {
     return nt->OptionalHeader.SizeOfImage;
 }
 
-static std::vector<uint8_t> parseBytes(const std::string& hexStr) {
-    std::vector<uint8_t> result;
-    std::istringstream ss(hexStr);
-    std::string token;
-    while (ss >> token) {
-        result.push_back(static_cast<uint8_t>(std::stoul(token, nullptr, 16)));
-    }
-    return result;
-}
-
-static uint32_t parseHexOffset(const std::string& hexStr) {
-    return static_cast<uint32_t>(std::stoul(hexStr, nullptr, 16));
-}
-
 static std::vector<int16_t> parseScan(const std::string& hexStr) {
     std::vector<int16_t> result;
     std::istringstream ss(hexStr);
@@ -44,15 +30,16 @@ static std::vector<int16_t> parseScan(const std::string& hexStr) {
     return result;
 }
 
-// Returns pointer to pattern match, or module base if scan is empty, or nullptr if not found.
-static uint8_t* scanForPattern(const std::vector<int16_t>& scan) {
+// Returns all matching addresses, or just {module base} if scan is empty.
+static std::vector<uint8_t*> scanForPattern(const std::vector<int16_t>& scan) {
     HMODULE base = GetModuleHandle(NULL);
     if (scan.empty())
-        return reinterpret_cast<uint8_t*>(base);
+        return { reinterpret_cast<uint8_t*>(base) };
 
     const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
     const SIZE_T   imageSize  = getImageSize(base);
     const size_t   scanLen    = scan.size();
+    std::vector<uint8_t*> matches;
 
     for (size_t i = 0; i + scanLen <= imageSize; ++i) {
         bool match = true;
@@ -63,9 +50,9 @@ static uint8_t* scanForPattern(const std::vector<int16_t>& scan) {
             }
         }
         if (match)
-            return const_cast<uint8_t*>(imageStart + i);
+            matches.push_back(const_cast<uint8_t*>(imageStart + i));
     }
-    return nullptr;
+    return matches;
 }
 
 Patch PatchStore::parseSinglePatch(const json& j) {
@@ -290,41 +277,47 @@ json PatchStore::saveState(const std::string& gameId) const {
 }
 
 void PatchStore::applyTogglePatch(const Patch& p) {
-    uint8_t* writeBase = scanForPattern(p.scan);
-    if (!writeBase) {
-        Logger::warn("[PatchStore] Scan pattern not found for patch " + p.id);
+    auto matches = scanForPattern(p.scan);
+    if (matches.empty()) {
+        Logger::warn("[PatchStore] Scan pattern not found for patch " + p.name);
         return;
     }
     if (!p.scan.empty())
-        Logger::info("[PatchStore] Patch " + p.id + " scan matched at 0x" + toHexString(writeBase));
+        for (auto* writeBase : matches)
+            Logger::info("[PatchStore] Patch " + p.name + " scan matched at 0x" + toHexString(writeBase));
 
-    for (const auto& pw : p.writes) {
-        uint8_t* target = writeBase + pw.offset;
-        DWORD    old    = 0;
-        VirtualProtect(target, pw.bytes.size(), PAGE_EXECUTE_READWRITE, &old);
-        memcpy(target, pw.bytes.data(), pw.bytes.size());
-        VirtualProtect(target, pw.bytes.size(), old, &old);
+    for (auto* writeBase : matches) {
+        for (const auto& pw : p.writes) {
+            uint8_t* target = writeBase + pw.offset;
+            DWORD    old    = 0;
+            VirtualProtect(target, pw.bytes.size(), PAGE_EXECUTE_READWRITE, &old);
+            memcpy(target, pw.bytes.data(), pw.bytes.size());
+            VirtualProtect(target, pw.bytes.size(), old, &old);
+        }
     }
 }
 
 void PatchStore::applyValuePatch(const Patch& p) {
-    uint8_t* writeBase = scanForPattern(p.scan);
-    if (!writeBase) {
-        Logger::warn("[PatchStore] Scan pattern not found for patch " + p.id);
+    auto matches = scanForPattern(p.scan);
+    if (matches.empty()) {
+        Logger::warn("[PatchStore] Scan pattern not found for patch " + p.name);
         return;
     }
     if (!p.scan.empty())
-        Logger::info("[PatchStore] Patch " + p.id + " scan matched at 0x" + toHexString(writeBase));
+        for (auto* writeBase : matches)
+            Logger::info("[PatchStore] Patch " + p.name + " scan matched at 0x" + toHexString(writeBase));
 
-    uint8_t* target = writeBase + p.offset;
-    DWORD    old    = 0;
-    VirtualProtect(target, 1, PAGE_EXECUTE_READWRITE, &old);
-    *reinterpret_cast<uint8_t*>(target) = static_cast<uint8_t>(p.value);
-    VirtualProtect(target, 1, old, &old);
+    for (auto* writeBase : matches) {
+        uint8_t* target = writeBase + p.offset;
+        DWORD    old    = 0;
+        VirtualProtect(target, 1, PAGE_EXECUTE_READWRITE, &old);
+        *reinterpret_cast<uint8_t*>(target) = static_cast<uint8_t>(p.value);
+        VirtualProtect(target, 1, old, &old);
+    }
 }
 
 void PatchStore::applyPatch(const Patch& p) {
-    Logger::info("[PatchStore] Applying Patch " + p.id);
+    Logger::info("[PatchStore] Applying Patch " + p.name);
     switch (p.type) {
         case PatchType::Toggle:  applyTogglePatch(p);  break;
         case PatchType::Value:   applyValuePatch(p);   break;
@@ -341,31 +334,31 @@ void PatchStore::applyVersionPatch(const std::string& replacement) {
     const std::string target = "Version %d.%02d";
     std::vector<int16_t> scan(target.begin(), target.end());
 
-    uint8_t* match = scanForPattern(scan);
-    if (!match) {
+    auto matches = scanForPattern(scan);
+    if (matches.empty()) {
         Logger::warn("[PatchStore] Version string not found in process image");
         return;
     }
 
-    size_t writeLen = replacement.size() + 1;
-    DWORD old = 0;
-    VirtualProtect(match, writeLen, PAGE_EXECUTE_READWRITE, &old);
-    memcpy(match, replacement.c_str(), writeLen);
-    VirtualProtect(match, writeLen, old, &old);
+    for (auto* match : matches) {
+        Logger::info("[PatchStore] Replacing string at 0x" + toHexString(match));
+        size_t writeLen = replacement.size() + 1;
+        DWORD old = 0;
+        VirtualProtect(match, writeLen, PAGE_EXECUTE_READWRITE, &old);
+        memcpy(match, replacement.c_str(), writeLen);
+        VirtualProtect(match, writeLen, old, &old);
+    }
 }
 
 void PatchStore::applySuperEarlyPatches(const std::string& gameId) {
-    Logger::info("[PatchStore] Applying 'super_early' patches");
     applyPatches(gameId, PatchApply::SuperEarly);
 }
 
 void PatchStore::applyEarlyPatches(const std::string& gameId) {
-    Logger::info("[PatchStore] Applying 'early' patches");
     applyPatches(gameId, PatchApply::Early);
 }
 
 void PatchStore::applyPatches(const std::string& gameId) {
-    Logger::info("[PatchStore] Applying patches");
     applyPatches(gameId, PatchApply::Normal);
 }
 
@@ -375,7 +368,7 @@ void PatchStore::applyPatches(const std::string& gameId, PatchApply timing) {
         if (p.enabled && p.apply == timing) {
             applyPatch(p);
         } else if (!p.enabled && p.apply == timing) {
-            Logger::info("[PatchStore] Skipping disabled patch " + p.id);
+            Logger::info("[PatchStore] Skipping disabled patch " + p.name);
         }
     }
 }

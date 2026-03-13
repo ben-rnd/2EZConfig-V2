@@ -21,6 +21,7 @@ extern "C" {
 #include <mmsystem.h>
 
 #include "input_manager.h"
+#include "utilities.h"
 
 #include <string>
 #include <vector>
@@ -32,18 +33,8 @@ extern "C" {
 #include <sstream>
 #include <iomanip>
 
-static std::string wide_to_utf8(const wchar_t* src) {
-    if (!src || src[0] == L'\0') return {};
-    int len = WideCharToMultiByte(CP_UTF8, 0, src, -1, nullptr, 0, nullptr, nullptr);
-    if (len <= 1) return {};
-    std::string result(len - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, src, -1, &result[0], len, nullptr, nullptr);
-    return result;
-}
-
 static std::string vid_pid_from_path(const std::string& path) {
-    std::string upper = path;
-    for (auto& c : upper) c = (char)toupper((unsigned char)c);
+    std::string upper = toUpperCase(path);
     auto vid_pos = upper.find("VID_");
     auto pid_pos = upper.find("PID_");
     if (vid_pos == std::string::npos || pid_pos == std::string::npos) return "Unknown Device";
@@ -66,14 +57,9 @@ static std::string axis_label(USAGE usage_page, USAGE usage) {
             case 0x38: return "Wheel";
             case 0x39: return "Hat Switch";
         }
-        std::ostringstream ss;
-        ss << "Axis 0x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << usage;
-        return ss.str();
+        return "Axis 0x" + toHexStringPadded(usage);
     }
-    std::ostringstream ss;
-    ss << "Page 0x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << usage_page
-       << " Usage 0x" << std::setw(2) << std::setfill('0') << usage;
-    return ss.str();
+    return "Page 0x" + toHexStringPadded(usage_page) + " Usage 0x" + toHexStringPadded(usage);
 }
 
 // Page 0x08 = LED, Page 0x0A = Ordinal (common for game light hardware).
@@ -81,10 +67,7 @@ static std::string output_label(USAGE usage_page, USAGE usage) {
     if (usage_page == 0x08) return "LED " + std::to_string(usage);
     if (usage_page == 0x0A) return "Output " + std::to_string(usage);
     if (usage_page == 0x01) return axis_label(usage_page, usage);
-    std::ostringstream ss;
-    ss << "Page 0x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << usage_page
-       << " Usage 0x" << std::setw(2) << std::setfill('0') << usage;
-    return ss.str();
+    return "Page 0x" + toHexStringPadded(usage_page) + " Usage 0x" + toHexStringPadded(usage);
 }
 
 static const float HAT_SWITCH_INCREMENT = 1.0f / 7.0f;
@@ -337,13 +320,13 @@ static void devices_reload(InputManagerImpl* impl) {
             if (dev.hid->hid_handle != INVALID_HANDLE_VALUE) {
                 wchar_t wbuf[256] = {};
                 if (HidD_GetProductString(dev.hid->hid_handle, wbuf, sizeof(wbuf))) {
-                    std::string s = wide_to_utf8(wbuf);
+                    std::string s = wideToUtf8(wbuf);
                     if (!s.empty()) { dev.name = s; got_name = true; }
                 }
                 if (!got_name) {
                     wchar_t mbuf[256] = {};
                     if (HidD_GetManufacturerString(dev.hid->hid_handle, mbuf, sizeof(mbuf))) {
-                        std::string s = wide_to_utf8(mbuf);
+                        std::string s = wideToUtf8(mbuf);
                         if (!s.empty()) { dev.name = s; got_name = true; }
                     }
                 }
@@ -469,7 +452,7 @@ static void devices_reload(InputManagerImpl* impl) {
                         if (str_idx > 0 && dev.hid->hid_handle != INVALID_HANDLE_VALUE
                             && HidD_GetIndexedString(dev.hid->hid_handle, str_idx, wbuf, sizeof(wbuf))
                             && wbuf[0] != L'\0') {
-                            dev.button_output_caps_names.push_back(wide_to_utf8(wbuf));
+                            dev.button_output_caps_names.push_back(wideToUtf8(wbuf));
                         } else {
                             dev.button_output_caps_names.push_back(output_label(bc.UsagePage, usg));
                         }
@@ -520,7 +503,7 @@ static void devices_reload(InputManagerImpl* impl) {
                         if (str_idx > 0 && dev.hid->hid_handle != INVALID_HANDLE_VALUE
                             && HidD_GetIndexedString(dev.hid->hid_handle, str_idx, wbuf, sizeof(wbuf))
                             && wbuf[0] != L'\0') {
-                            dev.value_output_caps_names.push_back(wide_to_utf8(wbuf));
+                            dev.value_output_caps_names.push_back(wideToUtf8(wbuf));
                         } else {
                             dev.value_output_caps_names.push_back(output_label(vc.UsagePage, specific));
                         }

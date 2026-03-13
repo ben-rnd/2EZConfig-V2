@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <ctime>
 #include <fstream>
+#include <set>
 
 static bool           s_enabled  = false;
 static LogLevel       s_minLevel = LogLevel::INFO;
@@ -11,6 +12,7 @@ static bool           s_console  = false;
 static TimestampMode  s_tsMode   = TimestampMode::Elapsed;
 static std::ofstream  s_file;
 static std::atomic_flag s_lock   = ATOMIC_FLAG_INIT;
+static std::set<std::string> s_seenOnce;
 static std::chrono::steady_clock::time_point s_startTime;
 
 static void acquireLock() { while (s_lock.test_and_set(std::memory_order_acquire)) {} }
@@ -91,3 +93,10 @@ bool Logger::isEnabled() { return s_enabled; }
 void Logger::info (const std::string& msg) { log(LogLevel::INFO, msg); }
 void Logger::warn (const std::string& msg) { log(LogLevel::WARN, msg); }
 void Logger::error(const std::string& msg) { log(LogLevel::ERR,  msg); }
+
+void Logger::warnOnce(const std::string& msg) {
+    acquireLock();
+    bool inserted = s_seenOnce.insert(msg).second;
+    releaseLock();
+    if (inserted) log(LogLevel::WARN, msg);
+}

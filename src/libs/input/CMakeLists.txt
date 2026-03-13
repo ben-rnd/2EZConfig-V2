@@ -12,4 +12,5 @@ target_link_libraries(input
         hid
         setupapi
         winmm
+        utilities
 )

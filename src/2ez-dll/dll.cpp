@@ -58,7 +58,7 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
                 case 0x103: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[3].load(); break;  // P1 turntable
                 case 0x104: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[4].load(); break;  // P2 turntable
                 default:
-                    Logger::warn("[IO] Unexpected DJ port read: 0x" + toHexString(port));
+                    Logger::warnOnce("[IO] Unexpected DJ port read: 0x" + toHexString(port));
                     ctx->Eax = (ctx->Eax & 0xFFFFFF00) | 0xFF;
                     break;
             }
@@ -73,7 +73,7 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
                 case 0x306: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[3].load(); break;
 
                 default:
-                    Logger::warn("[IO] Unexpected Dancer port read: 0x" + toHexString(port));
+                    Logger::warnOnce("[IO] Unexpected Dancer port read: 0x" + toHexString(port));
                     ctx->Eax = (ctx->Eax & 0xFFFF0000) | 0xFFFF;
                     break;
             }

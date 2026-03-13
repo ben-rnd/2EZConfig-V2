@@ -2,11 +2,7 @@
 #include <algorithm>
 #include <cstring>
 #include "bindings.h"
-
-static std::string truncate(const std::string& s, size_t maxLen) {
-    if (s.size() <= maxLen) return s;
-    return s.substr(0, maxLen);
-}
+#include "utilities.h"
 
 static std::string vkToName(int vk) {
     UINT scanCode = MapVirtualKeyA(static_cast<UINT>(vk), MAPVK_VK_TO_VSC);

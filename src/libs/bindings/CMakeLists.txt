@@ -13,4 +13,5 @@ target_link_libraries(bindings
     PUBLIC
         input
         settings
+        utilities
 )
