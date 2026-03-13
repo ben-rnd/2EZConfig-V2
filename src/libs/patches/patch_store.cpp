@@ -1,5 +1,6 @@
 #include "patch_store.h"
 #include "logger.h"
+#include "utilities.h"
 
 #include <windows.h>
 #include <fstream>
@@ -141,6 +142,9 @@ void PatchStore::load(const std::string& dir) {
     m_patches.clear();
 
     std::string bundledPath = dir + "/patches.json";
+    if (!std::filesystem::exists(bundledPath)) {
+        Logger::warn("[PatchStore] patches.json not found at " + bundledPath);
+    }
     if (std::filesystem::exists(bundledPath)) {
         std::ifstream f(bundledPath);
         if (f.is_open()) {
@@ -177,6 +181,7 @@ void PatchStore::load(const std::string& dir) {
     // Load user-patches.json and merge (user patch wins on id collision)
     std::string userPath = dir + "/user-patches.json";
     if (std::filesystem::exists(userPath)) {
+        Logger::info("[PatchStore] Loading user-patches.json");
         std::ifstream f(userPath);
         if (f.is_open()) {
             json j;
@@ -200,6 +205,9 @@ void PatchStore::load(const std::string& dir) {
             }
         }
     }
+
+    for (const auto& kv : m_patches)
+        Logger::info("[PatchStore] Loaded " + std::to_string(kv.second.size()) + " patches for " + kv.first);
 }
 
 const std::vector<Patch>& PatchStore::patchesForGame(const std::string& gameId) const {
@@ -283,7 +291,12 @@ json PatchStore::saveState(const std::string& gameId) const {
 
 void PatchStore::applyTogglePatch(const Patch& p) {
     uint8_t* writeBase = scanForPattern(p.scan);
-    if (!writeBase) return;
+    if (!writeBase) {
+        Logger::warn("[PatchStore] Scan pattern not found for patch " + p.id);
+        return;
+    }
+    if (!p.scan.empty())
+        Logger::info("[PatchStore] Patch " + p.id + " scan matched at 0x" + toHexString(writeBase));
 
     for (const auto& pw : p.writes) {
         uint8_t* target = writeBase + pw.offset;
@@ -296,7 +309,12 @@ void PatchStore::applyTogglePatch(const Patch& p) {
 
 void PatchStore::applyValuePatch(const Patch& p) {
     uint8_t* writeBase = scanForPattern(p.scan);
-    if (!writeBase) return;
+    if (!writeBase) {
+        Logger::warn("[PatchStore] Scan pattern not found for patch " + p.id);
+        return;
+    }
+    if (!p.scan.empty())
+        Logger::info("[PatchStore] Patch " + p.id + " scan matched at 0x" + toHexString(writeBase));
 
     uint8_t* target = writeBase + p.offset;
     DWORD    old    = 0;
@@ -324,7 +342,10 @@ void PatchStore::applyVersionPatch(const std::string& replacement) {
     std::vector<int16_t> scan(target.begin(), target.end());
 
     uint8_t* match = scanForPattern(scan);
-    if (!match) return;
+    if (!match) {
+        Logger::warn("[PatchStore] Version string not found in process image");
+        return;
+    }
 
     size_t writeLen = replacement.size() + 1;
     DWORD old = 0;
@@ -353,6 +374,8 @@ void PatchStore::applyPatches(const std::string& gameId, PatchApply timing) {
     for (const auto& p : patches) {
         if (p.enabled && p.apply == timing) {
             applyPatch(p);
+        } else if (!p.enabled && p.apply == timing) {
+            Logger::info("[PatchStore] Skipping disabled patch " + p.id);
         }
     }
 }

@@ -15,6 +15,7 @@ target_link_libraries(2EZ PRIVATE
     bindings
     patches
     logger
+    utilities
     kernel32
     user32
     winmm

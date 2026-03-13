@@ -2,6 +2,7 @@
 #include "bindings.h"
 #include "input_manager.h"
 #include "game_defs.h"
+#include "logger.h"
 #include <windows.h>
 #include <atomic>
 
@@ -73,5 +74,6 @@ static DWORD WINAPI lightFlushThread(void* arg) {
 }
 
 void startLightFlushThread(const BindingStore& bindings) {
+    Logger::info("[Output] Light flush thread started");
     CreateThread(nullptr, 0, lightFlushThread, const_cast<BindingStore*>(&bindings), 0, nullptr);
 }

@@ -21,6 +21,7 @@ extern "C" {
 #include "settings.h"
 #include "game_defs.h"
 #include "logger.h"
+#include "utilities.h"
 
 static HMODULE          s_dllModule  = nullptr;
 static InputManager*    s_mgr       = nullptr;
@@ -56,7 +57,10 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
                 //analogs
                 case 0x103: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[3].load(); break;  // P1 turntable
                 case 0x104: ctx->Eax = (ctx->Eax & 0xFFFFFF00) | s_djPortCache[4].load(); break;  // P2 turntable
-                default:    ctx->Eax = (ctx->Eax & 0xFFFFFF00) | 0xFF; break;
+                default:
+                    Logger::warn("[IO] Unexpected DJ port read: 0x" + toHexString(port));
+                    ctx->Eax = (ctx->Eax & 0xFFFFFF00) | 0xFF;
+                    break;
             }
             ctx->Eip += instrLen;
             return EXCEPTION_CONTINUE_EXECUTION;
@@ -68,7 +72,10 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
                 case 0x304: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[2].load(); break;
                 case 0x306: ctx->Eax = (ctx->Eax & 0xFFFF0000) | s_dancerPortCache[3].load(); break;
 
-                default:    ctx->Eax = (ctx->Eax & 0xFFFF0000) | 0xFFFF; break;
+                default:
+                    Logger::warn("[IO] Unexpected Dancer port read: 0x" + toHexString(port));
+                    ctx->Eax = (ctx->Eax & 0xFFFF0000) | 0xFFFF;
+                    break;
             }
             ctx->Eip += instrLen;
             return EXCEPTION_CONTINUE_EXECUTION;
@@ -124,6 +131,11 @@ static DWORD WINAPI InitThread(void*) {
         Logger::error("[-] Settings not loaded, InitThread aborting");
         return 0;
     }
+
+    Logger::info("[Init] io_emu=" + std::to_string(s_settings->globalSettings().value("io_emu", true))
+        + " high_priority=" + std::to_string(s_settings->globalSettings().value("high_priority", false))
+        + " patch_delay_ms=" + std::to_string(s_settings->globalSettings().value("patch_delay_ms", 2000))
+        + " shim_delay=" + std::to_string(s_settings->globalSettings().value("shim_delay", 10)));
 
     std::vector<HANDLE> suspended;
     suspendOtherThreads(suspended);
@@ -184,6 +196,8 @@ static void initHardlock() {
     unsigned short seed2 = (unsigned short)std::stoul(hl.value("Seed2", "0"), nullptr, 16);
     unsigned short seed3 = (unsigned short)std::stoul(hl.value("Seed3", "0"), nullptr, 16);
 
+    Logger::info("[Hardlock] ModAd=0x" + toHexString(modAd) + " Seeds=0x" + toHexString(seed1) + ",0x" + toHexString(seed2) + ",0x" + toHexString(seed3));
+
     if (LoadHardLockInfo(modAd, seed1, seed2, seed3) && InitHooks()) {
         Logger::info("[+] Hardlock initialised");
     } else {
@@ -208,19 +222,27 @@ static void loadSettings(HMODULE hModule) {
     std::string appDataDir = getAppDataDir();
     if (appDataDir.empty()) return;
 
+    Logger::info("[Init] AppData dir: " + appDataDir);
+
     // Exit early if shared config dir doesn't exist — 2EZConfig has never been run.
-    if (GetFileAttributesA(appDataDir.c_str()) == INVALID_FILE_ATTRIBUTES) return;
+    if (GetFileAttributesA(appDataDir.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        Logger::warn("[Init] AppData dir not found, aborting settings load");
+        return;
+    }
 
     s_settings = new SettingsManager();
     try {
         s_settings->load(s_currDirectory, appDataDir);
     } catch (...) {
+        Logger::error("[Init] Failed to load settings from " + s_currDirectory);
         delete s_settings;
         s_settings = nullptr;
         return;
     }
 
     s_gameId = s_settings->gameSettings().value("game_id", "");
+    Logger::info("[Init] DLL dir: " + s_currDirectory);
+    Logger::info("[Init] Game ID: " + (s_gameId.empty() ? "(none)" : s_gameId));
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {

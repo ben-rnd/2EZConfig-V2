@@ -2,6 +2,7 @@
 #include "bindings.h"
 #include "input_manager.h"
 #include "game_defs.h"
+#include "logger.h"
 
 std::atomic<uint8_t>  s_djPortCache[7]     = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
 std::atomic<uint16_t> s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
@@ -116,6 +117,10 @@ void initPortCache(const BindingStore& bindings) {
         if (analogBinding.vtt_plus.isSet()  && !analogBinding.vtt_plus.isKeyboard())  addUnique(analogBinding.vtt_plus.device_path);
         if (analogBinding.vtt_minus.isSet() && !analogBinding.vtt_minus.isKeyboard()) addUnique(analogBinding.vtt_minus.device_path);
     }
+
+    Logger::info("[Input] " + std::to_string(s_boundDevicePaths.size()) + " bound device(s)");
+    for (const auto& path : s_boundDevicePaths)
+        Logger::info("[Input]   " + path);
 
     bindings.mgr->setInputCallback([](void* bindings) {
         updatePortCache(*static_cast<const BindingStore*>(bindings));

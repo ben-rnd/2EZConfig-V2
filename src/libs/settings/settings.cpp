@@ -1,5 +1,6 @@
 #include "settings.h"
 #include "patch_store.h"
+#include "logger.h"
 #include <fstream>
 
 void SettingsManager::load(const std::string& gameDir, const std::string& userSettingsDir) {
@@ -30,6 +31,8 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
         };
     }
 
+    Logger::info("[Settings] Game settings: " + gamePath + (gameNew ? " (new)" : ""));
+
     bool globalNew = !std::filesystem::exists(globalPath);
     if (!globalNew) {
         std::ifstream file(globalPath);
@@ -41,6 +44,8 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
             {"patch_delay_ms",   2000}
         };
     }
+
+    Logger::info("[Settings] Global settings: " + globalPath + (globalNew ? " (new)" : ""));
 
     // Load patch definitions from patches.json + user-patches.json (shared appdata dir)
     m_patchStore.load(userSettingsDir);
