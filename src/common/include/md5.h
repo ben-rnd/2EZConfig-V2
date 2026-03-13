@@ -38,9 +38,10 @@ static inline uint32_t rot(uint32_t x, uint32_t n) { return (x << n) | (x >> (32
 
 static void transform(uint32_t s[4], const uint8_t blk[64]) {
     uint32_t a = s[0], b = s[1], c = s[2], d = s[3], x[16];
-    for (int i = 0; i < 16; i++)
+    for (int i = 0; i < 16; i++) {
         x[i] = (uint32_t)blk[i*4]       | ((uint32_t)blk[i*4+1] << 8) |
                ((uint32_t)blk[i*4+2] << 16) | ((uint32_t)blk[i*4+3] << 24);
+    }
 
 #define FF(a,b,c,d,k,s,i) a = b + rot(a + ((b&c)|(~b&d))  + x[k] + T[i], s)
 #define GG(a,b,c,d,k,s,i) a = b + rot(a + ((b&d)|(c&~d))  + x[k] + T[i], s)
@@ -112,16 +113,19 @@ inline void MD5_Final(uint8_t digest[16], MD5_CTX* ctx) {
 
     ctx->buffer[off++] = 0x80;
     if (off > 56) {
-        if (off < 64) memset(ctx->buffer + off, 0, 64 - off);
+        if (off < 64) { memset(ctx->buffer + off, 0, 64 - off); }
         md5_detail::transform(ctx->state, ctx->buffer);
         off = 0;
     }
     memset(ctx->buffer + off, 0, 56 - off);
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 8; i++) {
         ctx->buffer[56 + i] = static_cast<uint8_t>(bits >> (i * 8));
+    }
     md5_detail::transform(ctx->state, ctx->buffer);
 
-    for (int i = 0; i < 4; i++)
-        for (int j = 0; j < 4; j++)
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
             digest[i*4+j] = static_cast<uint8_t>(ctx->state[i] >> (j * 8));
+        }
+    }
 }

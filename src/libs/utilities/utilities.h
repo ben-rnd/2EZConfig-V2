@@ -7,9 +7,6 @@
 #include <cctype>
 
 #ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
 #include <windows.h>
 #endif
 
@@ -38,13 +35,17 @@ inline std::string toHexStringPadded(unsigned val, int width = 2) {
 }
 
 inline std::string truncate(const std::string& s, size_t maxLen) {
-    if (s.size() <= maxLen) return s;
+    if (s.size() <= maxLen) {
+        return s;
+    }
     return s.substr(0, maxLen);
 }
 
 inline std::string toUpperCase(const std::string& s) {
     std::string result = s;
-    for (auto& c : result) c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+    for (auto& c : result) {
+        c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
+    }
     return result;
 }
 
@@ -62,11 +63,17 @@ inline uint32_t parseHexOffset(const std::string& hexStr) {
     return static_cast<uint32_t>(std::stoul(hexStr, nullptr, 16));
 }
 
+inline constexpr float HAT_SWITCH_INCREMENT = 1.0f / 7.0f;
+
 #ifdef _WIN32
 inline std::string wideToUtf8(const wchar_t* src) {
-    if (!src || src[0] == L'\0') return {};
+    if (!src || src[0] == L'\0') {
+        return {};
+    }
     int len = WideCharToMultiByte(CP_UTF8, 0, src, -1, nullptr, 0, nullptr, nullptr);
-    if (len <= 1) return {};
+    if (len <= 1) {
+        return {};
+    }
     std::string result(len - 1, '\0');
     WideCharToMultiByte(CP_UTF8, 0, src, -1, &result[0], len, nullptr, nullptr);
     return result;

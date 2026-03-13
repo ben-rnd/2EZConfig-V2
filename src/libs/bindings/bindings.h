@@ -1,12 +1,11 @@
 #pragma once
 
-#include <windows.h>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 #include <unordered_map>
 #include "input_manager.h"
-#include "settings.h" 
+#include "settings.h"
 #include "game_defs.h"
 
 // JSON key for analog port
@@ -15,29 +14,29 @@ static inline const char* analogPortKey(int port) {
 }
 
 struct BindingBase {
-    std::string device_path;
-    std::string device_name;
+    std::string devicePath;
+    std::string deviceName;
 
 protected:
     void clearBase() {
-        device_path.clear();
-        device_name.clear();
+        devicePath.clear();
+        deviceName.clear();
     }
 };
 
 struct ButtonBinding : BindingBase {
-    int              button_idx = -1;
-    int              vk_code    = 0;
-    ButtonAnalogType analog_type = ButtonAnalogType::NONE;  // hat-as-button direction
+    int              buttonIdx  = -1;
+    int              vkCode     = 0;
+    ButtonAnalogType analogType = ButtonAnalogType::NONE;  // hat-as-button direction
 
-    bool isSet()      const { return (!device_path.empty() && button_idx >= 0) || vk_code != 0; }
-    bool isKeyboard() const { return vk_code != 0; }
+    bool isSet()      const { return (!devicePath.empty() && buttonIdx >= 0) || vkCode != 0; }
+    bool isKeyboard() const { return vkCode != 0; }
 
     void clear() {
         clearBase();
-        button_idx  = -1;
-        vk_code     = 0;
-        analog_type = ButtonAnalogType::NONE;
+        buttonIdx  = -1;
+        vkCode     = 0;
+        analogType = ButtonAnalogType::NONE;
     }
 
     nlohmann::json   toJson()  const;
@@ -45,31 +44,31 @@ struct ButtonBinding : BindingBase {
 
     static ButtonBinding fromCapture(const CaptureResult& r) {
         ButtonBinding b;
-        b.device_path  = r.path;
-        b.button_idx   = r.button_idx;
-        b.device_name  = r.device_name;
-        b.analog_type  = r.analog_type;
+        b.devicePath  = r.path;
+        b.buttonIdx   = r.buttonIdx;
+        b.deviceName  = r.deviceName;
+        b.analogType  = r.analogType;
         return b;
     }
 };
 
 struct AnalogBinding : BindingBase {
-    int           axis_idx = -1;
+    int           axisIdx  = -1;
     bool          reverse  = false;
-    ButtonBinding vtt_plus;
-    ButtonBinding vtt_minus;
-    int           vtt_step = 3;
+    ButtonBinding vttPlus;
+    ButtonBinding vttMinus;
+    int           vttStep  = 3;
 
-    bool isSet()   const { return !device_path.empty() && axis_idx >= 0; }
-    bool hasVtt()  const { return vtt_plus.isSet() || vtt_minus.isSet(); }
+    bool isSet()   const { return !devicePath.empty() && axisIdx >= 0; }
+    bool hasVtt()  const { return vttPlus.isSet() || vttMinus.isSet(); }
 
     void clear() {
         clearBase();
-        axis_idx = -1;
+        axisIdx = -1;
         reverse  = false;
-        vtt_plus.clear();
-        vtt_minus.clear();
-        vtt_step = 3;
+        vttPlus.clear();
+        vttMinus.clear();
+        vttStep = 3;
     }
 
     nlohmann::json   toJson()  const;
@@ -77,13 +76,13 @@ struct AnalogBinding : BindingBase {
 };
 
 struct LightBinding : BindingBase {
-    int output_idx = -1;   // flat index: button_output_caps first, value_output_caps after
+    int outputIdx = -1;   // flat index: button_output_caps first, value_output_caps after
 
-    bool isSet() const { return !device_path.empty() && output_idx >= 0; }
+    bool isSet() const { return !devicePath.empty() && outputIdx >= 0; }
 
     void clear() {
         clearBase();
-        output_idx = -1;
+        outputIdx = -1;
     }
 
     nlohmann::json toJson() const;
@@ -110,11 +109,11 @@ struct BindingStore {
 
     using DeviceSnapshotMap = std::unordered_map<std::string, DeviceSnapshot>;
     bool    isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& deviceSnapshots) const;
-    uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vtt_pos, const DeviceSnapshotMap& deviceSnapshots) const;
+    uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, const DeviceSnapshotMap& deviceSnapshots) const;
 
     std::string getDisplayString(const ButtonBinding& b) const;
     std::string getDisplayString(const AnalogBinding& a) const;
     std::string getDisplayString(const LightBinding& l) const;
 
-    uint8_t getAnalogPosition(const AnalogBinding& a, uint8_t vtt_pos) const;
+    uint8_t getAnalogPosition(const AnalogBinding& a, uint8_t vttPos) const;
 };

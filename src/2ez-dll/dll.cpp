@@ -3,7 +3,6 @@
 #include <tlhelp32.h>
 #include <cstdint>
 #include <cstring>
-#include <fstream>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -23,16 +22,17 @@ extern "C" {
 #include "logger.h"
 #include "utilities.h"
 
-static HMODULE          s_dllModule  = nullptr;
-static InputManager*    s_mgr       = nullptr;
-static BindingStore     s_bindings;
-static SettingsManager* s_settings   = nullptr;
-static std::string      s_currDirectory;
-static std::string      s_gameId;
+static HMODULE s_dllModule = nullptr;
+static InputManager* s_mgr = nullptr;
+static BindingStore s_bindings;
+static SettingsManager* s_settings = nullptr;
+static std::string s_currDirectory;
+static std::string s_gameId;
 
 static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
-    if (ex->ExceptionRecord->ExceptionCode != EXCEPTION_PRIV_INSTRUCTION)
+    if (ex->ExceptionRecord->ExceptionCode != EXCEPTION_PRIV_INSTRUCTION) {
         return EXCEPTION_CONTINUE_SEARCH;
+    }
 
     auto* ctx      = ex->ContextRecord;
     uint8_t* eip   = reinterpret_cast<uint8_t*>(ctx->Eip);
@@ -99,13 +99,18 @@ static void suspendOtherThreads(std::vector<HANDLE>& out) {
     DWORD myTid = GetCurrentThreadId();
     DWORD pid   = GetCurrentProcessId();
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snap == INVALID_HANDLE_VALUE) return;
+    if (snap == INVALID_HANDLE_VALUE) {
+        return;
+    }
     THREADENTRY32 te = { sizeof(te) };
     if (Thread32First(snap, &te)) {
         do {
             if (te.th32OwnerProcessID == pid && te.th32ThreadID != myTid) {
                 HANDLE h = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
-                if (h) { SuspendThread(h); out.push_back(h); }
+                if (h) {
+                    SuspendThread(h);
+                    out.push_back(h);
+                }
             }
         } while (Thread32Next(snap, &te));
     }
@@ -114,15 +119,19 @@ static void suspendOtherThreads(std::vector<HANDLE>& out) {
 }
 
 static void resumeThreads(std::vector<HANDLE>& handles) {
-    for (HANDLE h : handles) { ResumeThread(h); CloseHandle(h); }
+    for (HANDLE h : handles) {
+        ResumeThread(h);
+        CloseHandle(h);
+    }
     handles.clear();
     Logger::info("[+] Application resumed");
 }
 
 static std::string getAppDataDir() {
     char buf[MAX_PATH] = {};
-    if (GetEnvironmentVariableA("APPDATA", buf, MAX_PATH))
+    if (GetEnvironmentVariableA("APPDATA", buf, MAX_PATH)) {
         return std::string(buf) + "\\2ezconfig";
+    }
     return "";
 }
 
@@ -182,19 +191,25 @@ static DWORD WINAPI InitThread(void*) {
 }
 
 static void applySuperEarlyPatches() {
-    if (!s_settings || s_gameId.empty()) return;
+    if (!s_settings || s_gameId.empty()) {
+        return;
+    }
     s_settings->patchStore().applySuperEarlyPatches(s_gameId);
 }
 
 static void initHardlock() {
-    if (!s_settings) return;
-    if (!s_settings->gameSettings().value("hardlock_enabled", false)) return;
+    if (!s_settings) {
+        return;
+    }
+    if (!s_settings->gameSettings().value("hardlock_enabled", false)) {
+        return;
+    }
 
     auto hl = s_settings->gameSettings().value("hardlock", nlohmann::json::object());
-    unsigned short modAd = (unsigned short)std::stoul(hl.value("ModAd", "0"), nullptr, 16);
-    unsigned short seed1 = (unsigned short)std::stoul(hl.value("Seed1", "0"), nullptr, 16);
-    unsigned short seed2 = (unsigned short)std::stoul(hl.value("Seed2", "0"), nullptr, 16);
-    unsigned short seed3 = (unsigned short)std::stoul(hl.value("Seed3", "0"), nullptr, 16);
+    auto modAd = static_cast<unsigned short>(std::stoul(hl.value("ModAd", "0"), nullptr, 16));
+    auto seed1 = static_cast<unsigned short>(std::stoul(hl.value("Seed1", "0"), nullptr, 16));
+    auto seed2 = static_cast<unsigned short>(std::stoul(hl.value("Seed2", "0"), nullptr, 16));
+    auto seed3 = static_cast<unsigned short>(std::stoul(hl.value("Seed3", "0"), nullptr, 16));
 
     Logger::info("[Hardlock] ModAd=0x" + toHexString(modAd) + " Seeds=0x" + toHexString(seed1) + ",0x" + toHexString(seed2) + ",0x" + toHexString(seed3));
 
@@ -206,7 +221,9 @@ static void initHardlock() {
 }
 
 static void initLogger() {
-    if (!s_settings) return;
+    if (!s_settings) {
+        return;
+    }
     bool loggingEnabled = s_settings->gameSettings().value("logging_enabled", false);
     Logger::init(s_currDirectory, loggingEnabled, "2ez-logs.txt");
 }
@@ -215,12 +232,16 @@ static void loadSettings(HMODULE hModule) {
     char dllPath[MAX_PATH] = {};
     GetModuleFileNameA(hModule, dllPath, MAX_PATH);
     char* lastSlash = strrchr(dllPath, '\\');
-    if (!lastSlash) return;
+    if (!lastSlash) {
+        return;
+    }
     *lastSlash = '\0';
     s_currDirectory = dllPath;
 
     std::string appDataDir = getAppDataDir();
-    if (appDataDir.empty()) return;
+    if (appDataDir.empty()) {
+        return;
+    }
 
     Logger::info("[Init] AppData dir: " + appDataDir);
 
@@ -252,7 +273,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         initLogger();
         initHardlock();
         applySuperEarlyPatches();
-        CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)InitThread, nullptr, 0, nullptr);
+        CreateThread(nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(InitThread), nullptr, 0, nullptr);
     }
     return TRUE;
 }

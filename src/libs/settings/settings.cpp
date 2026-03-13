@@ -1,6 +1,7 @@
 #include "settings.h"
 #include "patch_store.h"
 #include "logger.h"
+#include <filesystem>
 #include <fstream>
 
 void SettingsManager::load(const std::string& gameDir, const std::string& userSettingsDir) {
@@ -52,7 +53,9 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
     m_patchStore.loadState(m_gameSettings.value("patches", json::object()));
 
     // Write defaults to disk immediately if either file was missing
-    if (gameNew || globalNew) save();
+    if (gameNew || globalNew) {
+        save();
+    }
 }
 
 void SettingsManager::save() const {

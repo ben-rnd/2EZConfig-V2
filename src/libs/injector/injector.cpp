@@ -8,8 +8,9 @@
 
 static BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnable) {
     LUID luid;
-    if (!LookupPrivilegeValue(NULL, lpszPrivilege, &luid))
+    if (!LookupPrivilegeValue(NULL, lpszPrivilege, &luid)) {
         return FALSE;
+    }
 
     TOKEN_PRIVILEGES tp;
     tp.PrivilegeCount = 1;
@@ -43,8 +44,9 @@ static void EnableDebugPrivilege() {
 static DWORD GetProcId(const char* procName) {
     DWORD procId = 0;
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap == INVALID_HANDLE_VALUE)
+    if (hSnap == INVALID_HANDLE_VALUE) {
         return 0;
+    }
 
     wchar_t wideName[MAX_PATH];
     mbstowcs(wideName, procName, MAX_PATH);
@@ -129,7 +131,9 @@ int Injector::LaunchAndInject(const char* exeName, const std::vector<std::string
     char gameDir[MAX_PATH];
     strncpy(gameDir, fullPath, MAX_PATH);
     char* lastSlash = strrchr(gameDir, '\\');
-    if (lastSlash) *lastSlash = '\0';
+    if (lastSlash) {
+        *lastSlash = '\0';
+    }
 
     EnableDebugPrivilege();
 
@@ -153,8 +157,9 @@ int Injector::LaunchAndInject(const char* exeName, const std::vector<std::string
     }
 
     for (const auto& dll : extraDlls) {
-        if (!dll.empty())
+        if (!dll.empty()) {
             InjectDll(pi.hProcess, dll.c_str());
+        }
     }
 
     ResumeThread(pi.hThread);
@@ -165,8 +170,9 @@ int Injector::LaunchAndInject(const char* exeName, const std::vector<std::string
 
 int Injector::InjectRunningProcess(const char* processName) {
     DWORD pid = GetProcId(processName);
-    if (!pid)
+    if (!pid) {
         return 0;
+    }
 
     return Inject(&pid);
 }

@@ -6,12 +6,12 @@
 #include <fstream>
 #include <set>
 
-static bool           s_enabled  = false;
-static LogLevel       s_minLevel = LogLevel::INFO;
-static bool           s_console  = false;
-static TimestampMode  s_tsMode   = TimestampMode::Elapsed;
-static std::ofstream  s_file;
-static std::atomic_flag s_lock   = ATOMIC_FLAG_INIT;
+static bool s_enabled = false;
+static LogLevel s_minLevel = LogLevel::INFO;
+static bool s_console = false;
+static TimestampMode s_tsMode = TimestampMode::Elapsed;
+static std::ofstream s_file;
+static std::atomic_flag s_lock = ATOMIC_FLAG_INIT;
 static std::set<std::string> s_seenOnce;
 static std::chrono::steady_clock::time_point s_startTime;
 
@@ -51,7 +51,9 @@ static const char* levelStr(LogLevel level) {
 }
 
 static void log(LogLevel level, const std::string& msg) {
-    if (!s_enabled || level < s_minLevel) return;
+    if (!s_enabled || level < s_minLevel) {
+        return;
+    }
 
     std::string ts = (s_tsMode == TimestampMode::Elapsed) ? formatElapsed() : formatWallClock();
     std::string line = std::string("[") + levelStr(level) + "][" + ts + "] " + msg + "\n";
@@ -98,5 +100,7 @@ void Logger::warnOnce(const std::string& msg) {
     acquireLock();
     bool inserted = s_seenOnce.insert(msg).second;
     releaseLock();
-    if (inserted) log(LogLevel::WARN, msg);
+    if (inserted) {
+        log(LogLevel::WARN, msg);
+    }
 }

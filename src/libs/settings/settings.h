@@ -2,7 +2,6 @@
 
 #include <nlohmann/json.hpp>
 #include <string>
-#include <filesystem>
 #include "patch_store.h"
 
 using json = nlohmann::json;
