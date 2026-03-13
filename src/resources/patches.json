@@ -1,5 +1,5 @@
 {
-  "ver": 8,
+  "ver": 9,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -156,23 +156,6 @@
         { "offset": "0x42A6D", "bytes": "00" },
         { "offset": "0x41854", "bytes": "00" }
       ]
-    },
-    "stage_lock_nofail": {
-      "name": "Stage Lock: No Fail",
-      "description": "Freeze at stage 1 — cannot fail out. Offset TBD — verify against 2EZ.h NT set before use.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "3B" },
-        { "offset": "0x00000000", "bytes": "00" }
-      ]
-    },
-    "stage_lock_no_game_over": {
-      "name": "Stage Lock: No Game Over",
-      "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h NT set before use.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "90" }
-      ]
     }
   },
   "ez2ac_tt": {
@@ -195,89 +178,6 @@
         { "offset": "0x4A693", "bytes": "00" },
         { "offset": "0x46C75", "bytes": "00" }
       ]
-    },
-    "stage_lock_nofail": {
-      "name": "Stage Lock: No Fail",
-      "description": "Freeze at stage 1 — cannot fail out. Offsets TBD — verify against 2EZ.h FN set before use.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "3B" },
-        { "offset": "0x00000000", "bytes": "00" }
-      ]
-    },
-    "stage_lock_no_game_over": {
-      "name": "Stage Lock: No Game Over",
-      "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h FN set before use.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "90" }
-      ]
-    },
-    "keep_settings": {
-      "name": "Keep Settings",
-      "description": "Prevents the game from resetting note skin, panel skin, and visual settings between sessions. NOP offsets TBD — verify against 2EZ.h FnKeepSettings() before use.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "90 90" }
-      ],
-      "children": {
-        "keep_note_skin": {
-          "name": "Keep Note Skin",
-          "description": "Persist the selected note skin across sessions.",
-          "type": "value",
-          "offset": "0x00000000",
-          "options": ["Default", "2nd", "1st SE", "Simple", "Steel", "3S", "3S RB", "Circle", "Disc", "Star", "Turtle", "Gem"],
-          "default": 0
-        },
-        "keep_panel_skin": {
-          "name": "Keep Panel Skin",
-          "description": "Persist the selected panel skin across sessions.",
-          "type": "value",
-          "offset": "0x00000000",
-          "options": ["FN", "TT Blue", "TT Green", "NT", "EV", "EC", "AEIC", "3S", "CV", "7th", "6th", "5th", "4th", "3rd - Silver", "3rd - Gold", "3rd - Green", "2nd - Silver", "2nd - Green", "2nd - Black", "1st SE", "1st"],
-          "default": 0
-        },
-        "keep_visual": {
-          "name": "Keep Visual",
-          "description": "Persist the selected visual setting across sessions.",
-          "type": "value",
-          "offset": "0x00000000",
-          "options": ["Default", "Black Panel", "BGA Off"],
-          "default": 0
-        },
-        "keep_random": {
-          "name": "Keep Random",
-          "description": "Persist the random note arrangement setting.",
-          "type": "toggle",
-          "writes": [
-            { "offset": "0x00000000", "bytes": "90 90" }
-          ]
-        },
-        "keep_auto": {
-          "name": "Keep Auto",
-          "description": "Persist the auto play setting.",
-          "type": "toggle",
-          "writes": [
-            { "offset": "0x00000000", "bytes": "90 90" }
-          ]
-        },
-        "keep_fade": {
-          "name": "Keep Fade",
-          "description": "Persist the fade setting.",
-          "type": "toggle",
-          "writes": [
-            { "offset": "0x00000000", "bytes": "90 90" }
-          ]
-        },
-        "keep_scroll": {
-          "name": "Keep Scroll",
-          "description": "Persist the scroll speed setting.",
-          "type": "toggle",
-          "writes": [
-            { "offset": "0x00000000", "bytes": "90 90" }
-          ]
-        }
-      }
     }
   },
   "ez2ac_fn_ex": {
@@ -297,105 +197,6 @@
       "writes": [
         { "offset": "0x4B773", "bytes": "00" },
         { "offset": "0x47CBA", "bytes": "00" }
-      ]
-    },
-    "stage_lock_nofail": {
-      "name": "Stage Lock: No Fail",
-      "description": "Freeze at stage 1 — cannot fail out.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x16D15", "bytes": "3B" },
-        { "offset": "0x16D20", "bytes": "00" }
-      ]
-    },
-    "stage_lock_no_game_over": {
-      "name": "Stage Lock: No Game Over",
-      "description": "Suppress the game over screen. Offset TBD — verify against 2EZ.h before use.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "90" }
-      ]
-    },
-    "keep_settings": {
-      "name": "Keep Settings",
-      "description": "Prevents the game from resetting note skin, panel skin, and visual settings between sessions.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "90 90" }
-      ],
-      "children": {
-        "keep_note_skin": {
-          "name": "Keep Note Skin",
-          "description": "Persist the selected note skin across sessions.",
-          "type": "value",
-          "offset": "0x33D0EC4",
-          "options": ["Default", "2nd", "1st SE", "Simple", "Steel", "3S", "3S RB", "Circle", "Disc", "Star", "Turtle", "Gem"],
-          "default": 0
-        },
-        "keep_panel_skin": {
-          "name": "Keep Panel Skin",
-          "description": "Persist the selected panel skin across sessions.",
-          "type": "value",
-          "offset": "0x33D0F3C",
-          "options": ["FN", "TT Blue", "TT Green", "NT", "EV", "EC", "AEIC", "3S", "CV", "7th", "6th", "5th", "4th", "3rd - Silver", "3rd - Gold", "3rd - Green", "2nd - Silver", "2nd - Green", "2nd - Black", "1st SE", "1st"],
-          "default": 0
-        },
-        "keep_visual": {
-          "name": "Keep Visual",
-          "description": "Persist the selected visual setting across sessions.",
-          "type": "value",
-          "offset": "0x33D0EF0",
-          "options": ["Default", "Black Panel", "BGA Off"],
-          "default": 0
-        },
-        "keep_random": {
-          "name": "Keep Random",
-          "description": "Persist the random note arrangement setting.",
-          "type": "toggle",
-          "writes": [
-            { "offset": "0x00000000", "bytes": "90 90" }
-          ]
-        },
-        "keep_auto": {
-          "name": "Keep Auto",
-          "description": "Persist the auto play setting.",
-          "type": "toggle",
-          "writes": [
-            { "offset": "0x00000000", "bytes": "90 90" }
-          ]
-        },
-        "keep_fade": {
-          "name": "Keep Fade",
-          "description": "Persist the fade setting.",
-          "type": "toggle",
-          "writes": [
-            { "offset": "0x00000000", "bytes": "90 90" }
-          ]
-        },
-        "keep_scroll": {
-          "name": "Keep Scroll",
-          "description": "Persist the scroll speed setting.",
-          "type": "toggle",
-          "writes": [
-            { "offset": "0x00000000", "bytes": "90 90" }
-          ]
-        }
-      }
-    },
-    "mode_select_timer_freeze": {
-      "name": "Mode Select Timer Freeze",
-      "description": "Freezes the mode selection countdown timer. Offset TBD — verify against 2EZ.h before use.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "00" }
-      ]
-    },
-    "song_select_timer_freeze": {
-      "name": "Song Select Timer Freeze",
-      "description": "Freezes the song selection countdown timer. Offset TBD — verify against 2EZ.h before use.",
-      "type": "toggle",
-      "writes": [
-        { "offset": "0x00000000", "bytes": "00" }
       ]
     }
   }
