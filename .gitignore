@@ -32,6 +32,7 @@ _deps/
 .vscode/
 *.code-workspace
 .claude
+.planning
 
 # OS
 .DS_Store
