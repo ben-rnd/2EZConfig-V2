@@ -162,7 +162,7 @@ static DWORD WINAPI InitThread(void*) {
         Logger::error("[-] Bindings failed to load");
     }
 
-    initPortCache(s_bindings);
+    startInputPollThread(s_bindings);
     startLightFlushThread(s_bindings);
 
     Sleep(s_settings->globalSettings().value("patch_delay_ms", 2000));

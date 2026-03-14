@@ -31,7 +31,7 @@ extern "C" {
         va_start(args, fmt);
         vsnprintf(buffer, sizeof(buffer) - 1, fmt, args);
         va_end(args);
-        Logger::info(std::string(buffer));
+        Logger::info("[Hardlock] " + std::string(buffer));
     }
 
     void DBG_printfW(const wchar_t* format, ...) {
@@ -40,6 +40,6 @@ extern "C" {
         va_start(args, format);
         _vsnwprintf(wideBuffer, (sizeof(wideBuffer) / sizeof(wchar_t)) - 1, format, args);
         va_end(args);
-        Logger::info(wideToUtf8(wideBuffer));
+        Logger::info("[Hardlock] " + wideToUtf8(wideBuffer));
     }
 } 

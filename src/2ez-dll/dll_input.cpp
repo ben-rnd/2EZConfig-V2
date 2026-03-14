@@ -5,6 +5,7 @@
 #include "logger.h"
 #include "utilities.h"
 
+#include <windows.h>
 #include <algorithm>
 #include <atomic>
 #include <functional>
@@ -12,7 +13,12 @@
 static std::atomic<uint8_t> s_djPortCache[7] = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
 static std::atomic<uint16_t> s_dancerPortCache[4] = { 0xF000, 0xF000, 0x0000, 0x00FF };
 
-static std::vector<std::string> s_boundDevicePaths;
+struct BoundDevice {
+    std::string path;
+    std::string name;
+};
+
+static std::vector<BoundDevice> s_boundDevices;
 
 enum DjPort {
     DJ_SYSTEM   = 1,  // 0x101: test, service, effectors, start buttons
@@ -156,10 +162,10 @@ bool handleDancerIn(uint16_t port, uint16_t& out) {
 void updatePortCache(const BindingStore& bindings) {
     // Snapshot all bound devices once per update cycle
     BindingStore::DeviceSnapshotMap deviceSnapshots;
-    for (const auto& path : s_boundDevicePaths) {
+    for (const auto& device : s_boundDevices) {
         DeviceSnapshot snapshot;
-        if (bindings.mgr->snapshotDevice(path, snapshot)) {
-            deviceSnapshots[path] = std::move(snapshot);
+        if (bindings.mgr->snapshotDevice(device.path, snapshot)) {
+            deviceSnapshots[device.path] = std::move(snapshot);
         }
     }
 
@@ -188,45 +194,63 @@ void updatePortCache(const BindingStore& bindings) {
     s_dancerPortCache[DANCER_SENSORS].store(computeDancerSensorPort(dancerIsHeld));
 }
 
-static void addUnique(const std::string& devicePath) {
+static void addUnique(const std::string& devicePath, const std::string& deviceName) {
     if (devicePath.empty()) {
         return;
     }
-    if (std::find(s_boundDevicePaths.begin(), s_boundDevicePaths.end(), devicePath) == s_boundDevicePaths.end()) {
-        s_boundDevicePaths.push_back(devicePath);
+    for (const auto& device : s_boundDevices) {
+        if (device.path == devicePath) {
+            return;
+        }
     }
+    s_boundDevices.push_back({ devicePath, deviceName });
 }
 
 void initPortCache(const BindingStore& bindings) {
     // Bindings never change during DLL lifetime, so this runs once at startup.
     for (auto& binding : bindings.buttons) {
         if (binding.isSet() && !binding.isKeyboard()) {
-            addUnique(binding.devicePath);
+            addUnique(binding.devicePath, binding.deviceName);
         }
     }
     for (auto& binding : bindings.dancerButtons) {
         if (binding.isSet() && !binding.isKeyboard()) {
-            addUnique(binding.devicePath);
+            addUnique(binding.devicePath, binding.deviceName);
         }
     }
     for (auto& analogBinding : bindings.analogs) {
         if (analogBinding.isSet()) {
-            addUnique(analogBinding.devicePath);
+            addUnique(analogBinding.devicePath, analogBinding.deviceName);
         }
         if (analogBinding.vttPlus.isSet() && !analogBinding.vttPlus.isKeyboard()) {
-            addUnique(analogBinding.vttPlus.devicePath);
+            addUnique(analogBinding.vttPlus.devicePath, analogBinding.vttPlus.deviceName);
         }
         if (analogBinding.vttMinus.isSet() && !analogBinding.vttMinus.isKeyboard()) {
-            addUnique(analogBinding.vttMinus.devicePath);
+            addUnique(analogBinding.vttMinus.devicePath, analogBinding.vttMinus.deviceName);
         }
     }
 
-    Logger::info("[Input] " + std::to_string(s_boundDevicePaths.size()) + " bound device(s)");
-    for (const auto& path : s_boundDevicePaths) {
-        Logger::info("[Input]   " + path);
+    Logger::info("[Input] " + std::to_string(s_boundDevices.size()) + " bound device(s)");
+    for (const auto& device : s_boundDevices) {
+        Logger::info("[Input]   " + device.name + " (" + device.path + ")");
     }
 
     bindings.mgr->setInputCallback([](void* userData) {
         updatePortCache(*static_cast<const BindingStore*>(userData));
     }, const_cast<BindingStore*>(&bindings));
+}
+
+static DWORD WINAPI inputPollThread(void* bindingsPtr) {
+    const BindingStore& bindings = *static_cast<const BindingStore*>(bindingsPtr);
+    initPortCache(bindings);
+    while (true) {
+        Sleep(1);
+        updatePortCache(bindings);
+    }
+    return 0;
+}
+
+void startInputPollThread(const BindingStore& bindings) {
+    Logger::info("[Input] Poll thread started");
+    CreateThread(nullptr, 0, inputPollThread, const_cast<BindingStore*>(&bindings), 0, nullptr);
 }

@@ -7,4 +7,4 @@ struct BindingStore;
 bool handleDJIn(uint16_t port, uint8_t& out);
 bool handleDancerIn(uint16_t port, uint16_t& out);
 
-void initPortCache(const BindingStore& bs);
+void startInputPollThread(const BindingStore& bs);
