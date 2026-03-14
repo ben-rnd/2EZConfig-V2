@@ -3,6 +3,7 @@ add_library(2EZ SHARED
     dll.cpp
     dll_input.cpp
     dll_output.cpp
+    $<$<CONFIG:Debug>:dll_hardlock_debug.cpp>
 )
 set_target_properties(2EZ PROPERTIES PREFIX "" OUTPUT_NAME "2EZ")
 
