@@ -71,15 +71,18 @@ Patch PatchStore::parseSinglePatch(const std::string& key, const json& j) {
     std::string typeStr = j.value("type", "toggle");
     if (typeStr == "value") {
         patch.type = PatchType::Value;
+    } else {
+        patch.type = PatchType::Toggle;
     }
-    else                           patch.type = PatchType::Toggle;
 
     std::string applyStr = j.value("apply", "normal");
     if (applyStr == "super_early") {
         patch.apply = PatchApply::SuperEarly;
+    } else if (applyStr == "early") {
+        patch.apply = PatchApply::Early;
+    } else {
+        patch.apply = PatchApply::Normal;
     }
-    else if (applyStr == "early")     patch.apply = PatchApply::Early;
-    else                              patch.apply = PatchApply::Normal;
 
     patch.enabled = false;
 
