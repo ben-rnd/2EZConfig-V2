@@ -52,6 +52,7 @@ static void renderRemember1stPatches();
 static nlohmann::json saveSixthPatchState(const std::string& gameId);
 
 static const char* s_buildDate = BUILD_DATE;
+constexpr int TT_MAX_SENSE = 20;
 
 struct AppState {
     SettingsManager settings;
@@ -59,7 +60,6 @@ struct AppState {
     BindingStore bindings;
     int gameIdx = 0;
     bool isDancer = false;
-    uint8_t vttPos[BindingStore::ANALOG_COUNT] = {128, 128};
 };
 static AppState g_app;
 static GLFWwindow* g_window = nullptr;
@@ -594,16 +594,6 @@ static void renderButtonsTab() {
 }
 
 static void renderAnalogsTab() {
-    // Poll VTT keys each frame to drive the live preview
-    for (int port = 0; port < BindingStore::ANALOG_COUNT; port++) {
-        const AnalogBinding& analogBinding = g_app.bindings.analogs[port];
-        if (analogBinding.vttPlus.isSet()  && g_app.bindings.isHeld(analogBinding.vttPlus)) {
-            g_app.vttPos[port] = static_cast<uint8_t>((static_cast<int>(g_app.vttPos[port]) + analogBinding.vttStep) & 0xFF);
-        }
-        if (analogBinding.vttMinus.isSet() && g_app.bindings.isHeld(analogBinding.vttMinus)) {
-            g_app.vttPos[port] = static_cast<uint8_t>((static_cast<int>(g_app.vttPos[port]) - analogBinding.vttStep + 256) & 0xFF);
-        }
-    }
 
     // Build device list for combo: only Generic Desktop (page 0x01)
     // devices with axes. Excludes consumer control (0x0C), system
@@ -631,7 +621,7 @@ static void renderAnalogsTab() {
             AnalogBinding& analogBinding = g_app.bindings.analogs[port];
             if (analogBinding.isSet() || analogBinding.hasVtt()) {
                 ImGui::SameLine();
-                float display = g_app.bindings.getAnalogPosition(analogBinding, g_app.vttPos[port], g_app.input->getMousePosition(port)) / 255.0f;
+                float display = g_app.bindings.getAnalogPosition(analogBinding, g_app.input->getVttPosition(port), g_app.input->getMousePosition(port)) / 255.0f;
                 ImGui::ProgressBar(display, ImVec2(40.0f, 0));
             }
 
@@ -652,7 +642,7 @@ static void renderAnalogsTab() {
                 ImGui::SameLine();
                 if (ImGui::Button("Clear")) {
                     analogBinding.clear();
-                    g_app.vttPos[port] = 128;
+                    g_app.input->setMouseBinding(port, "", -1, 5);
                     g_app.bindings.save(g_app.settings);
                 }
             }
@@ -769,7 +759,7 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevices) {
                 g_app.input->setMouseBinding(port, analogBinding.mousePath, analogBinding.mouseAxis, analogBinding.mouseSensitivity);
                 g_app.bindings.save(g_app.settings);
             }
-            if (ImGui::SliderInt("Sensitivity", &analogBinding.mouseSensitivity, 1, 20)) {
+            if (ImGui::SliderInt("Sensitivity", &analogBinding.mouseSensitivity, 1, TT_MAX_SENSE)) {
                 g_app.input->setMouseBinding(port, analogBinding.mousePath, analogBinding.mouseAxis, analogBinding.mouseSensitivity);
                 g_app.bindings.save(g_app.settings);
             }
@@ -799,9 +789,12 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevices) {
         renderVttKeyBind("Virtual TT+:", "Bind##vttp", "Clear##vttp",
                          analogBinding.vttPlus,  s_capturingVtt[port][0], s_capturingVtt[port][1], s_vttPrevKeys);
 
-        if (ImGui::SliderInt("Virtual TT Step Amount", &analogBinding.vttStep, 1, 10)) {
+        if (ImGui::SliderInt("Virtual TT Step Amount", &analogBinding.vttStep, 1, TT_MAX_SENSE)) {
             g_app.bindings.save(g_app.settings);
         }
+
+        // Keep InputManager VTT state in sync with current bindings.
+        g_app.input->setVttKeys(port, analogBinding.vttPlus.vkCode, analogBinding.vttMinus.vkCode, analogBinding.vttStep);
 
         ImGui::Separator();
 
@@ -809,7 +802,7 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevices) {
             float normalizedPosition = 0.5f;
             char overlayText[32];
             if (analogBinding.isSet() || analogBinding.hasVtt()) {
-                normalizedPosition = g_app.bindings.getAnalogPosition(analogBinding, g_app.vttPos[port], g_app.input->getMousePosition(port)) / 255.0f;
+                normalizedPosition = g_app.bindings.getAnalogPosition(analogBinding, g_app.input->getVttPosition(port), g_app.input->getMousePosition(port)) / 255.0f;
                 snprintf(overlayText, sizeof(overlayText), "%.0f", normalizedPosition * 255.0f);
             } else {
                 snprintf(overlayText, sizeof(overlayText), "(unbound)");

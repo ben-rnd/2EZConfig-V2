@@ -382,7 +382,7 @@ std::string BindingStore::getDisplayString(const LightBinding& l) const {
 
 uint8_t BindingStore::getAnalogPosition(const AnalogBinding& a, uint8_t vttPos, uint8_t mousePos) const {
     if (!a.isSet()) {
-        return static_cast<uint8_t>(static_cast<int>(vttPos) + static_cast<int>(mousePos) - 128);
+        return static_cast<uint8_t>(static_cast<int>(vttPos) + static_cast<int>(mousePos) - TT_CENTER);
     }
     int base;
     if (a.hasMouse()) {
@@ -392,7 +392,7 @@ uint8_t BindingStore::getAnalogPosition(const AnalogBinding& a, uint8_t vttPos, 
         if (a.reverse) raw = 1.0f - raw;
         base = static_cast<int>(raw * 255.0f);
     }
-    return static_cast<uint8_t>(base + static_cast<int>(vttPos) - 128);
+    return static_cast<uint8_t>(base + static_cast<int>(vttPos) - TT_CENTER);
 }
 
 bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& deviceSnapshots) const {
@@ -421,7 +421,7 @@ bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMa
 
 uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, uint8_t mousePos, const DeviceSnapshotMap& deviceSnapshots) const {
     if (!a.isSet()) {
-        return static_cast<uint8_t>(static_cast<int>(vttPos) + static_cast<int>(mousePos) - 128);
+        return static_cast<uint8_t>(static_cast<int>(vttPos) + static_cast<int>(mousePos) - TT_CENTER);
     }
     int base;
     if (a.hasMouse()) {
@@ -435,5 +435,5 @@ uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos
         if (a.reverse) raw = 1.0f - raw;
         base = static_cast<int>(raw * 255.0f);
     }
-    return static_cast<uint8_t>(base + static_cast<int>(vttPos) - 128);
+    return static_cast<uint8_t>(base + static_cast<int>(vttPos) - TT_CENTER);
 }

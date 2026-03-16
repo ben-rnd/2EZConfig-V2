@@ -227,12 +227,12 @@ struct InputManagerImpl {
     volatile bool running = false;
 
     VttBinding vttBindings[2];
-    volatile char vttPos[2] = {static_cast<char>(128), static_cast<char>(128)};
+    volatile LONG vttPos[2] = {TT_CENTER_INTERNAL, TT_CENTER_INTERNAL};
     HANDLE vttThread = nullptr;
 
     std::vector<MouseDevice> mice;
     MouseBinding mouseBindings[2];
-    volatile char mousePos[2] = {static_cast<char>(128), static_cast<char>(128)};
+    volatile LONG mousePos[2] = {TT_CENTER_INTERNAL, TT_CENTER_INTERNAL};
 
     bool captureMode = false;
     CaptureResult captureResult;
@@ -758,7 +758,7 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
                 LONG delta = (impl->mouseBindings[port].axis == 0) ? mouse.lLastX : mouse.lLastY;
                 int scaled = (delta * impl->mouseBindings[port].sensitivity) / 5;
                 if (scaled != 0) {
-                    _InterlockedExchangeAdd8(&impl->mousePos[port], static_cast<char>(scaled));
+                    InterlockedExchangeAdd(&impl->mousePos[port], static_cast<LONG>(scaled));
                     anyActive = true;
                 }
             }
@@ -1097,10 +1097,10 @@ static DWORD WINAPI vttThreadFunc(LPVOID param) {
             int step     = impl->vttBindings[port].step;
 
             if (plusVk != 0 && (GetAsyncKeyState(plusVk) & 0x8000)) {
-                _InterlockedExchangeAdd8(&impl->vttPos[port], static_cast<char>(step));
+                InterlockedExchangeAdd(&impl->vttPos[port], static_cast<LONG>(step));
             }
             if (minusVk != 0 && (GetAsyncKeyState(minusVk) & 0x8000)) {
-                _InterlockedExchangeAdd8(&impl->vttPos[port], static_cast<char>(-step));
+                InterlockedExchangeAdd(&impl->vttPos[port], static_cast<LONG>(-step));
             }
         }
         Sleep(5);
@@ -1189,8 +1189,8 @@ InputManager::InputManager() {
         Sleep(1);
     }
 
-    impl->vttPos[0] = static_cast<char>(128);
-    impl->vttPos[1] = static_cast<char>(128);
+    impl->vttPos[0] = TT_CENTER_INTERNAL;
+    impl->vttPos[1] = TT_CENTER_INTERNAL;
     impl->vttThread = CreateThread(
         nullptr, 0, vttThreadFunc, impl, 0, nullptr);
 
@@ -1331,9 +1331,9 @@ void InputManager::setVttKeys(int port, int plusVk, int minusVk, int step) {
 
 uint8_t InputManager::getVttPosition(int port) const {
     if (port < 0 || port > 1) {
-        return 128;
+        return TT_CENTER;
     }
-    return static_cast<uint8_t>(static_cast<unsigned char>(impl->vttPos[port]));
+    return static_cast<uint8_t>((impl->vttPos[port] / TT_INTERNAL_MULTIPLIER) & 0xFF);
 }
 
 std::vector<MouseDeviceInfo> InputManager::getMouseDevices() const {
@@ -1358,8 +1358,8 @@ void InputManager::setMouseBinding(int port, const std::string& devicePath, int 
 }
 
 uint8_t InputManager::getMousePosition(int port) const {
-    if (port < 0 || port > 1) return 128;
-    return static_cast<uint8_t>(static_cast<unsigned char>(impl->mousePos[port]));
+    if (port < 0 || port > 1) return TT_CENTER;
+    return static_cast<uint8_t>((impl->mousePos[port] / TT_INTERNAL_MULTIPLIER) & 0xFF);
 }
 
 void InputManager::startCapture() {
