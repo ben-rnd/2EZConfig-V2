@@ -43,6 +43,10 @@ static void renderVttKeyBind(const char* label, const char* bindId, const char* 
                              ButtonBinding& binding, bool& capturing, bool& otherCapturing, bool* prevKeys);
 static void globalCheckbox(const char* label, const char* key, bool defaultVal);
 static void autoDetectGame();
+static std::string resolveActiveExeName();
+static std::vector<std::string> parseExtraDlls();
+static void launchGame();
+static void cleanupUI();
 static int sixthBackgroundLoop(const char* launcherExe, const std::vector<std::string>& extraDlls);
 static void renderRemember1stPatches();
 static nlohmann::json saveSixthPatchState(const std::string& gameId);
@@ -158,6 +162,14 @@ int main() {
 
     autoDetectGame();
 
+    if (g_app.settings.gameSettings().value("skip_ui", false)) {
+        launchGame();
+        cleanupUI();
+        if (s_sixthMode) {
+            return sixthBackgroundLoop(s_sixthLauncherExe.c_str(), s_sixthExtraDlls);
+        }
+        return 0;
+    }
 
     while (!glfwWindowShouldClose(g_window)) {
         glfwPollEvents();
@@ -178,14 +190,7 @@ int main() {
         glfwSwapBuffers(g_window);
     }
 
-    ImGui_ImplOpenGL2_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-    glfwDestroyWindow(g_window);
-    glfwTerminate();
-
-    delete g_app.input;
-    g_app.input = nullptr;
+    cleanupUI();
 
     if (s_sixthMode) {
         return sixthBackgroundLoop(s_sixthLauncherExe.c_str(), s_sixthExtraDlls);
@@ -254,27 +259,8 @@ static void renderUI() {
     float playButtonWidth = 90.0f;
     float availableWidth = ImGui::GetContentRegionAvail().x;
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + availableWidth - playButtonWidth);
-    // Get current exeName at frame time — use exe_name override if set in game-settings
-    static const int DJ_COUNT_TB = static_cast<int>(sizeof(djGames) / sizeof(djGames[0]));
-    const char* defaultExe = (g_app.gameIdx >= DJ_COUNT_TB) ? "EZ2Dancer.exe" : djGames[g_app.gameIdx].defaultExeName;
-    std::string exeOverride = g_app.settings.gameSettings().value("exe_name", "");
-    const char* activeExeName   = exeOverride.empty() ? defaultExe : exeOverride.c_str();
     if (ImGui::Button("Play EZ2", ImVec2(playButtonWidth, 0))) {
-        std::vector<std::string> extraDlls;
-        std::string extraDllsStr = g_app.settings.gameSettings().value("extra_dlls", "");
-        std::istringstream iss(extraDllsStr);
-        std::string dllPath;
-        while (iss >> dllPath) {
-            extraDlls.push_back(dllPath);
-        }
-        std::string gameId = g_app.settings.gameSettings().value("game_id", "");
-        if (gameId == "ez2dj_6th") {
-            s_sixthMode = true;
-            s_sixthLauncherExe = activeExeName;
-            s_sixthExtraDlls = extraDlls;
-        } else {
-            Injector::LaunchAndInject(activeExeName, extraDlls);
-        }
+        launchGame();
         glfwSetWindowShouldClose(g_window, GLFW_TRUE);
     }
 
@@ -468,7 +454,7 @@ static void renderSettingsTab() {
         }
         ImGui::TextUnformatted("Extra DLLs");
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::InputText("##extra_dlls", extraDllsBuffer, sizeof(extraDllsBuffer))) {
+        if (ImGui::InputTextWithHint("##extra_dlls", "eg: mod1.dll mod2.dll", extraDllsBuffer, sizeof(extraDllsBuffer))) {
             if (extraDllsBuffer[0]) {
                 g_app.settings.gameSettings()["extra_dlls"] = std::string(extraDllsBuffer);
             } else {
@@ -476,7 +462,7 @@ static void renderSettingsTab() {
             }
             g_app.settings.save();
         }
-        ImGui::TextDisabled("Space-separated DLL paths injected after 2EZ.dll");
+        ImGui::TextDisabled("Space-separated DLLs injected with 2EZ.dll");
     }
 
     ImGui::SeparatorText("Global Settings");
@@ -1025,11 +1011,45 @@ static void gameCheckbox(const char* label, const char* key, bool defaultVal) {
     }
 }
 
-// --- 6th Trax helpers (isolated from main flow) ---
+// --- Launch / cleanup helpers ---
 
-static void sixthLog(const std::string& gameDir, const std::string& msg) {
-    std::ofstream log(gameDir + "\\2ez-logs.txt", std::ios::app);
-    if (log.is_open()) log << "[6th-loop] " << msg << "\n";
+static std::string resolveActiveExeName() {
+    static const int DJ_COUNT = static_cast<int>(sizeof(djGames) / sizeof(djGames[0]));
+    const char* defaultExe = (g_app.gameIdx >= DJ_COUNT) ? "EZ2Dancer.exe" : djGames[g_app.gameIdx].defaultExeName;
+    std::string exeOverride = g_app.settings.gameSettings().value("exe_name", "");
+    return exeOverride.empty() ? defaultExe : exeOverride;
+}
+
+static std::vector<std::string> parseExtraDlls() {
+    std::vector<std::string> dlls;
+    std::string str = g_app.settings.gameSettings().value("extra_dlls", "");
+    std::istringstream iss(str);
+    std::string dll;
+    while (iss >> dll) dlls.push_back(dll);
+    return dlls;
+}
+
+static void launchGame() {
+    std::string exe = resolveActiveExeName();
+    auto extraDlls = parseExtraDlls();
+    std::string gameId = g_app.settings.gameSettings().value("game_id", "");
+    if (gameId == "ez2dj_6th") {
+        s_sixthMode = true;
+        s_sixthLauncherExe = exe;
+        s_sixthExtraDlls = extraDlls;
+    } else {
+        Injector::LaunchAndInject(exe.c_str(), extraDlls);
+    }
+}
+
+static void cleanupUI() {
+    ImGui_ImplOpenGL2_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    glfwDestroyWindow(g_window);
+    glfwTerminate();
+    delete g_app.input;
+    g_app.input = nullptr;
 }
 
 static int sixthBackgroundLoop(const char* launcherExe, const std::vector<std::string>& extraDlls) {
@@ -1038,8 +1058,6 @@ static int sixthBackgroundLoop(const char* launcherExe, const std::vector<std::s
     char* lastSlash = strrchr(exePath, '\\');
     std::string exeDir = lastSlash ? std::string(exePath, lastSlash) : ".";
     std::string dllFullPath = exeDir + "\\2EZ.dll";
-
-    sixthLog(exeDir, "Starting 6th background loop");
     Injector::LaunchAndInject(launcherExe, extraDlls);
 
     DWORD lastInjected6th = 0;
@@ -1052,7 +1070,6 @@ static int sixthBackgroundLoop(const char* launcherExe, const std::vector<std::s
         bool seen = false;
         DWORD pid6th = Injector::FindProcess("EZ2DJ6th.exe");
         if (pid6th && pid6th != lastInjected6th) {
-            sixthLog(exeDir, "Found EZ2DJ6th.exe, injecting");
             Injector::InjectRunningProcess("EZ2DJ6th.exe", dllFullPath.c_str());
             lastInjected6th = pid6th;
         }
@@ -1060,7 +1077,6 @@ static int sixthBackgroundLoop(const char* launcherExe, const std::vector<std::s
 
         DWORD pid1st = Injector::FindProcess("EZ2DJ.exe");
         if (pid1st && pid1st != lastInjected1st) {
-            sixthLog(exeDir, "Found Remember 1st (EZ2DJ.exe), injecting");
             Injector::InjectRunningProcess("EZ2DJ.exe", dllFullPath.c_str());
             lastInjected1st = pid1st;
         }
@@ -1069,7 +1085,6 @@ static int sixthBackgroundLoop(const char* launcherExe, const std::vector<std::s
         if (seen) {
             lastSeenTime = GetTickCount();
         } else if (GetTickCount() - lastSeenTime > 2000) {
-            sixthLog(exeDir, "No game processes detected, exiting");
             break;
         }
     }

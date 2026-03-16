@@ -20,7 +20,8 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
         file >> m_gameSettings;
     } else {
         m_gameSettings = {
-            {"logging_enabled", false}
+            {"logging_enabled", false},
+            {"skip_ui", false}
         };
     }
 
