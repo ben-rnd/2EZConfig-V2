@@ -8,9 +8,10 @@
 // Turntable position constants for VTT and mouse accumulators.
 // Internal accumulators run at higher resolution for finer sensitivity control,
 // then divide down to 0-255 output on read.
-constexpr int TT_CENTER = 128 ;
+constexpr int TT_CENTER = 128;
 constexpr int TT_INTERNAL_MULTIPLIER = 8;
-constexpr int TT_CENTER_INTERNAL = TT_CENTER* TT_INTERNAL_MULTIPLIER;
+constexpr int TT_CENTER_INTERNAL = TT_CENTER * TT_INTERNAL_MULTIPLIER;
+constexpr int TT_MAX_SENSE = 20;
 
 struct InputManagerImpl;
 

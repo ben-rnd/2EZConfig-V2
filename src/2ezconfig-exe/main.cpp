@@ -52,7 +52,6 @@ static void renderRemember1stPatches();
 static nlohmann::json saveSixthPatchState(const std::string& gameId);
 
 static const char* s_buildDate = BUILD_DATE;
-constexpr int TT_MAX_SENSE = 20;
 
 struct AppState {
     SettingsManager settings;
@@ -594,8 +593,6 @@ static void renderButtonsTab() {
 }
 
 static void renderAnalogsTab() {
-    g_app.bindings.tickVtt();
-
     // Build device list for combo: only Generic Desktop (page 0x01)
     // devices with axes. Excludes consumer control (0x0C), system
     // control, and other non-joystick HID collections.

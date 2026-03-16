@@ -111,9 +111,11 @@ struct BindingStore {
 
     InputManager* mgr = nullptr;
 
-    // VTT accumulator — call tickVtt() each frame/poll to update position.
-    int vttPos[ANALOG_COUNT] = {TT_CENTER_INTERNAL, TT_CENTER_INTERNAL};
-    void tickVtt();
+    volatile LONG vttPos[ANALOG_COUNT] = {TT_CENTER_INTERNAL, TT_CENTER_INTERNAL};
+    volatile bool vttRunning = false;
+    HANDLE vttThread = nullptr;
+    void startVttThread();
+    void stopVttThread();
     uint8_t getVttPosition(int port) const;
 
     void load(SettingsManager& settings, InputManager& mgr);
@@ -122,7 +124,7 @@ struct BindingStore {
     bool isHeld(const ButtonBinding& b) const;
 
     using DeviceSnapshotMap = std::unordered_map<std::string, DeviceSnapshot>;
-    bool    isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& deviceSnapshots) const;
+    bool isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& deviceSnapshots) const;
     uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, uint8_t mousePos, const DeviceSnapshotMap& deviceSnapshots) const;
 
     std::string getDisplayString(const ButtonBinding& b) const;

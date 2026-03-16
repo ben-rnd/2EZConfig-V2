@@ -241,6 +241,8 @@ void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
             mgr->setMouseBinding(p, analogs[p].mousePath, analogs[p].mouseAxis, analogs[p].mouseSensitivity);
         }
     }
+
+    startVttThread();
 }
 
 void BindingStore::save(SettingsManager& settings) const {
@@ -276,13 +278,32 @@ void BindingStore::save(SettingsManager& settings) const {
     settings.save();
 }
 
-void BindingStore::tickVtt() {
-    for (int p = 0; p < ANALOG_COUNT; p++) {
-        if (isHeld(analogs[p].vttPlus))
-            vttPos[p] += analogs[p].vttStep;
-        if (isHeld(analogs[p].vttMinus))
-            vttPos[p] -= analogs[p].vttStep;
+static DWORD WINAPI vttThreadFunc(LPVOID param) {
+    BindingStore* bs = reinterpret_cast<BindingStore*>(param);
+    while (bs->vttRunning) {
+        for (int p = 0; p < BindingStore::ANALOG_COUNT; p++) {
+            if (bs->isHeld(bs->analogs[p].vttPlus))
+                InterlockedExchangeAdd(&bs->vttPos[p], static_cast<LONG>(bs->analogs[p].vttStep));
+            if (bs->isHeld(bs->analogs[p].vttMinus))
+                InterlockedExchangeAdd(&bs->vttPos[p], static_cast<LONG>(-bs->analogs[p].vttStep));
+        }
+        Sleep(5);
     }
+    return 0;
+}
+
+void BindingStore::startVttThread() {
+    if (vttThread) return;
+    vttRunning = true;
+    vttThread = CreateThread(nullptr, 0, vttThreadFunc, this, 0, nullptr);
+}
+
+void BindingStore::stopVttThread() {
+    if (!vttThread) return;
+    vttRunning = false;
+    WaitForSingleObject(vttThread, 500);
+    CloseHandle(vttThread);
+    vttThread = nullptr;
 }
 
 uint8_t BindingStore::getVttPosition(int port) const {

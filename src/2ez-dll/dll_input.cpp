@@ -183,7 +183,6 @@ void updatePortCache(BindingStore& bindings) {
     s_djPortCache[DJ_P2_KEYS].store(computePort(0xFF, djP2Buttons, std::size(djP2Buttons), djIsHeld));
 
     // DJ analog ports (turntable positions)
-    bindings.tickVtt();
     s_djPortCache[DJ_P1_TT].store(bindings.getPositionSnapshot(bindings.analogs[(int)Analog::P1_TURNTABLE], bindings.getVttPosition((int)Analog::P1_TURNTABLE), bindings.mgr->getMousePosition((int)Analog::P1_TURNTABLE), deviceSnapshots));
     s_djPortCache[DJ_P2_TT].store(bindings.getPositionSnapshot(bindings.analogs[(int)Analog::P2_TURNTABLE], bindings.getVttPosition((int)Analog::P2_TURNTABLE), bindings.mgr->getMousePosition((int)Analog::P2_TURNTABLE), deviceSnapshots));
 
