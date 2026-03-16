@@ -230,9 +230,21 @@ void initPortCache(const BindingStore& bindings) {
         }
     }
 
+    std::vector<Device> connectedDevices = bindings.mgr->getDevices();
     Logger::info("[Input] " + std::to_string(s_boundDevices.size()) + " bound device(s)");
     for (const auto& device : s_boundDevices) {
-        Logger::info("[Input]   " + device.name + " (" + device.path + ")");
+        bool connected = false;
+        for (const auto& cd : connectedDevices) {
+            if (cd.path == device.path) {
+                connected = true;
+                break;
+            }
+        }
+        if (connected) {
+            Logger::info("[Input]   " + device.name + " (" + device.path + ")");
+        } else {
+            Logger::warn("[Input] (Disconnected) " + device.name);
+        }
     }
 
     bindings.mgr->setInputCallback([](void* userData) {
