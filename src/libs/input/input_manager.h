@@ -36,8 +36,6 @@ public:
     std::vector<Device> getDevices() const;
     bool getButtonState(const std::string& path, int buttonIdx) const;
     float getAxisValue(const std::string& path, int axisIdx) const;
-    void setVttKeys(int port, int plusVk, int minusVk, int step);
-    uint8_t getVttPosition(int port) const;
     void startCapture();
     void stopCapture();
     bool pollCapture(CaptureResult& out);

@@ -25,6 +25,20 @@ static std::string vkToName(int vk) {
     return std::string("VK ") + std::to_string(vk);
 }
 
+static const char* hatDirectionName(ButtonAnalogType type) {
+    switch (type) {
+        case ButtonAnalogType::HS_UP:         return "Up";
+        case ButtonAnalogType::HS_UP_RIGHT:   return "Up-Right";
+        case ButtonAnalogType::HS_RIGHT:      return "Right";
+        case ButtonAnalogType::HS_DOWN_RIGHT: return "Down-Right";
+        case ButtonAnalogType::HS_DOWN:       return "Down";
+        case ButtonAnalogType::HS_DOWN_LEFT:  return "Down-Left";
+        case ButtonAnalogType::HS_LEFT:       return "Left";
+        case ButtonAnalogType::HS_UP_LEFT:    return "Up-Left";
+        default: return nullptr;
+    }
+}
+
 static bool isHatDirectionActive(float hatValue, ButtonAnalogType dir) {
     if (hatValue < 0.0f) {
         return false;
@@ -223,12 +237,6 @@ void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
     }
 
     for (int p = 0; p < ANALOG_COUNT; ++p) {
-        if (analogs[p].vttPlus.vkCode != 0 || analogs[p].vttMinus.vkCode != 0) {
-            mgr->setVttKeys(p,
-                analogs[p].vttPlus.vkCode,
-                analogs[p].vttMinus.vkCode,
-                analogs[p].vttStep);
-        }
         if (analogs[p].hasMouse()) {
             mgr->setMouseBinding(p, analogs[p].mousePath, analogs[p].mouseAxis, analogs[p].mouseSensitivity);
         }
@@ -268,6 +276,20 @@ void BindingStore::save(SettingsManager& settings) const {
     settings.save();
 }
 
+void BindingStore::tickVtt() {
+    for (int p = 0; p < ANALOG_COUNT; p++) {
+        if (isHeld(analogs[p].vttPlus))
+            vttPos[p] += analogs[p].vttStep;
+        if (isHeld(analogs[p].vttMinus))
+            vttPos[p] -= analogs[p].vttStep;
+    }
+}
+
+uint8_t BindingStore::getVttPosition(int port) const {
+    if (port < 0 || port >= ANALOG_COUNT) return TT_CENTER;
+    return static_cast<uint8_t>((vttPos[port] / TT_INTERNAL_MULTIPLIER) & 0xFF);
+}
+
 bool BindingStore::isHeld(const ButtonBinding& b) const {
     if (!b.isSet()) {
         return false;
@@ -302,7 +324,18 @@ std::string BindingStore::getDisplayString(const ButtonBinding& b) const {
     for (const Device& dev : devs) {
         if (dev.path == b.devicePath) {
             std::string label;
-            if (b.buttonIdx >= 0 && b.buttonIdx < static_cast<int>(dev.buttonCapsNames.size())) {
+            if (b.analogType != ButtonAnalogType::NONE) {
+                // Hat switch direction — look up in valueCapsNames
+                if (b.buttonIdx >= 0 && b.buttonIdx < static_cast<int>(dev.valueCapsNames.size())) {
+                    label = dev.valueCapsNames[b.buttonIdx];
+                } else {
+                    label = "Hat Switch";
+                }
+                const char* dirName = hatDirectionName(b.analogType);
+                if (dirName) {
+                    label += std::string(" ") + dirName;
+                }
+            } else if (b.buttonIdx >= 0 && b.buttonIdx < static_cast<int>(dev.buttonCapsNames.size())) {
                 label = dev.buttonCapsNames[b.buttonIdx];
             } else {
                 label = std::string("Button ") + std::to_string(b.buttonIdx);

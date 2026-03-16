@@ -594,6 +594,7 @@ static void renderButtonsTab() {
 }
 
 static void renderAnalogsTab() {
+    g_app.bindings.tickVtt();
 
     // Build device list for combo: only Generic Desktop (page 0x01)
     // devices with axes. Excludes consumer control (0x0C), system
@@ -621,7 +622,7 @@ static void renderAnalogsTab() {
             AnalogBinding& analogBinding = g_app.bindings.analogs[port];
             if (analogBinding.isSet() || analogBinding.hasVtt()) {
                 ImGui::SameLine();
-                float display = g_app.bindings.getAnalogPosition(analogBinding, g_app.input->getVttPosition(port), g_app.input->getMousePosition(port)) / 255.0f;
+                float display = g_app.bindings.getAnalogPosition(analogBinding, g_app.bindings.getVttPosition(port), g_app.input->getMousePosition(port)) / 255.0f;
                 ImGui::ProgressBar(display, ImVec2(40.0f, 0));
             }
 
@@ -793,16 +794,13 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevices) {
             g_app.bindings.save(g_app.settings);
         }
 
-        // Keep InputManager VTT state in sync with current bindings.
-        g_app.input->setVttKeys(port, analogBinding.vttPlus.vkCode, analogBinding.vttMinus.vkCode, analogBinding.vttStep);
-
         ImGui::Separator();
 
         {
             float normalizedPosition = 0.5f;
             char overlayText[32];
             if (analogBinding.isSet() || analogBinding.hasVtt()) {
-                normalizedPosition = g_app.bindings.getAnalogPosition(analogBinding, g_app.input->getVttPosition(port), g_app.input->getMousePosition(port)) / 255.0f;
+                normalizedPosition = g_app.bindings.getAnalogPosition(analogBinding, g_app.bindings.getVttPosition(port), g_app.input->getMousePosition(port)) / 255.0f;
                 snprintf(overlayText, sizeof(overlayText), "%.0f", normalizedPosition * 255.0f);
             } else {
                 snprintf(overlayText, sizeof(overlayText), "(unbound)");

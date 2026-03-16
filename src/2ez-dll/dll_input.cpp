@@ -159,7 +159,7 @@ bool handleDancerIn(uint16_t port, uint16_t& out) {
     }
 }
 
-void updatePortCache(const BindingStore& bindings) {
+void updatePortCache(BindingStore& bindings) {
     // Snapshot all bound devices once per update cycle
     BindingStore::DeviceSnapshotMap deviceSnapshots;
     for (const auto& device : s_boundDevices) {
@@ -183,8 +183,9 @@ void updatePortCache(const BindingStore& bindings) {
     s_djPortCache[DJ_P2_KEYS].store(computePort(0xFF, djP2Buttons, std::size(djP2Buttons), djIsHeld));
 
     // DJ analog ports (turntable positions)
-    s_djPortCache[DJ_P1_TT].store(bindings.getPositionSnapshot(bindings.analogs[(int)Analog::P1_TURNTABLE], bindings.mgr->getVttPosition((int)Analog::P1_TURNTABLE), bindings.mgr->getMousePosition((int)Analog::P1_TURNTABLE), deviceSnapshots));
-    s_djPortCache[DJ_P2_TT].store(bindings.getPositionSnapshot(bindings.analogs[(int)Analog::P2_TURNTABLE], bindings.mgr->getVttPosition((int)Analog::P2_TURNTABLE), bindings.mgr->getMousePosition((int)Analog::P2_TURNTABLE), deviceSnapshots));
+    bindings.tickVtt();
+    s_djPortCache[DJ_P1_TT].store(bindings.getPositionSnapshot(bindings.analogs[(int)Analog::P1_TURNTABLE], bindings.getVttPosition((int)Analog::P1_TURNTABLE), bindings.mgr->getMousePosition((int)Analog::P1_TURNTABLE), deviceSnapshots));
+    s_djPortCache[DJ_P2_TT].store(bindings.getPositionSnapshot(bindings.analogs[(int)Analog::P2_TURNTABLE], bindings.getVttPosition((int)Analog::P2_TURNTABLE), bindings.mgr->getMousePosition((int)Analog::P2_TURNTABLE), deviceSnapshots));
 
     // Dancer pad ports (inverted: hardware active-low -> cache active-high)
     s_dancerPortCache[DANCER_P1_PADS].store(static_cast<uint16_t>(~computePort(0x0FFF, dancerP1Pads, std::size(dancerP1Pads), dancerIsHeld)));
@@ -206,7 +207,7 @@ static void addUnique(const std::string& devicePath, const std::string& deviceNa
     s_boundDevices.push_back({ devicePath, deviceName });
 }
 
-void initPortCache(const BindingStore& bindings) {
+void initPortCache(BindingStore& bindings) {
     // Bindings never change during DLL lifetime, so this runs once at startup.
     for (auto& binding : bindings.buttons) {
         if (binding.isSet() && !binding.isKeyboard()) {
@@ -248,12 +249,12 @@ void initPortCache(const BindingStore& bindings) {
     }
 
     bindings.mgr->setInputCallback([](void* userData) {
-        updatePortCache(*static_cast<const BindingStore*>(userData));
-    }, const_cast<BindingStore*>(&bindings));
+        updatePortCache(*static_cast<BindingStore*>(userData));
+    }, &bindings);
 }
 
 static DWORD WINAPI inputPollThread(void* bindingsPtr) {
-    const BindingStore& bindings = *static_cast<const BindingStore*>(bindingsPtr);
+    BindingStore& bindings = *static_cast<BindingStore*>(bindingsPtr);
     initPortCache(bindings);
     while (true) {
         Sleep(1);
@@ -262,7 +263,7 @@ static DWORD WINAPI inputPollThread(void* bindingsPtr) {
     return 0;
 }
 
-void startInputPollThread(const BindingStore& bindings) {
+void startInputPollThread(BindingStore& bindings) {
     Logger::info("[Input] Poll thread started");
-    CreateThread(nullptr, 0, inputPollThread, const_cast<BindingStore*>(&bindings), 0, nullptr);
+    CreateThread(nullptr, 0, inputPollThread, &bindings, 0, nullptr);
 }

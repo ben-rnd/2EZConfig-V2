@@ -199,12 +199,6 @@ static bool isHatDirectionActive(float hatVal, ButtonAnalogType dir) {
     return false;
 }
 
-struct VttBinding {
-    int plusVk = 0;
-    int minusVk = 0;
-    int step = 3;
-};
-
 struct MouseDevice {
     std::string path;
     std::string name;
@@ -225,10 +219,6 @@ struct InputManagerImpl {
     HANDLE pumpThread = nullptr;
     HWND hwnd = nullptr;
     volatile bool running = false;
-
-    VttBinding vttBindings[2];
-    volatile LONG vttPos[2] = {TT_CENTER_INTERNAL, TT_CENTER_INTERNAL};
-    HANDLE vttThread = nullptr;
 
     std::vector<MouseDevice> mice;
     MouseBinding mouseBindings[2];
@@ -1086,30 +1076,6 @@ static DWORD WINAPI msgPumpThread(LPVOID param) {
     return 0;
 }
 
-static DWORD WINAPI vttThreadFunc(LPVOID param) {
-    InputManagerImpl* impl = reinterpret_cast<InputManagerImpl*>(param);
-    timeBeginPeriod(1);
-
-    while (impl->running) {
-        for (int port = 0; port < 2; port++) {
-            int plusVk  = impl->vttBindings[port].plusVk;
-            int minusVk = impl->vttBindings[port].minusVk;
-            int step     = impl->vttBindings[port].step;
-
-            if (plusVk != 0 && (GetAsyncKeyState(plusVk) & 0x8000)) {
-                InterlockedExchangeAdd(&impl->vttPos[port], static_cast<LONG>(step));
-            }
-            if (minusVk != 0 && (GetAsyncKeyState(minusVk) & 0x8000)) {
-                InterlockedExchangeAdd(&impl->vttPos[port], static_cast<LONG>(-step));
-            }
-        }
-        Sleep(5);
-    }
-
-    timeEndPeriod(1);
-    return 0;
-}
-
 static DWORD WINAPI outputThreadFunc(LPVOID param) {
     InputManagerImpl* impl = reinterpret_cast<InputManagerImpl*>(param);
     while (impl->running) {
@@ -1189,11 +1155,6 @@ InputManager::InputManager() {
         Sleep(1);
     }
 
-    impl->vttPos[0] = TT_CENTER_INTERNAL;
-    impl->vttPos[1] = TT_CENTER_INTERNAL;
-    impl->vttThread = CreateThread(
-        nullptr, 0, vttThreadFunc, impl, 0, nullptr);
-
     // Start output thread (event-based) and flush thread (periodic 500ms).
     impl->outputThread = CreateThread(nullptr, 0, outputThreadFunc, impl, 0, nullptr);
     impl->flushThread  = CreateThread(nullptr, 0, flushThreadFunc, impl, 0, nullptr);
@@ -1215,12 +1176,6 @@ InputManager::~InputManager() {
         WaitForSingleObject(impl->pumpThread, 2000);
         CloseHandle(impl->pumpThread);
         impl->pumpThread = nullptr;
-    }
-
-    if (impl->vttThread) {
-        WaitForSingleObject(impl->vttThread, 500);
-        CloseHandle(impl->vttThread);
-        impl->vttThread = nullptr;
     }
 
     if (impl->outputThread) {
@@ -1318,22 +1273,6 @@ float InputManager::getAxisValue(const std::string& path, int axisIdx) const {
     }
     LeaveCriticalSection(&impl->devicesLock);
     return 0.5f;
-}
-
-void InputManager::setVttKeys(int port, int plusVk, int minusVk, int step) {
-    if (port < 0 || port > 1) {
-        return;
-    }
-    impl->vttBindings[port].plusVk  = plusVk;
-    impl->vttBindings[port].minusVk = minusVk;
-    impl->vttBindings[port].step     = step > 0 ? step : 3;
-}
-
-uint8_t InputManager::getVttPosition(int port) const {
-    if (port < 0 || port > 1) {
-        return TT_CENTER;
-    }
-    return static_cast<uint8_t>((impl->vttPos[port] / TT_INTERNAL_MULTIPLIER) & 0xFF);
 }
 
 std::vector<MouseDeviceInfo> InputManager::getMouseDevices() const {

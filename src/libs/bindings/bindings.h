@@ -111,6 +111,11 @@ struct BindingStore {
 
     InputManager* mgr = nullptr;
 
+    // VTT accumulator — call tickVtt() each frame/poll to update position.
+    int vttPos[ANALOG_COUNT] = {TT_CENTER_INTERNAL, TT_CENTER_INTERNAL};
+    void tickVtt();
+    uint8_t getVttPosition(int port) const;
+
     void load(SettingsManager& settings, InputManager& mgr);
     void save(SettingsManager& settings) const;
 
