@@ -27,13 +27,13 @@ jobs:
           mkdir -p release
           cp build/release/bin/2EZ.dll release/
           cp build/release/bin/2EZConfig.exe release/
-          cd release && zip ../2EZConfig-${VERSION}.zip *
+          cd release && zip ../2EZConfig-V2-${VERSION}.zip *
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
-          name: 2EZConfig v2 ${{ env.VERSION }}
-          files: 2EZConfig-v2-${{ env.VERSION }}.zip
+          name: 2EZConfig V2 ${{ env.VERSION }}
+          files: 2EZConfig-V2-${{ env.VERSION }}.zip
           generate_release_notes: true
