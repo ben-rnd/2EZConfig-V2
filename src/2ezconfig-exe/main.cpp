@@ -1087,6 +1087,7 @@ static void launchGame() {
 }
 
 static void cleanupUI() {
+    g_app.bindings.stopVttThread();
     ImGui_ImplOpenGL2_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
