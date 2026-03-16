@@ -631,7 +631,7 @@ static void renderAnalogsTab() {
             AnalogBinding& analogBinding = g_app.bindings.analogs[port];
             if (analogBinding.isSet() || analogBinding.hasVtt()) {
                 ImGui::SameLine();
-                float display = g_app.bindings.getAnalogPosition(analogBinding, g_app.vttPos[port]) / 255.0f;
+                float display = g_app.bindings.getAnalogPosition(analogBinding, g_app.vttPos[port], g_app.input->getMousePosition(port)) / 255.0f;
                 ImGui::ProgressBar(display, ImVec2(40.0f, 0));
             }
 
@@ -682,14 +682,30 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevices) {
         ImGui::Separator();
         AnalogBinding& analogBinding = g_app.bindings.analogs[port];
 
+        // Get mouse devices for the combo.
+        auto mouseDevices = g_app.input->getMouseDevices();
+        std::vector<std::string> mouseLabels;
+        for (auto& m : mouseDevices) {
+            mouseLabels.push_back(m.name);
+        }
+        int firstMouseIdx = 1 + static_cast<int>(axisDevices.size());
+
         if (!s_initialized[port]) {
             s_initialized[port] = true;
             s_devIdx[port] = 0;
             s_axisIdx[port] = 0;
-            if (analogBinding.isSet()) {
+            if (analogBinding.hasMouse()) {
+                for (int mi = 0; mi < static_cast<int>(mouseDevices.size()); mi++) {
+                    if (mouseDevices[mi].path == analogBinding.mousePath) {
+                        s_devIdx[port] = firstMouseIdx + mi;
+                        s_axisIdx[port] = (analogBinding.mouseAxis >= 0) ? analogBinding.mouseAxis : 0;
+                        break;
+                    }
+                }
+            } else if (!analogBinding.devicePath.empty() && analogBinding.axisIdx >= 0) {
                 for (int di = 0; di < static_cast<int>(axisDevices.size()); di++) {
                     if (axisDevices[di].path == analogBinding.devicePath) {
-                        s_devIdx[port]  = di + 1;  // +1 for "(none)" at index 0
+                        s_devIdx[port]  = di + 1;
                         s_axisIdx[port] = (analogBinding.axisIdx >= 0) ? analogBinding.axisIdx : 0;
                         break;
                     }
@@ -697,27 +713,67 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevices) {
             }
         }
 
+        // Build combined device labels: (none), [HID devices...], [mice...]
         std::vector<const char*> deviceLabels;
         deviceLabels.push_back("(none)");
         for (auto& device : axisDevices) {
             deviceLabels.push_back(device.name.c_str());
         }
+        for (auto& ml : mouseLabels) {
+            deviceLabels.push_back(ml.c_str());
+        }
+
         if (ImGui::Combo("Device", &s_devIdx[port], deviceLabels.data(), static_cast<int>(deviceLabels.size()))) {
             s_axisIdx[port] = 0;
-            if (s_devIdx[port] > 0) {
+            if (s_devIdx[port] == 0) {
+                // (none) — clear both HID and mouse
+                analogBinding.devicePath.clear();
+                analogBinding.deviceName.clear();
+                analogBinding.axisIdx = -1;
+                analogBinding.mousePath.clear();
+                analogBinding.mouseName.clear();
+                analogBinding.mouseAxis = -1;
+                g_app.input->setMouseBinding(port, "", -1, 5);
+            } else if (s_devIdx[port] >= firstMouseIdx) {
+                // Mouse selected — clear HID fields, set mouse
+                analogBinding.devicePath.clear();
+                analogBinding.deviceName.clear();
+                analogBinding.axisIdx = -1;
+                int mi = s_devIdx[port] - firstMouseIdx;
+                analogBinding.mousePath = mouseDevices[mi].path;
+                analogBinding.mouseName = mouseDevices[mi].name;
+                analogBinding.mouseAxis = 0;
+                g_app.input->setMouseBinding(port, analogBinding.mousePath, analogBinding.mouseAxis, analogBinding.mouseSensitivity);
+            } else {
+                // HID device selected — clear mouse fields
                 const Device& device = axisDevices[static_cast<size_t>(s_devIdx[port] - 1)];
                 analogBinding.devicePath = device.path;
                 analogBinding.deviceName = device.name;
                 analogBinding.axisIdx = 0;
-            } else {
-                analogBinding.devicePath.clear();
-                analogBinding.deviceName.clear();
-                analogBinding.axisIdx = -1;
+                analogBinding.mousePath.clear();
+                analogBinding.mouseName.clear();
+                analogBinding.mouseAxis = -1;
+                g_app.input->setMouseBinding(port, "", -1, 5);
             }
             g_app.bindings.save(g_app.settings);
         }
 
-        if (s_devIdx[port] > 0) {
+        bool isMouse = (s_devIdx[port] >= firstMouseIdx);
+        bool isHid = (s_devIdx[port] > 0 && !isMouse);
+
+        if (isMouse) {
+            // Mouse axis combo: X / Y
+            const char* mouseAxes[] = { "X", "Y" };
+            if (ImGui::Combo("Axis", &s_axisIdx[port], mouseAxes, 2)) {
+                analogBinding.mouseAxis = s_axisIdx[port];
+                g_app.input->setMouseBinding(port, analogBinding.mousePath, analogBinding.mouseAxis, analogBinding.mouseSensitivity);
+                g_app.bindings.save(g_app.settings);
+            }
+            if (ImGui::SliderInt("Sensitivity", &analogBinding.mouseSensitivity, 1, 20)) {
+                g_app.input->setMouseBinding(port, analogBinding.mousePath, analogBinding.mouseAxis, analogBinding.mouseSensitivity);
+                g_app.bindings.save(g_app.settings);
+            }
+        } else if (isHid) {
             const Device& device = axisDevices[static_cast<size_t>(s_devIdx[port] - 1)];
             int axisCount = static_cast<int>(device.valueCapsNames.size());
             std::vector<const char*> axisLabels;
@@ -753,7 +809,7 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevices) {
             float normalizedPosition = 0.5f;
             char overlayText[32];
             if (analogBinding.isSet() || analogBinding.hasVtt()) {
-                normalizedPosition = g_app.bindings.getAnalogPosition(analogBinding, g_app.vttPos[port]) / 255.0f;
+                normalizedPosition = g_app.bindings.getAnalogPosition(analogBinding, g_app.vttPos[port], g_app.input->getMousePosition(port)) / 255.0f;
                 snprintf(overlayText, sizeof(overlayText), "%.0f", normalizedPosition * 255.0f);
             } else {
                 snprintf(overlayText, sizeof(overlayText), "(unbound)");

@@ -58,9 +58,14 @@ struct AnalogBinding : BindingBase {
     ButtonBinding vttPlus;
     ButtonBinding vttMinus;
     int           vttStep  = 3;
+    std::string   mousePath;
+    std::string   mouseName;
+    int           mouseAxis = -1;        // -1=none, 0=X, 1=Y
+    int           mouseSensitivity = 5;  // 1-20
 
-    bool isSet()   const { return !devicePath.empty() && axisIdx >= 0; }
-    bool hasVtt()  const { return vttPlus.isSet() || vttMinus.isSet(); }
+    bool isSet()    const { return (!devicePath.empty() && axisIdx >= 0) || hasMouse(); }
+    bool hasVtt()   const { return vttPlus.isSet() || vttMinus.isSet(); }
+    bool hasMouse() const { return mouseAxis >= 0 && !mousePath.empty(); }
 
     void clear() {
         clearBase();
@@ -69,6 +74,10 @@ struct AnalogBinding : BindingBase {
         vttPlus.clear();
         vttMinus.clear();
         vttStep = 3;
+        mousePath.clear();
+        mouseName.clear();
+        mouseAxis = -1;
+        mouseSensitivity = 5;
     }
 
     nlohmann::json   toJson()  const;
@@ -109,11 +118,11 @@ struct BindingStore {
 
     using DeviceSnapshotMap = std::unordered_map<std::string, DeviceSnapshot>;
     bool    isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& deviceSnapshots) const;
-    uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, const DeviceSnapshotMap& deviceSnapshots) const;
+    uint8_t getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, uint8_t mousePos, const DeviceSnapshotMap& deviceSnapshots) const;
 
     std::string getDisplayString(const ButtonBinding& b) const;
     std::string getDisplayString(const AnalogBinding& a) const;
     std::string getDisplayString(const LightBinding& l) const;
 
-    uint8_t getAnalogPosition(const AnalogBinding& a, uint8_t vttPos) const;
+    uint8_t getAnalogPosition(const AnalogBinding& a, uint8_t vttPos, uint8_t mousePos) const;
 };

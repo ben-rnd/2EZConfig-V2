@@ -100,6 +100,12 @@ nlohmann::json AnalogBinding::toJson() const {
         j["vtt"]["minus"] = vttMinus.toJson();
         j["vtt"]["step"]  = vttStep;
     }
+    if (mouseAxis >= 0 && !mousePath.empty()) {
+        j["mouse"]["device_path"]  = mousePath;
+        j["mouse"]["device_name"]  = mouseName;
+        j["mouse"]["axis"]         = mouseAxis;
+        j["mouse"]["sensitivity"]  = mouseSensitivity;
+    }
     return j;
 }
 
@@ -130,6 +136,13 @@ AnalogBinding AnalogBinding::fromJson(const nlohmann::json& j) {
             if (vtt.contains("minus") && vtt["minus"].is_object()) {
                 analogBinding.vttMinus = ButtonBinding::fromJson(vtt["minus"]);
             }
+        }
+        if (j.contains("mouse") && j["mouse"].is_object()) {
+            const auto& m = j["mouse"];
+            analogBinding.mousePath        = m.value("device_path", "");
+            analogBinding.mouseName        = m.value("device_name", "");
+            analogBinding.mouseAxis        = m.value("axis", -1);
+            analogBinding.mouseSensitivity = m.value("sensitivity", 5);
         }
         return analogBinding;
     } catch (...) {
@@ -215,6 +228,9 @@ void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
                 analogs[p].vttPlus.vkCode,
                 analogs[p].vttMinus.vkCode,
                 analogs[p].vttStep);
+        }
+        if (analogs[p].hasMouse()) {
+            mgr->setMouseBinding(p, analogs[p].mousePath, analogs[p].mouseAxis, analogs[p].mouseSensitivity);
         }
     }
 }
@@ -304,6 +320,20 @@ std::string BindingStore::getDisplayString(const AnalogBinding& a) const {
         return "(unbound)";
     }
 
+    if (a.hasMouse()) {
+        const char* axisName = (a.mouseAxis == 0) ? "X" : "Y";
+        std::string label = a.mouseName + " / " + axisName;
+        if (mgr) {
+            auto mice = mgr->getMouseDevices();
+            bool found = false;
+            for (auto& m : mice) {
+                if (m.path == a.mousePath) { found = true; break; }
+            }
+            if (!found) return "[Disconnected] " + label;
+        }
+        return label;
+    }
+
     if (!mgr) {
         return std::string("[Disconnected] ") + a.deviceName;
     }
@@ -350,15 +380,19 @@ std::string BindingStore::getDisplayString(const LightBinding& l) const {
     return "[Disconnected] " + l.deviceName;
 }
 
-uint8_t BindingStore::getAnalogPosition(const AnalogBinding& a, uint8_t vttPos) const {
-    if (!a.isSet() || !mgr) {
-        return vttPos;
+uint8_t BindingStore::getAnalogPosition(const AnalogBinding& a, uint8_t vttPos, uint8_t mousePos) const {
+    if (!a.isSet()) {
+        return static_cast<uint8_t>(static_cast<int>(vttPos) + static_cast<int>(mousePos) - 128);
     }
-    float raw = mgr->getAxisValue(a.devicePath, a.axisIdx);
-    if (a.reverse) {
-        raw = 1.0f - raw;
+    int base;
+    if (a.hasMouse()) {
+        base = a.reverse ? (256 - static_cast<int>(mousePos)) : static_cast<int>(mousePos);
+    } else {
+        float raw = mgr ? mgr->getAxisValue(a.devicePath, a.axisIdx) : 0.5f;
+        if (a.reverse) raw = 1.0f - raw;
+        base = static_cast<int>(raw * 255.0f);
     }
-    return static_cast<uint8_t>(static_cast<int>(raw * 255.0f) + static_cast<int>(vttPos) - 128);
+    return static_cast<uint8_t>(base + static_cast<int>(vttPos) - 128);
 }
 
 bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMap& deviceSnapshots) const {
@@ -385,17 +419,21 @@ bool BindingStore::isHeldSnapshot(const ButtonBinding& b, const DeviceSnapshotMa
     return ds.buttons[b.buttonIdx];
 }
 
-uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, const DeviceSnapshotMap& deviceSnapshots) const {
+uint8_t BindingStore::getPositionSnapshot(const AnalogBinding& a, uint8_t vttPos, uint8_t mousePos, const DeviceSnapshotMap& deviceSnapshots) const {
     if (!a.isSet()) {
-        return vttPos;
+        return static_cast<uint8_t>(static_cast<int>(vttPos) + static_cast<int>(mousePos) - 128);
     }
-    float raw = 0.5f;
-    auto it = deviceSnapshots.find(a.devicePath);
-    if (it != deviceSnapshots.end() && a.axisIdx >= 0 && a.axisIdx < static_cast<int>(it->second.values.size())) {
-        raw = it->second.values[a.axisIdx];
+    int base;
+    if (a.hasMouse()) {
+        base = a.reverse ? (256 - static_cast<int>(mousePos)) : static_cast<int>(mousePos);
+    } else {
+        float raw = 0.5f;
+        auto it = deviceSnapshots.find(a.devicePath);
+        if (it != deviceSnapshots.end() && a.axisIdx >= 0 && a.axisIdx < static_cast<int>(it->second.values.size())) {
+            raw = it->second.values[a.axisIdx];
+        }
+        if (a.reverse) raw = 1.0f - raw;
+        base = static_cast<int>(raw * 255.0f);
     }
-    if (a.reverse) {
-        raw = 1.0f - raw;
-    }
-    return static_cast<uint8_t>(static_cast<int>(raw * 255.0f) + static_cast<int>(vttPos) - 128);
+    return static_cast<uint8_t>(base + static_cast<int>(vttPos) - 128);
 }

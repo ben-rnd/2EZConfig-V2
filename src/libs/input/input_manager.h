@@ -7,6 +7,11 @@
 
 struct InputManagerImpl;
 
+struct MouseDeviceInfo {
+    std::string path;
+    std::string name;
+};
+
 // Copied from live state in a single csInput acquisition.
 struct DeviceSnapshot {
     std::vector<bool>  buttons;  // copy of buttonStates
@@ -34,6 +39,10 @@ public:
     void disableOutput(const std::string& path);
     bool snapshotDevice(const std::string& path, DeviceSnapshot& out) const;
     void setInputCallback(void(*fn)(void*), void* userdata);
+
+    std::vector<MouseDeviceInfo> getMouseDevices() const;
+    void setMouseBinding(int port, const std::string& devicePath, int axis, int sensitivity);
+    uint8_t getMousePosition(int port) const;
 
 private:
     InputManagerImpl* impl;

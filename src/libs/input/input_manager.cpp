@@ -16,12 +16,99 @@ extern "C" {
 #include "input_manager.h"
 #include "utilities.h"
 
+#include <ole2.h>
+#include <setupapi.h>
+
 #include <string>
 #include <vector>
 #include <map>
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
+
+// Get display-friendly device description via SetupDi, matching by device interface path.
+// Based on spice2x rawinput approach.
+static std::string deviceDescFromPath(const std::string& rawPath) {
+    // Parse GUID from end of path: \\?\HID#...#...#{guid}
+    auto guidStart = rawPath.rfind('{');
+    auto guidEnd = rawPath.rfind('}');
+    if (guidStart == std::string::npos || guidEnd == std::string::npos || guidEnd <= guidStart) {
+        return "";
+    }
+    std::string guidStr = rawPath.substr(guidStart, guidEnd - guidStart + 1);
+
+    // Convert to wide string for IIDFromString.
+    wchar_t wideGuid[64] = {};
+    MultiByteToWideChar(CP_UTF8, 0, guidStr.c_str(), -1, wideGuid, 64);
+    GUID guid;
+    if (IIDFromString(wideGuid, &guid) != S_OK) {
+        return "";
+    }
+
+    // Enumerate device interfaces of this class to find our device by path match.
+    HDEVINFO devInfo = SetupDiGetClassDevsA(&guid, nullptr, nullptr, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
+    if (devInfo == INVALID_HANDLE_VALUE) {
+        return "";
+    }
+
+    std::string result;
+    SP_DEVINFO_DATA devInfoData = {};
+    devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    for (DWORD i1 = 0; SetupDiEnumDeviceInfo(devInfo, i1, &devInfoData); i1++) {
+        SP_DEVICE_INTERFACE_DATA ifData = {};
+        ifData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
+        for (DWORD i2 = 0; SetupDiEnumDeviceInterfaces(devInfo, &devInfoData, &guid, i2, &ifData); i2++) {
+            DWORD detailSize = 0;
+            SetupDiGetDeviceInterfaceDetailA(devInfo, &ifData, nullptr, 0, &detailSize, nullptr);
+            if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || detailSize == 0) {
+                continue;
+            }
+            std::vector<BYTE> detailBuf(detailSize);
+            auto* detail = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A*>(detailBuf.data());
+            detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
+            if (!SetupDiGetDeviceInterfaceDetailA(devInfo, &ifData, detail, detailSize, nullptr, nullptr)) {
+                continue;
+            }
+            // Compare paths (case-insensitive). Apply the XP fix (second char → backslash).
+            std::string ifPath(detail->DevicePath);
+            if (ifPath.size() > 1) ifPath[1] = '\\';
+            std::string comparePath = rawPath;
+            if (comparePath.size() > 1) comparePath[1] = '\\';
+            if (_stricmp(ifPath.c_str(), comparePath.c_str()) != 0) {
+                continue;
+            }
+            // Found our device — read SPDRP_DEVICEDESC.
+            DWORD descSize = 0;
+            SetupDiGetDeviceRegistryPropertyW(devInfo, &devInfoData, SPDRP_DEVICEDESC, nullptr, nullptr, 0, &descSize);
+            if (GetLastError() == ERROR_INSUFFICIENT_BUFFER && descSize > 0) {
+                std::vector<BYTE> descBuf(descSize);
+                if (SetupDiGetDeviceRegistryPropertyW(devInfo, &devInfoData, SPDRP_DEVICEDESC, nullptr, descBuf.data(), descSize, nullptr)) {
+                    result = wideToUtf8(reinterpret_cast<PWCHAR>(descBuf.data()));
+                }
+            }
+            // Try to append HID product string (open with access 0 to avoid exclusive lock).
+            HANDLE hFile = CreateFileA(rawPath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+            if (hFile != INVALID_HANDLE_VALUE) {
+                wchar_t prodBuf[126] = {};
+                if (HidD_GetProductString(hFile, prodBuf, sizeof(prodBuf))) {
+                    std::string prod = wideToUtf8(prodBuf);
+                    if (!prod.empty() && prod != result) {
+                        if (result.empty()) {
+                            result = prod;
+                        } else {
+                            result += " - " + prod;
+                        }
+                    }
+                }
+                CloseHandle(hFile);
+            }
+            break;
+        }
+        if (!result.empty()) break;
+    }
+    SetupDiDestroyDeviceInfoList(devInfo);
+    return result;
+}
 
 static std::string vidPidFromPath(const std::string& path) {
     std::string upper = toUpperCase(path);
@@ -118,6 +205,18 @@ struct VttBinding {
     int step = 3;
 };
 
+struct MouseDevice {
+    std::string path;
+    std::string name;
+    HANDLE rawHandle;
+};
+
+struct MouseBinding {
+    HANDLE rawHandle = nullptr;
+    int axis = -1;        // 0=X, 1=Y
+    int sensitivity = 5;  // 1-20
+};
+
 struct InputManagerImpl {
     // Device list (written once at startup, read from multiple threads under lock).
     std::vector<Device> devices;
@@ -130,6 +229,10 @@ struct InputManagerImpl {
     VttBinding vttBindings[2];
     volatile char vttPos[2] = {static_cast<char>(128), static_cast<char>(128)};
     HANDLE vttThread = nullptr;
+
+    std::vector<MouseDevice> mice;
+    MouseBinding mouseBindings[2];
+    volatile char mousePos[2] = {static_cast<char>(128), static_cast<char>(128)};
 
     bool captureMode = false;
     CaptureResult captureResult;
@@ -592,6 +695,40 @@ static void devicesReload(InputManagerImpl* impl) {
         }
         impl->prevHatStates[dev.path] = hatSnapshot;
     }
+
+    // Enumerate mouse devices.
+    impl->mice.clear();
+    for (UINT i = 0; i < deviceCount; i++) {
+        if (deviceList[i].dwType != RIM_TYPEMOUSE) {
+            continue;
+        }
+        UINT pathLen = 0;
+        GetRawInputDeviceInfoA(deviceList[i].hDevice, RIDI_DEVICENAME, nullptr, &pathLen);
+        if (pathLen == 0) {
+            continue;
+        }
+        std::string path(pathLen, '\0');
+        if (GetRawInputDeviceInfoA(deviceList[i].hDevice, RIDI_DEVICENAME, &path[0], &pathLen) == static_cast<UINT>(-1)) {
+            continue;
+        }
+        while (!path.empty() && path.back() == '\0') {
+            path.pop_back();
+        }
+        if (path.empty()) {
+            continue;
+        }
+
+        MouseDevice md;
+        md.path = path;
+        md.rawHandle = deviceList[i].hDevice;
+
+        md.name = deviceDescFromPath(path);
+        if (md.name.empty()) {
+            md.name = vidPidFromPath(path);
+        }
+
+        impl->mice.push_back(std::move(md));
+    }
 }
 
 static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
@@ -609,6 +746,29 @@ static void handleWmInput(InputManagerImpl* impl, HRAWINPUT hri) {
     }
 
     const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(buf.data());
+
+    // Handle mouse raw input for turntable bindings.
+    if (raw->header.dwType == RIM_TYPEMOUSE) {
+        const RAWMOUSE& mouse = raw->data.mouse;
+        if ((mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0) {
+            bool anyActive = false;
+            for (int port = 0; port < 2; port++) {
+                if (impl->mouseBindings[port].axis < 0) continue;
+                if (impl->mouseBindings[port].rawHandle != raw->header.hDevice) continue;
+                LONG delta = (impl->mouseBindings[port].axis == 0) ? mouse.lLastX : mouse.lLastY;
+                int scaled = (delta * impl->mouseBindings[port].sensitivity) / 5;
+                if (scaled != 0) {
+                    _InterlockedExchangeAdd8(&impl->mousePos[port], static_cast<char>(scaled));
+                    anyActive = true;
+                }
+            }
+            if (anyActive && impl->inputCallback) {
+                impl->inputCallback(impl->inputCallbackUserData);
+            }
+        }
+        return;
+    }
+
     if (raw->header.dwType != RIM_TYPEHID) {
         return;
     }
@@ -912,8 +1072,9 @@ static DWORD WINAPI msgPumpThread(LPVOID param) {
         { 0x01, 0x04, RIDEV_INPUTSINK, hwnd },  // Joystick
         { 0x01, 0x05, RIDEV_INPUTSINK, hwnd },  // Gamepad
         { 0x01, 0x08, RIDEV_INPUTSINK, hwnd },  // Multi-axis Controller
+        { 0x01, 0x02, RIDEV_INPUTSINK, hwnd },  // Mouse
     };
-    RegisterRawInputDevices(rids, 3, sizeof(RAWINPUTDEVICE));
+    RegisterRawInputDevices(rids, 4, sizeof(RAWINPUTDEVICE));
 
     MSG msg;
     while (impl->running && GetMessageA(&msg, hwnd, 0, 0) > 0) {
@@ -1173,6 +1334,32 @@ uint8_t InputManager::getVttPosition(int port) const {
         return 128;
     }
     return static_cast<uint8_t>(static_cast<unsigned char>(impl->vttPos[port]));
+}
+
+std::vector<MouseDeviceInfo> InputManager::getMouseDevices() const {
+    std::vector<MouseDeviceInfo> result;
+    for (auto& m : impl->mice) {
+        result.push_back({m.path, m.name});
+    }
+    return result;
+}
+
+void InputManager::setMouseBinding(int port, const std::string& devicePath, int axis, int sensitivity) {
+    if (port < 0 || port > 1) return;
+    impl->mouseBindings[port].axis = axis;
+    impl->mouseBindings[port].sensitivity = (sensitivity > 0) ? sensitivity : 5;
+    impl->mouseBindings[port].rawHandle = nullptr;
+    for (auto& m : impl->mice) {
+        if (m.path == devicePath) {
+            impl->mouseBindings[port].rawHandle = m.rawHandle;
+            break;
+        }
+    }
+}
+
+uint8_t InputManager::getMousePosition(int port) const {
+    if (port < 0 || port > 1) return 128;
+    return static_cast<uint8_t>(static_cast<unsigned char>(impl->mousePos[port]));
 }
 
 void InputManager::startCapture() {
