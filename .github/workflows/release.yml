@@ -34,6 +34,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
-          name: 2EZConfig ${{ env.VERSION }}
-          files: 2EZConfig-${{ env.VERSION }}.zip
+          name: 2EZConfig v2 ${{ env.VERSION }}
+          files: 2EZConfig-v2-${{ env.VERSION }}.zip
           generate_release_notes: true
