@@ -358,35 +358,58 @@ static void renderPatchRow(Patch& patch) {
 static void renderSettingsTab() {
     static const int DJ_COUNT     = static_cast<int>(sizeof(djGames)     / sizeof(djGames[0]));
     static const int DANCER_COUNT = static_cast<int>(sizeof(dancerGames) / sizeof(dancerGames[0]));
-    static const int TOTAL_COUNT  = DJ_COUNT + DANCER_COUNT;
 
-    static const char* gameComboItems[DJ_COUNT + DANCER_COUNT];
-    static bool        gameComboBuilt = false;
-    if (!gameComboBuilt) {
+    float availWidth = ImGui::GetContentRegionAvail().x;
+    float gameWidth = availWidth * 0.55f;
+
+    ImGui::BeginGroup();
+    ImGui::TextUnformatted("Game");
+    const char* previewLabel = g_app.isDancer ? dancerGames[g_app.gameIdx - DJ_COUNT].name : djGames[g_app.gameIdx].name;
+    ImGui::SetNextItemWidth(gameWidth);
+    if (ImGui::BeginCombo("##game", previewLabel)) {
+        ImGui::TextDisabled("EZ2DJ/AC");
+        ImGui::Separator();
         for (int i = 0; i < DJ_COUNT; i++) {
-            gameComboItems[i] = djGames[i].name;
+            bool isSelected = (g_app.gameIdx == i);
+            if (ImGui::Selectable(djGames[i].name, isSelected)) {
+                g_app.gameIdx  = i;
+                g_app.isDancer = false;
+                std::string gameId = djGames[i].id;
+                g_app.settings.gameSettings()["game_id"] = gameId;
+                g_app.settings.gameSettings().erase("exe_name");
+                g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
+                g_app.settings.save();
+            }
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
         }
+        ImGui::TextDisabled("EZ2Dancer");
+        ImGui::Separator();
         for (int i = 0; i < DANCER_COUNT; i++) {
-            gameComboItems[DJ_COUNT + i] = dancerGames[i].name;
+            int comboIdx = DJ_COUNT + i;
+            bool isSelected = (g_app.gameIdx == comboIdx);
+            if (ImGui::Selectable(dancerGames[i].name, isSelected)) {
+                g_app.gameIdx  = comboIdx;
+                g_app.isDancer = true;
+                std::string gameId = dancerGames[i].id;
+                g_app.settings.gameSettings()["game_id"] = gameId;
+                g_app.settings.gameSettings().erase("exe_name");
+                g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
+                g_app.settings.save();
+            }
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
         }
-        gameComboBuilt = true;
+        ImGui::EndCombo();
     }
 
-    if (ImGui::Combo("Game", &g_app.gameIdx, gameComboItems, TOTAL_COUNT)) {
-        g_app.isDancer = (g_app.gameIdx >= DJ_COUNT);
-        std::string gameId;
-        if (g_app.isDancer) {
-            int dancerIdx = g_app.gameIdx - DJ_COUNT;
-            gameId = dancerGames[dancerIdx].id;
-        } else {
-            gameId = djGames[g_app.gameIdx].id;
-        }
-        g_app.settings.gameSettings()["game_id"] = gameId;
-        g_app.settings.gameSettings().erase("exe_name");  // reset override when game changes
-        g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
-        g_app.settings.save();
-    }
-
+    ImGui::EndGroup();
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    ImGui::TextUnformatted("Exe Name");
+    ImGui::SetNextItemWidth(-1);
     {
         static char exeNameBuffer[MAX_PATH] = {};
         static int  previousGameIndex = -1;
@@ -396,7 +419,8 @@ static void renderSettingsTab() {
             strncpy(exeNameBuffer, stored.c_str(), MAX_PATH - 1);
             exeNameBuffer[MAX_PATH - 1] = '\0';
         }
-        if (ImGui::InputText("Exe Name", exeNameBuffer, MAX_PATH)) {
+        const char* defaultExeHint = (g_app.gameIdx >= DJ_COUNT) ? "EZ2Dancer.exe" : djGames[g_app.gameIdx].defaultExeName;
+        if (ImGui::InputTextWithHint("##exe_name", defaultExeHint, exeNameBuffer, MAX_PATH)) {
             if (exeNameBuffer[0]) {
                 g_app.settings.gameSettings()["exe_name"] = std::string(exeNameBuffer);
             } else {
@@ -405,6 +429,7 @@ static void renderSettingsTab() {
             g_app.settings.save();
         }
     }
+    ImGui::EndGroup();
 
     {
         static char extraDllsBuffer[2048] = {};
@@ -415,7 +440,9 @@ static void renderSettingsTab() {
             strncpy(extraDllsBuffer, stored.c_str(), sizeof(extraDllsBuffer) - 1);
             extraDllsBuffer[sizeof(extraDllsBuffer) - 1] = '\0';
         }
-        if (ImGui::InputText("Extra DLLs", extraDllsBuffer, sizeof(extraDllsBuffer))) {
+        ImGui::TextUnformatted("Extra DLLs");
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::InputText("##extra_dlls", extraDllsBuffer, sizeof(extraDllsBuffer))) {
             if (extraDllsBuffer[0]) {
                 g_app.settings.gameSettings()["extra_dlls"] = std::string(extraDllsBuffer);
             } else {
