@@ -4,6 +4,7 @@
 #include "injector.h"
 #include "settings.h"
 #include "game_defs.h"
+#include "game_detect.h"
 #include "input_manager.h"
 #include "bindings.h"
 #include "patch_store.h"
@@ -41,6 +42,7 @@ static int pollKeyboardPress(bool* prevKeys);
 static void renderVttKeyBind(const char* label, const char* bindId, const char* clearId,
                              ButtonBinding& binding, bool& capturing, bool& otherCapturing, bool* prevKeys);
 static void globalCheckbox(const char* label, const char* key, bool defaultVal);
+static void autoDetectGame();
 
 static const char* s_buildDate = BUILD_DATE;
 
@@ -148,25 +150,7 @@ int main() {
     g_app.input = new InputManager();
     g_app.bindings.load(g_app.settings, *g_app.input);
 
-    std::string gid = g_app.settings.gameSettings().value("game_id", "ez2dj_1st");
-    static const int DJ_COUNT_M     = static_cast<int>(sizeof(djGames)     / sizeof(djGames[0]));
-    static const int DANCER_COUNT_M = static_cast<int>(sizeof(dancerGames) / sizeof(dancerGames[0]));
-    g_app.gameIdx  = 0;
-    g_app.isDancer = false;
-    bool found = false;
-    for (int i = 0; !found && i < DJ_COUNT_M; i++) {
-        if (gid == djGames[i].id) {
-            g_app.gameIdx = i;
-            found = true;
-        }
-    }
-    for (int i = 0; !found && i < DANCER_COUNT_M; i++) {
-        if (gid == dancerGames[i].id) {
-            g_app.gameIdx = DJ_COUNT_M + i;
-            g_app.isDancer = true;
-            found = true;
-        }
-    }
+    autoDetectGame();
 
 
     while (!glfwWindowShouldClose(g_window)) {
@@ -198,6 +182,48 @@ int main() {
     g_app.input = nullptr;
 
     return 0;
+}
+
+static void autoDetectGame() {
+    static const int DJ_COUNT     = static_cast<int>(sizeof(djGames) / sizeof(djGames[0]));
+    static const int DANCER_COUNT = static_cast<int>(sizeof(dancerGames) / sizeof(dancerGames[0]));
+
+    std::string gameId = g_app.settings.gameSettings().value("game_id", "");
+    if (gameId.empty()) {
+        WIN32_FIND_DATAA findData;
+        HANDLE hFind = FindFirstFileA("*.exe", &findData);
+        if (hFind != INVALID_HANDLE_VALUE) {
+            do {
+                DetectedGame detected = detectGameFromFile(findData.cFileName);
+                if (!detected.id.empty()) {
+                    gameId = detected.id;
+                    g_app.settings.gameSettings()["game_id"] = gameId;
+                    g_app.settings.save();
+                    break;
+                }
+            } while (FindNextFileA(hFind, &findData));
+            FindClose(hFind);
+        }
+    }
+    if (gameId.empty()) {
+        gameId = "ez2dj_1st";
+    }
+
+    g_app.gameIdx  = 0;
+    g_app.isDancer = false;
+    for (int i = 0; i < DJ_COUNT; i++) {
+        if (gameId == djGames[i].id) {
+            g_app.gameIdx = i;
+            return;
+        }
+    }
+    for (int i = 0; i < DANCER_COUNT; i++) {
+        if (gameId == dancerGames[i].id) {
+            g_app.gameIdx = DJ_COUNT + i;
+            g_app.isDancer = true;
+            return;
+        }
+    }
 }
 
 static void renderUI() {

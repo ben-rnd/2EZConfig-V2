@@ -1,7 +1,6 @@
 #pragma once
-// Game MD5 hashes — backup from strings.h cleanup.
+// Game MD5 hashes for auto-detection of game executables.
 // These are MD5 digests of legitimate/uncracked/untampered game EXEs.
-// Will be used in Phase 4 (Patch System) for game identification.
 
 #include "md5.h"
 
@@ -11,28 +10,28 @@ struct djGameMD5 {
 };
 
 static struct djGameMD5 djGameMD5s[] = {
-    {"ez2dj_1st",       ""},
-    {"ez2dj_1st_se",    {'\x57','\x60','\xcf','\xb4','\xf5','\x56','\xd7','\x07','\x11','\xf1','\x8f','\x47','\x34','\x57','\xc5','\x7b'}},
-    {"ez2dj_2nd",       ""},
-    {"ez2dj_3rd",       {'\xbb','\x44','\x7e','\xe2','\x58','\x1f','\x77','\xd3','\x40','\xd4','\x16','\xd2','\xda','\xf0','\x90','\xab'}},
-    {"ez2dj_4th",       {'\xed','\x02','\x84','\x50','\x0b','\x65','\x01','\x9d','\x21','\x95','\xe1','\xa0','\x22','\xa2','\x95','\xde'}},
-    {"ez2dj_pt",        {'\xa3','\xe9','\x90','\x89','\x53','\x6e','\x7e','\xea','\xb5','\xe8','\xeb','\x13','\xf9','\x93','\x09','\xcd'}},
-    {"ez2dj_6th",       {'\xce','\x6d','\x77','\xd8','\x30','\x36','\x82','\x63','\x6a','\x70','\x50','\xa4','\x32','\x15','\xa1','\x40'}},
-    {"ez2dj_7th",       {'\xc2','\x5f','\xd2','\x44','\xff','\x83','\x3f','\x1c','\x28','\x16','\x41','\xda','\x2f','\xf9','\x62','\x67'}},
-    {"ez2dj_7th_15",    {'\xc6','\xc7','\xcd','\xc5','\x8b','\x73','\x91','\x6e','\xdf','\xb7','\x17','\xda','\xfb','\xd0','\x41','\x97'}},
-    {"ez2dj_7th_20",    {'\x00','\xa6','\x9e','\x80','\xf8','\xbd','\xdf','\xf4','\x8e','\x36','\xb4','\xb4','\x39','\xb9','\x52','\xeb'}},
-    {"ez2dj_cv",        {'\x80','\x20','\xb2','\xb1','\x1c','\x93','\x1e','\xfc','\x1f','\xa7','\x7e','\x91','\x7d','\xca','\x18','\xb1'}},
-    {"ez2dj_be",        ""},
-    {"ez2dj_be_a",      {'\xeb','\xf1','\xcf','\xd5','\x79','\x8a','\x2d','\xb7','\x63','\xce','\xe4','\x76','\x25','\xa8','\xd1','\xe3'}},
-    {"ez2dj_ae",        ""},
-    {"ez2dj_ae_ic",     ""},
-    {"ez2ac_ec",        ""},
-    {"ez2ac_ev_w98",    ""},
-    {"ez2ac_ev",        {'\x09','\x20','\xe5','\x4a','\x25','\x39','\xe3','\xfd','\x5d','\xe5','\x3a','\xa3','\x7d','\x9b','\x33','\x8a'}},
-    {"ez2ac_nt",        {'\x6c','\x12','\x50','\x9f','\x89','\xb3','\x50','\x4c','\x1a','\xab','\xc2','\x9b','\xa7','\xb7','\x32','\xe8'}},
-    {"ez2ac_tt",        {'\x03','\x9a','\x5d','\x23','\x3c','\x15','\x12','\x01','\x11','\x2f','\x00','\xfb','\xb6','\x4c','\x21','\xda'}},
-    {"ez2ac_fn",        {'\x33','\x6a','\xb9','\x6c','\xae','\x01','\xe0','\x1e','\x06','\x9f','\xb8','\x05','\x58','\x3d','\x02','\x89'}},
-    {"ez2ac_fn_ex",     {'\xbc','\xe8','\x48','\xf2','\xd7','\x94','\x5c','\x36','\x12','\x0a','\x2a','\xda','\xa5','\x73','\x57','\x48'}},
+    {"ez2dj_1st",       {0}},
+    {"ez2dj_1st_se",    {0x57,0x60,0xcf,0xb4,0xf5,0x56,0xd7,0x07,0x11,0xf1,0x8f,0x47,0x34,0x57,0xc5,0x7b}},
+    {"ez2dj_2nd",       {0}},
+    {"ez2dj_3rd",       {0xbb,0x44,0x7e,0xe2,0x58,0x1f,0x77,0xd3,0x40,0xd4,0x16,0xd2,0xda,0xf0,0x90,0xab}},
+    {"ez2dj_4th",       {0xed,0x02,0x84,0x50,0x0b,0x65,0x01,0x9d,0x21,0x95,0xe1,0xa0,0x22,0xa2,0x95,0xde}},
+    {"ez2dj_pt",        {0xa3,0xe9,0x90,0x89,0x53,0x6e,0x7e,0xea,0xb5,0xe8,0xeb,0x13,0xf9,0x93,0x09,0xcd}},
+    {"ez2dj_6th",       {0xce,0x6d,0x77,0xd8,0x30,0x36,0x82,0x63,0x6a,0x70,0x50,0xa4,0x32,0x15,0xa1,0x40}},
+    {"ez2dj_7th",       {0xc2,0x5f,0xd2,0x44,0xff,0x83,0x3f,0x1c,0x28,0x16,0x41,0xda,0x2f,0xf9,0x62,0x67}},
+    {"ez2dj_7th_15",    {0xc6,0xc7,0xcd,0xc5,0x8b,0x73,0x91,0x6e,0xdf,0xb7,0x17,0xda,0xfb,0xd0,0x41,0x97}},
+    {"ez2dj_7th_20",    {0x00,0xa6,0x9e,0x80,0xf8,0xbd,0xdf,0xf4,0x8e,0x36,0xb4,0xb4,0x39,0xb9,0x52,0xeb}},
+    {"ez2dj_cv",        {0x80,0x20,0xb2,0xb1,0x1c,0x93,0x1e,0xfc,0x1f,0xa7,0x7e,0x91,0x7d,0xca,0x18,0xb1}},
+    {"ez2dj_be",        {0}},
+    {"ez2dj_be_a",      {0xeb,0xf1,0xcf,0xd5,0x79,0x8a,0x2d,0xb7,0x63,0xce,0xe4,0x76,0x25,0xa8,0xd1,0xe3}},
+    {"ez2dj_ae",        {0}},
+    {"ez2dj_ae_ic",     {0}},
+    {"ez2ac_ec",        {0}},
+    {"ez2ac_ev_w98",    {0}},
+    {"ez2ac_ev",        {0x09,0x20,0xe5,0x4a,0x25,0x39,0xe3,0xfd,0x5d,0xe5,0x3a,0xa3,0x7d,0x9b,0x33,0x8a}},
+    {"ez2ac_nt",        {0x6c,0x12,0x50,0x9f,0x89,0xb3,0x50,0x4c,0x1a,0xab,0xc2,0x9b,0xa7,0xb7,0x32,0xe8}},
+    {"ez2ac_tt",        {0x03,0x9a,0x5d,0x23,0x3c,0x15,0x12,0x01,0x11,0x2f,0x00,0xfb,0xb6,0x4c,0x21,0xda}},
+    {"ez2ac_fn",        {0x33,0x6a,0xb9,0x6c,0xae,0x01,0xe0,0x1e,0x06,0x9f,0xb8,0x05,0x58,0x3d,0x02,0x89}},
+    {"ez2ac_fn_ex",     {0xbc,0xe8,0x48,0xf2,0xd7,0x94,0x5c,0x36,0x12,0x0a,0x2a,0xda,0xa5,0x73,0x57,0x48}},
 };
 
 struct dancerGameMD5 {
@@ -41,9 +40,9 @@ struct dancerGameMD5 {
 };
 
 static struct dancerGameMD5 dancerGameMD5s[] = {
-    {"ez2dancer_1st",    ""},
-    {"ez2dancer_2nd",    ""},
-    {"ez2dancer_uk",     ""},
-    {"ez2dancer_uk_se",  ""},
-    {"ez2dancer_sc",     ""},
+    {"ez2dancer_1st",    {0}},
+    {"ez2dancer_2nd",    {0}},
+    {"ez2dancer_uk",     {0}},
+    {"ez2dancer_uk_se",  {0}},
+    {"ez2dancer_sc",     {0}},
 };

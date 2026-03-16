@@ -20,7 +20,6 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
         file >> m_gameSettings;
     } else {
         m_gameSettings = {
-            {"game_id", "ez2dj"},
             {"logging_enabled", false}
         };
     }
