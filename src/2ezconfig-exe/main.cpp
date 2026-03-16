@@ -43,6 +43,9 @@ static void renderVttKeyBind(const char* label, const char* bindId, const char* 
                              ButtonBinding& binding, bool& capturing, bool& otherCapturing, bool* prevKeys);
 static void globalCheckbox(const char* label, const char* key, bool defaultVal);
 static void autoDetectGame();
+static int sixthBackgroundLoop(const char* launcherExe, const std::vector<std::string>& extraDlls);
+static void renderRemember1stPatches();
+static nlohmann::json saveSixthPatchState(const std::string& gameId);
 
 static const char* s_buildDate = BUILD_DATE;
 
@@ -56,6 +59,9 @@ struct AppState {
 };
 static AppState g_app;
 static GLFWwindow* g_window = nullptr;
+static bool s_sixthMode = false;
+static std::string s_sixthLauncherExe;
+static std::vector<std::string> s_sixthExtraDlls;
 
 // Analog-edit popup state (persists across frames; opened by renderAnalogsTab)
 static int s_editPort = -1;
@@ -181,6 +187,10 @@ int main() {
     delete g_app.input;
     g_app.input = nullptr;
 
+    if (s_sixthMode) {
+        return sixthBackgroundLoop(s_sixthLauncherExe.c_str(), s_sixthExtraDlls);
+    }
+
     return 0;
 }
 
@@ -257,7 +267,14 @@ static void renderUI() {
         while (iss >> dllPath) {
             extraDlls.push_back(dllPath);
         }
-        Injector::LaunchAndInject(activeExeName, extraDlls);
+        std::string gameId = g_app.settings.gameSettings().value("game_id", "");
+        if (gameId == "ez2dj_6th") {
+            s_sixthMode = true;
+            s_sixthLauncherExe = activeExeName;
+            s_sixthExtraDlls = extraDlls;
+        } else {
+            Injector::LaunchAndInject(activeExeName, extraDlls);
+        }
         glfwSetWindowShouldClose(g_window, GLFW_TRUE);
     }
 
@@ -299,8 +316,10 @@ static void renderUI() {
 static void renderPatchesTab() {
     std::string gameId = g_app.settings.gameSettings().value("game_id", "");
     auto& patches = g_app.settings.patchStore().patchesForGame(gameId);
+    bool hasSixthR1st = (gameId == "ez2dj_6th");
+    auto& r1stPatches = hasSixthR1st ? g_app.settings.patchStore().patchesForGame("rmbr_1st") : patches;
 
-    if (patches.empty()) {
+    if (patches.empty() && (!hasSixthR1st || r1stPatches.empty())) {
         const char* emptyMessage = "No patches available for this game.";
         float textW = ImGui::CalcTextSize(emptyMessage).x;
         ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textW) * 0.5f);
@@ -315,6 +334,7 @@ static void renderPatchesTab() {
         renderPatchRow(patch);
         ImGui::PopID();
     }
+    if (hasSixthR1st) renderRemember1stPatches();
     ImGui::EndChild();
 }
 
@@ -339,7 +359,10 @@ static void renderPatchRow(Patch& patch) {
 
     if (changed) {
         std::string gameId = g_app.settings.gameSettings().value("game_id", "");
-        g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
+        if (gameId == "ez2dj_6th")
+            g_app.settings.gameSettings()["patches"] = saveSixthPatchState(gameId);
+        else
+            g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
         g_app.settings.save();
     }
 
@@ -377,7 +400,10 @@ static void renderSettingsTab() {
                 std::string gameId = djGames[i].id;
                 g_app.settings.gameSettings()["game_id"] = gameId;
                 g_app.settings.gameSettings().erase("exe_name");
-                g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
+                if (gameId == "ez2dj_6th")
+                    g_app.settings.gameSettings()["patches"] = saveSixthPatchState(gameId);
+                else
+                    g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
                 g_app.settings.save();
             }
             if (isSelected) {
@@ -453,20 +479,14 @@ static void renderSettingsTab() {
         ImGui::TextDisabled("Space-separated DLL paths injected after 2EZ.dll");
     }
 
-    ImGui::Separator();
-    ImGui::TextUnformatted("Global Settings");
-    ImGui::Separator();
+    ImGui::SeparatorText("Global Settings");
     globalCheckbox("Enable IO Emulation",                "io_emu",       true);
     globalCheckbox("Force High Priority (experimental)", "high_priority", false);
 
-    ImGui::Separator();
-    ImGui::TextUnformatted("Debug");
-    ImGui::Separator();
+    ImGui::SeparatorText("Debug Settings");
     gameCheckbox("Enable Logging", "logging_enabled", false);
 
-    ImGui::Separator();
-    ImGui::TextUnformatted("Game Patches");
-    ImGui::Separator();
+    ImGui::SeparatorText("Game Patches");
     renderPatchesTab();
 }
 
@@ -1004,6 +1024,80 @@ static void gameCheckbox(const char* label, const char* key, bool defaultVal) {
         g_app.settings.save();
     }
 }
+
+// --- 6th Trax helpers (isolated from main flow) ---
+
+static void sixthLog(const std::string& gameDir, const std::string& msg) {
+    std::ofstream log(gameDir + "\\2ez-logs.txt", std::ios::app);
+    if (log.is_open()) log << "[6th-loop] " << msg << "\n";
+}
+
+static int sixthBackgroundLoop(const char* launcherExe, const std::vector<std::string>& extraDlls) {
+    char exePath[MAX_PATH] = {};
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    char* lastSlash = strrchr(exePath, '\\');
+    std::string exeDir = lastSlash ? std::string(exePath, lastSlash) : ".";
+    std::string dllFullPath = exeDir + "\\2EZ.dll";
+
+    sixthLog(exeDir, "Starting 6th background loop");
+    Injector::LaunchAndInject(launcherExe, extraDlls);
+
+    DWORD lastInjected6th = 0;
+    DWORD lastInjected1st = 0;
+    DWORD lastSeenTime = GetTickCount();
+
+    while (true) {
+        Sleep(50);
+
+        bool seen = false;
+        DWORD pid6th = Injector::FindProcess("EZ2DJ6th.exe");
+        if (pid6th && pid6th != lastInjected6th) {
+            sixthLog(exeDir, "Found EZ2DJ6th.exe, injecting");
+            Injector::InjectRunningProcess("EZ2DJ6th.exe", dllFullPath.c_str());
+            lastInjected6th = pid6th;
+        }
+        if (pid6th) seen = true;
+
+        DWORD pid1st = Injector::FindProcess("EZ2DJ.exe");
+        if (pid1st && pid1st != lastInjected1st) {
+            sixthLog(exeDir, "Found Remember 1st (EZ2DJ.exe), injecting");
+            Injector::InjectRunningProcess("EZ2DJ.exe", dllFullPath.c_str());
+            lastInjected1st = pid1st;
+        }
+        if (pid1st) seen = true;
+
+        if (seen) {
+            lastSeenTime = GetTickCount();
+        } else if (GetTickCount() - lastSeenTime > 2000) {
+            sixthLog(exeDir, "No game processes detected, exiting");
+            break;
+        }
+    }
+    return 0;
+}
+
+static void renderRemember1stPatches() {
+    auto& r1stPatches = g_app.settings.patchStore().patchesForGame("rmbr_1st");
+    if (r1stPatches.empty()){
+        return;
+    }
+
+    ImGui::TextDisabled("Remember 1st Patches");
+    for (auto& patch : r1stPatches) {
+        ImGui::PushID(patch.id.c_str());
+        renderPatchRow(patch);
+        ImGui::PopID();
+    }
+}
+
+static nlohmann::json saveSixthPatchState(const std::string& gameId) {
+    auto patchState = g_app.settings.patchStore().saveState(gameId);
+    auto r1st = g_app.settings.patchStore().saveState("rmbr_1st");
+    if (r1st.contains("rmbr_1st")) patchState["rmbr_1st"] = r1st["rmbr_1st"];
+    return patchState;
+}
+
+// --- End 6th Trax helpers ---
 
 static void setTheme() {
     // Night Traveller theme

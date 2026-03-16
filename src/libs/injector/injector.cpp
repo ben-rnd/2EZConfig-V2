@@ -101,17 +101,17 @@ static int InjectDll(HANDLE hProcess, const char* dllName) {
     return 1;
 }
 
-static int Inject(DWORD *pid){
+static int Inject(DWORD *pid, const char* dllPath){
     EnableDebugPrivilege();
     int result = 1;
-    
+
     HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, *pid);
     if (!hProcess){
         printf("[-] OpenProcess failed\n");
         return 0;
     }
 
-    result = InjectDll(hProcess, "2EZ.dll");
+    result = InjectDll(hProcess, dllPath);
     if (!result){
         printf("[-] InjectDll failed\n");
         return 0;
@@ -168,11 +168,15 @@ int Injector::LaunchAndInject(const char* exeName, const std::vector<std::string
     return 1;
 }
 
-int Injector::InjectRunningProcess(const char* processName) {
+int Injector::InjectRunningProcess(const char* processName, const char* dllPath) {
     DWORD pid = GetProcId(processName);
     if (!pid) {
         return 0;
     }
 
-    return Inject(&pid);
+    return Inject(&pid, dllPath);
+}
+
+DWORD Injector::FindProcess(const char* processName) {
+    return GetProcId(processName);
 }

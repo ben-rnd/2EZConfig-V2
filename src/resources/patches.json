@@ -1,5 +1,5 @@
 {
-  "ver": 9,
+  "ver": 10,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -38,7 +38,8 @@
         ]
     }
   },
-  "ez2dj_1st": {
+  "ez2dj_1st": {},
+  "rmbr_1st": {
     "force_60hz": {
       "name": "Force 60Hz",
       "description": "Forces DirectDraw SetDisplayMode to request 60Hz.",

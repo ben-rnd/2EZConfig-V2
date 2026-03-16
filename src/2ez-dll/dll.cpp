@@ -250,10 +250,23 @@ static void loadSettings(HMODULE hModule) {
     Logger::info("[Init] Game ID: " + (s_gameId.empty() ? "(none)" : s_gameId));
 }
 
+static void resolveRemember1st() {
+    if (s_gameId != "ez2dj_6th") return;
+    char exePath[MAX_PATH] = {};
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    const char* exeName = strrchr(exePath, '\\');
+    exeName = exeName ? exeName + 1 : exePath;
+    if (_stricmp(exeName, "EZ2DJ.exe") == 0) {
+        s_gameId = "rmbr_1st";
+        Logger::info("[Init] Remember 1st detected, using rmbr_1st patches");
+    }
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         s_dllModule = hModule;
         loadSettings(hModule);
+        resolveRemember1st();
         initLogger();
         initHardlock();
         applySuperEarlyPatches();
