@@ -8,17 +8,15 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install MinGW cross-compiler (win32 threading)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-i686-win32 g++-mingw-w64-i686-win32
+      - name: Install MinGW cross-compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-i686 g++-mingw-w64-i686
 
       - name: Configure
-        run: cmake --preset release -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc-win32 -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++-win32
+        run: cmake --preset release
 
       - name: Build
         run: cmake --build --preset release
