@@ -1,5 +1,6 @@
 # Build output
 build/
+toolchain/
 build-check/
 out/
 tools/

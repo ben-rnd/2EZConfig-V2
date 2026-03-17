@@ -31,12 +31,9 @@ If you're playing on Windows Vista or later I highly reccomend using [DDrawCompa
 I will accept PR's for updates to the patches.json file if they seem appropriate. 
 
 ## Building
-All builds are done on linux with mingw32
+All builds are done on windows with cmake and niXman mingw32 gcc 12.2.0 toolchain
 
-Install build tools
-```sudo apt install cmake git gcc-mingw-w64-i686 g++-mingw-w64-i686 binutils-mingw-w64-i686```
-
-Load Dependancies
+Download toolchain and Dependancies
 ```cmake --preset release```
 
 Build
