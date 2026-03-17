@@ -6,8 +6,8 @@ This tool is designed to enable USB controllers to work with all versions of EZ2
 ## Features
 - Supports all EZ2DJ/AC and EZ2Dancer games.
 - Full IO Emualtion. Feels just like the real IO.
-- JSON defined patch library, supporting basic RAV offset or pattern scan patches. Users can create their own patches in a patches.json file located in the game directory which will load the next time you open 2EZConfig. Please see "example-patches.json" under the documentation folder (coming soon) for details on making your own patches.
-- 60hz patches for all games. Now you never have to manually switch your refresh rate again. The game will request a 60hz refresh rate on boot, reverting once the game closes. 60hz is essential for accurate game timing.
+- JSON defined patch library, supporting basic RVA offset or pattern scan patches. Users can create their own patches in a patches.json file located in the game directory which will load the next time you open 2EZConfig. Please see "example-patches.json" under the documentation folder for details about the patching system and how to define your own patches.
+- 60hz patches for (almost)all games. Now you never have to manually switch your refresh rate again. The game will request a 60hz refresh rate on boot, reverting once the game closes. 60hz is essential for accurate game timing.
 - Arcade hardware compatible. Did your IO die on you? 2EZconfig V2 is fully compatible with Windows XP SP3 and the NVIDIA TNT2. IO emulation can be fully disabled if youre only after the patches.
 - HID input and output, supporting lighting output from EZ2DJ. EZ2Dancer light support is pending port mappings being supplied or reverse engineered.
 - Supports Button Bound TT+ and TT- and Mouse X/Y axis turntables for maximum compatibilty with DIY cons.
