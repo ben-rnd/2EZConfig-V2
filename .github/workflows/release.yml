@@ -8,12 +8,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install MinGW cross-compiler
-        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-i686 g++-mingw-w64-i686
 
       - name: Configure
         run: cmake --preset release
