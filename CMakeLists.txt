@@ -1,4 +1,39 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Auto-provision MinGW toolchain (GCC 12.2.0, win32 threads, XP-safe)
+set(TOOLCHAIN_DIR "${CMAKE_SOURCE_DIR}/toolchain/mingw32")
+if(NOT EXISTS "${TOOLCHAIN_DIR}/bin/gcc.exe")
+    set(TOOLCHAIN_URL "https://github.com/ben-rnd/2EZConfig-V2/releases/download/toolchain/win32-mingw-gcc-12.2-toolchain.7z")
+    set(TOOLCHAIN_ARCHIVE "${CMAKE_SOURCE_DIR}/toolchain/mingw-toolchain.7z")
+    message(STATUS "Downloading MinGW toolchain...")
+    file(DOWNLOAD "${TOOLCHAIN_URL}" "${TOOLCHAIN_ARCHIVE}" SHOW_PROGRESS STATUS dl_status)
+    list(GET dl_status 0 dl_code)
+    if(NOT dl_code EQUAL 0)
+        message(FATAL_ERROR "Toolchain download failed: ${dl_status}")
+    endif()
+    message(STATUS "Extracting toolchain...")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E tar xf "${TOOLCHAIN_ARCHIVE}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/toolchain"
+        RESULT_VARIABLE extract_result
+    )
+    if(NOT extract_result EQUAL 0)
+        # cmake tar doesn't handle 7z — fall back to 7z command
+        execute_process(
+            COMMAND 7z x "${TOOLCHAIN_ARCHIVE}" -o"${CMAKE_SOURCE_DIR}/toolchain" -y
+            RESULT_VARIABLE extract_result
+        )
+        if(NOT extract_result EQUAL 0)
+            message(FATAL_ERROR "Toolchain extraction failed")
+        endif()
+    endif()
+    file(REMOVE "${TOOLCHAIN_ARCHIVE}")
+endif()
+
+set(CMAKE_C_COMPILER "${TOOLCHAIN_DIR}/bin/gcc.exe" CACHE FILEPATH "" FORCE)
+set(CMAKE_CXX_COMPILER "${TOOLCHAIN_DIR}/bin/g++.exe" CACHE FILEPATH "" FORCE)
+set(CMAKE_RC_COMPILER "${TOOLCHAIN_DIR}/bin/windres.exe" CACHE FILEPATH "" FORCE)
+
 project(2EZConfig VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -38,6 +73,10 @@ add_link_options(
     -Wl,--disable-dynamicbase
     -Wl,--image-base=0x400000
     -Wl,--enable-stdcall-fixup
+    -Wl,--major-subsystem-version,5
+    -Wl,--minor-subsystem-version,1
+    -Wl,--major-os-version,5
+    -Wl,--minor-os-version,1
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
