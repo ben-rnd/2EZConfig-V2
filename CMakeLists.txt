@@ -38,6 +38,10 @@ add_link_options(
     -Wl,--disable-dynamicbase
     -Wl,--image-base=0x400000
     -Wl,--enable-stdcall-fixup
+    -Wl,--major-subsystem-version,5
+    -Wl,--minor-subsystem-version,1
+    -Wl,--major-os-version,5
+    -Wl,--minor-os-version,1
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")

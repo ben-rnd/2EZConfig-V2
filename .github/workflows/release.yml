@@ -12,21 +12,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install MinGW cross-compiler
-        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-i686 g++-mingw-w64-i686
+      - name: Install MinGW cross-compiler (win32 threading)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-i686-win32 g++-mingw-w64-i686-win32
 
       - name: Configure
-        run: cmake --preset release
+        run: cmake --preset release -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc-win32 -DCMAKE_CXX_COMPILER=i686-w64-mingw32-g++-win32
 
       - name: Build
         run: cmake --build --preset release
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2EZConfig-test-build
+          path: |
+            build/release/bin/2EZ.dll
+            build/release/bin/2EZConfig.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: 2EZConfig-test-build
+          path: bin
 
       - name: Package release
         run: |
           VERSION=$(date +%Y.%m.%d)
           mkdir -p release
-          cp build/release/bin/2EZ.dll release/
-          cp build/release/bin/2EZConfig.exe release/
+          cp bin/build/release/bin/2EZ.dll release/
+          cp bin/build/release/bin/2EZConfig.exe release/
           cd release && zip ../2EZConfig-V2-${VERSION}.zip *
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
