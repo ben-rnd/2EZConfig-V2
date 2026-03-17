@@ -41,8 +41,8 @@ void SettingsManager::load(const std::string& gameDir, const std::string& userSe
 
     Logger::info("[Settings] Global settings: " + globalPath + (globalNew ? " (new)" : ""));
 
-    // Load patch definitions from patches.json + user-patches.json (shared appdata dir)
-    m_patchStore.load(userSettingsDir);
+    // Load patch definitions from patches.json (appdata) + user-patches.json (game dir)
+    m_patchStore.load(userSettingsDir, m_gameDir);
     m_patchStore.loadState(m_gameSettings.value("patches", json::object()));
 
     // Write defaults to disk immediately if either file was missing

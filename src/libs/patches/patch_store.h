@@ -36,7 +36,7 @@ struct Patch {
 class PatchStore {
 public:
    
-    void load(const std::string& dir);
+    void load(const std::string& dir, const std::string& gameDir);
     const std::vector<Patch>& patchesForGame(const std::string& gameId) const;
     // Non-const overload — returns mutable reference so UI can modify enabled/value directly.
     std::vector<Patch>& patchesForGame(const std::string& gameId);

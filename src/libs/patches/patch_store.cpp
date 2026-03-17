@@ -138,7 +138,7 @@ void PatchStore::parseGamePatches(const json& gameObj, std::vector<Patch>& out) 
     }
 }
 
-void PatchStore::load(const std::string& dir) {
+void PatchStore::load(const std::string& dir, const std::string& gameDir) {
     m_patches.clear();
 
     std::string bundledPath = dir + "/patches.json";
@@ -190,7 +190,7 @@ void PatchStore::load(const std::string& dir) {
     }
 
     // Load user-patches.json and merge (user patch wins on id collision)
-    std::string userPath = dir + "/user-patches.json";
+    std::string userPath = gameDir + "/user-patches.json";
     if (std::filesystem::exists(userPath)) {
         Logger::info("[PatchStore] Loading user-patches.json");
         std::ifstream file(userPath);
