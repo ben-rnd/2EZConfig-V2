@@ -9,6 +9,11 @@
 
 static float s_lightState[BindingStore::LIGHT_COUNT] = {};
 static std::atomic<bool> s_lightDirty{ false };
+static std::atomic<bool> s_verboseOutput{ false };
+
+void initOutputLogging(bool verbose) {
+    s_verboseOutput.store(verbose);
+}
 
 // Each entry maps a light channel to the bit that controls it within a port.
 
@@ -67,20 +72,34 @@ void handleDJOut(uint16_t port, uint8_t value) {
         case 0x100: applyLights(value, djLamps,           std::size(djLamps));           break;
         case 0x101: applyLights(value, djStartsEffectors, std::size(djStartsEffectors)); break;
         case 0x102: applyLights(value, djP1Lights,        std::size(djP1Lights));        break;
-        case 0x103: applyLights(value, djP2Lights,        std::size(djP2Lights));        break; 
+        case 0x103: applyLights(value, djP2Lights,        std::size(djP2Lights));        break;
         default:
-            Logger::warnOnce("[IO] Unexpected DJ port write: 0x" + toHexString(port));
+            if (s_verboseOutput.load(std::memory_order_relaxed)) {
+                Logger::warn("[IO] Unhandled DJ port write: 0x" + toHexString(port) + " value: 0b" + toBinaryString(value));
+            } else {
+                Logger::warnOnce("[IO] Unexpected DJ port write: 0x" + toHexString(port));
+            }
             return;
+    }
+    if (s_verboseOutput.load(std::memory_order_relaxed)) {
+        Logger::warn("[IO] DJ port write: 0x" + toHexString(port) + " value: 0b" + toBinaryString(value));
     }
     s_lightDirty.store(true);
 }
 
-void handleDancerOut(uint16_t port, uint8_t value) {
+void handleDancerOut(uint16_t port, uint16_t value) {
     switch (port) {
         //TODO real light ports.
         default:
-            Logger::warnOnce("[IO] Unexpected dancer port write: 0x" + toHexString(port));
+            if (s_verboseOutput.load(std::memory_order_relaxed)) {
+                Logger::warn("[IO] Unhandled dancer port write: 0x" + toHexString(port) + " value: 0b" + toBinaryString(value));
+            } else {
+                Logger::warnOnce("[IO] Unexpected dancer port write: 0x" + toHexString(port));
+            }
             return;
+    }
+    if (s_verboseOutput.load(std::memory_order_relaxed)) {
+        Logger::warn("[IO] dancer port write: 0x" + toHexString(port) + " value: 0b" + toBinaryString(value));
     }
     s_lightDirty.store(true);
 }

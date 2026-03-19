@@ -28,6 +28,28 @@ inline std::string toHexString(uint16_t val) {
     return stream.str();
 }
 
+inline std::string toBinaryString(uint8_t val) {
+    char buf[9];
+    for (int i = 7; i >= 0; --i) {
+        buf[7 - i] = (val & (1 << i)) ? '1' : '0';
+    }
+    buf[8] = '\0';
+    return buf;
+}
+
+inline std::string toBinaryString(uint16_t val) {
+    char buf[18];
+    for (int i = 15; i >= 8; --i) {
+        buf[15 - i] = (val & (1 << i)) ? '1' : '0';
+    }
+    buf[8] = '_';
+    for (int i = 7; i >= 0; --i) {
+        buf[16 - i] = (val & (1 << i)) ? '1' : '0';
+    }
+    buf[17] = '\0';
+    return buf;
+}
+
 inline std::string toHexStringPadded(unsigned val, int width = 2) {
     std::ostringstream stream;
     stream << std::uppercase << std::hex << std::setw(width) << std::setfill('0') << val;
