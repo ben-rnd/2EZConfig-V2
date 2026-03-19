@@ -53,6 +53,10 @@ struct DeviceHIDInfo {
     // Output state arrays — flat bool/float indexed same as buttonOutputCapsNames / valueOutputCapsNames.
     std::vector<bool>  buttonOutputStates;
     std::vector<float> valueOutputStates;
+
+    // Overlapped I/O for output writes (XP-compatible).
+    OVERLAPPED outputOvl      = {};
+    HANDLE     outputOvlEvent = nullptr;
 };
 
 // One entry per connected HID device.
@@ -96,6 +100,10 @@ struct Device {
             if (hid->preparsed) {
                 LocalFree(hid->preparsed);
                 hid->preparsed = nullptr;
+            }
+            if (hid->outputOvlEvent) {
+                CloseHandle(hid->outputOvlEvent);
+                hid->outputOvlEvent = nullptr;
             }
             if (hid->hidHandle != INVALID_HANDLE_VALUE) {
                 CloseHandle(hid->hidHandle);
