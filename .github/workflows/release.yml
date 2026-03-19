@@ -43,8 +43,8 @@ jobs:
         run: |
           VERSION=$(TZ=Australia/Sydney date +%Y.%m.%d)
           mkdir -p release
-          cp bin/build/release/bin/2EZ.dll release/
-          cp bin/build/release/bin/2EZConfig.exe release/
+          cp bin/2EZ.dll release/
+          cp bin/2EZConfig.exe release/
           cd release && zip ../2EZConfig-V2-${VERSION}.zip *
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
