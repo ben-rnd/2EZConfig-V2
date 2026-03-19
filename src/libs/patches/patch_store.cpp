@@ -31,7 +31,7 @@ static std::vector<int16_t> parseScan(const std::string& hexStr) {
     return result;
 }
 
-// Returns all matching addresses, or just {module base} if scan is empty.
+// Collect readable ranges from the process image once, then scan them.
 static std::vector<uint8_t*> scanForPattern(const std::vector<int16_t>& scan) {
     HMODULE base = GetModuleHandle(NULL);
     if (scan.empty()) {
@@ -41,18 +41,36 @@ static std::vector<uint8_t*> scanForPattern(const std::vector<int16_t>& scan) {
     const uint8_t* imageStart = reinterpret_cast<const uint8_t*>(base);
     const SIZE_T   imageSize  = getImageSize(base);
     const size_t   scanLen    = scan.size();
-    std::vector<uint8_t*> matches;
 
-    for (size_t i = 0; i + scanLen <= imageSize; ++i) {
-        bool match = true;
-        for (size_t k = 0; k < scanLen; ++k) {
-            if (scan[k] != -1 && imageStart[i + k] != static_cast<uint8_t>(scan[k])) {
-                match = false;
-                break;
-            }
+    // Build list of readable byte ranges upfront
+    struct Range { size_t start; size_t end; };
+    std::vector<Range> ranges;
+    for (size_t i = 0; i < imageSize; ) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (!VirtualQuery(imageStart + i, &mbi, sizeof(mbi))) break;
+        size_t regionEnd = (reinterpret_cast<const uint8_t*>(mbi.BaseAddress) + mbi.RegionSize) - imageStart;
+        if (regionEnd > imageSize) regionEnd = imageSize;
+        if (mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) &&
+            (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY | PAGE_WRITECOPY))) {
+            ranges.push_back({ i, regionEnd });
         }
-        if (match) {
-            matches.push_back(const_cast<uint8_t*>(imageStart + i));
+        i = regionEnd;
+    }
+
+    // Scan only within readable ranges
+    std::vector<uint8_t*> matches;
+    for (const auto& r : ranges) {
+        for (size_t i = r.start; i + scanLen <= r.end; ++i) {
+            bool match = true;
+            for (size_t k = 0; k < scanLen; ++k) {
+                if (scan[k] != -1 && imageStart[i + k] != static_cast<uint8_t>(scan[k])) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                matches.push_back(const_cast<uint8_t*>(imageStart + i));
+            }
         }
     }
     return matches;
