@@ -24,7 +24,7 @@ This tool is designed to enable USB controllers to work with all versions of EZ2
 
 Enjoy!
 
-If you're playing on Windows Vista or later I highly reccomend using [DDrawCompat](github.com/narzoul/DDrawCompat/releases). This fixes various DDraw related crashes as well as improving the games visuals dramatically, by fixing various transparancy issues that occur on newer GPU's. 
+If you're playing on Windows Vista or later I highly reccomend using [DDrawCompat](https://github.com/narzoul/DDrawCompat/releases). This fixes various DDraw related crashes as well as improving the games visuals dramatically, by fixing various transparancy issues that occur on newer GPU's. 
 
 #### Notes
 - Do not put any "." characters in any folders containing your EZ2 data, this breaks how to game reads its .ini configurations files and may prevent the game from working at all. When the game launches, it will scan the entire path and break on the first "." detected, if this is NOT the .ini file it will load defualt settings which often make the game unplayable.
