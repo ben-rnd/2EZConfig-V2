@@ -345,8 +345,18 @@ static void deviceWriteOutput(Device& dev) {
         }
     }
 
-    DWORD bytesWritten = 0;
-    WriteFile(dev.hid->hidHandle, outputReport, reportSize, &bytesWritten, nullptr);
+    // Overlapped WriteFile fixes winxp.
+    if (dev.hid->outputOvlEvent) {
+        ResetEvent(dev.hid->outputOvlEvent);
+        memset(&dev.hid->outputOvl, 0, sizeof(dev.hid->outputOvl));
+        dev.hid->outputOvl.hEvent = dev.hid->outputOvlEvent;
+        DWORD bytesWritten = 0;
+        if (!WriteFile(dev.hid->hidHandle, outputReport, reportSize, &bytesWritten, &dev.hid->outputOvl)) {
+            if (GetLastError() == ERROR_IO_PENDING) {
+                WaitForSingleObject(dev.hid->outputOvlEvent, 100);
+            }
+        }
+    }
     delete[] outputReport;
 }
 
@@ -396,6 +406,12 @@ static void devicesReload(InputManagerImpl* impl) {
             continue;
         }
 
+        // XP Path fix from bemanitools ri.c:92-97.
+        // XP returns \??\ instead of \\?\ for device paths — fix second character.
+        if (path.size() > 1 && path[0] == '\\' && path[1] == '?') {
+            path[1] = '\\';
+        }
+
         UINT preparsedSize = 0;
         GetRawInputDeviceInfoA(entry.hDevice, RIDI_PREPARSEDDATA, nullptr, &preparsedSize);
         if (preparsedSize == 0) {
@@ -430,21 +446,23 @@ static void devicesReload(InputManagerImpl* impl) {
         dev.hid->preparsed = preparsed;
         dev.hid->caps      = caps;
 
-        // -----------------------------------------------------------------
-        // Open persistent handle — GENERIC_READ|GENERIC_WRITE for output
-        // sending (HidD_SetOutputReport) and HidD_GetIndexedString lookups.
-        // -----------------------------------------------------------------
-        dev.hid->hidHandle = CreateFileA(
-            path.c_str(),
-            GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            nullptr, OPEN_EXISTING, 0, nullptr);
+        dev.hid->hidHandle = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+        if (dev.hid->hidHandle == INVALID_HANDLE_VALUE) {
+            dev.hid->hidHandle = CreateFileA(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+        }
+        // Create manual-reset event for overlapped output writes.
+        if (dev.hid->hidHandle != INVALID_HANDLE_VALUE) {
+            dev.hid->outputOvlEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+            dev.hid->outputOvl = {};
+            dev.hid->outputOvl.hEvent = dev.hid->outputOvlEvent;
+        }
 
         {
             bool gotName = false;
-            if (dev.hid->hidHandle != INVALID_HANDLE_VALUE) {
-                wchar_t wideNameBuffer[256] = {};
-                if (HidD_GetProductString(dev.hid->hidHandle, wideNameBuffer, sizeof(wideNameBuffer))) {
+            HANDLE nameHandle = CreateFileA(path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+            if (nameHandle != INVALID_HANDLE_VALUE) {
+                wchar_t wideNameBuffer[126] = {};
+                if (HidD_GetProductString(nameHandle, wideNameBuffer, sizeof(wideNameBuffer))) {
                     std::string utf8Name = wideToUtf8(wideNameBuffer);
                     if (!utf8Name.empty()) {
                         dev.name = utf8Name;
@@ -452,14 +470,22 @@ static void devicesReload(InputManagerImpl* impl) {
                     }
                 }
                 if (!gotName) {
-                    wchar_t wideManufacturerBuffer[256] = {};
-                    if (HidD_GetManufacturerString(dev.hid->hidHandle, wideManufacturerBuffer, sizeof(wideManufacturerBuffer))) {
+                    wchar_t wideManufacturerBuffer[126] = {};
+                    if (HidD_GetManufacturerString(nameHandle, wideManufacturerBuffer, sizeof(wideManufacturerBuffer))) {
                         std::string utf8Name = wideToUtf8(wideManufacturerBuffer);
                         if (!utf8Name.empty()) {
                             dev.name = utf8Name;
                             gotName = true;
                         }
                     }
+                }
+                CloseHandle(nameHandle);
+            }
+            if (!gotName) {
+                std::string descName = deviceDescFromPath(path);
+                if (!descName.empty()) {
+                    dev.name = descName;
+                    gotName = true;
                 }
             }
             if (!gotName) {
@@ -706,6 +732,12 @@ static void devicesReload(InputManagerImpl* impl) {
         }
         if (path.empty()) {
             continue;
+        }
+
+        // XP Path fix from bemanitools ri.c:92-97.
+        // XP returns \??\ instead of \\?\ — fix second character.
+        if (path.size() > 1 && path[0] == '\\' && path[1] == '?') {
+            path[1] = '\\';
         }
 
         MouseDevice md;
