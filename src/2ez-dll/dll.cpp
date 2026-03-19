@@ -70,7 +70,7 @@ static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
             return EXCEPTION_CONTINUE_EXECUTION;
 
         case 0xEF: // OUT DX, AX — Dancer lights (16-bit)
-            handleDancerOut(port, static_cast<uint8_t>(context->Eax & 0xFF));
+            handleDancerOut(port, static_cast<uint16_t>(context->Eax & 0xFFFF));
             context->Eip += instructionLength;
             return EXCEPTION_CONTINUE_EXECUTION;
 
@@ -210,6 +210,8 @@ static void initLogger() {
     }
     bool loggingEnabled = s_settings->gameSettings().value("logging_enabled", false);
     Logger::init(s_currDirectory, loggingEnabled, "2ez-logs.txt");
+    bool verboseOutput = s_settings->gameSettings().value("verbose_output_logging", false);
+    initOutputLogging(verboseOutput);
 }
 
 static void loadSettings(HMODULE hModule) {

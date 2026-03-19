@@ -470,6 +470,14 @@ static void renderSettingsTab() {
 
     ImGui::SeparatorText("Debug Settings");
     gameCheckbox("Enable Logging", "logging_enabled", false);
+    {
+        bool loggingOn = g_app.settings.gameSettings().value("logging_enabled", false);
+        if (!loggingOn) ImGui::BeginDisabled();
+        ImGui::Indent();
+        gameCheckbox("Verbose Output Port Logging", "verbose_output_logging", false);
+        ImGui::Unindent();
+        if (!loggingOn) ImGui::EndDisabled();
+    }
 
     ImGui::SeparatorText("Game Patches");
     renderPatchesTab();
