@@ -103,11 +103,13 @@ struct BindingStore {
     static constexpr int DANCER_COUNT = static_cast<int>(DancerButton::COUNT);
     static constexpr int ANALOG_COUNT = static_cast<int>(Analog::COUNT);
     static constexpr int LIGHT_COUNT  = static_cast<int>(Light::COUNT);
+    static constexpr int DANCER_LIGHT_COUNT = static_cast<int>(DancerLight::COUNT);
 
     ButtonBinding buttons[BUTTON_COUNT];
     ButtonBinding dancerButtons[DANCER_COUNT];
     AnalogBinding analogs[ANALOG_COUNT];
     LightBinding  lights[LIGHT_COUNT];
+    LightBinding  dancerLights[DANCER_LIGHT_COUNT];
 
     InputManager* mgr = nullptr;
 

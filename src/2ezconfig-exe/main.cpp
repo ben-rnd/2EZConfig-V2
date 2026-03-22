@@ -282,11 +282,11 @@ static void renderUI() {
                 renderAnalogsTab();
                 ImGui::EndTabItem();
             }
+        }
 
-            if (ImGui::BeginTabItem("Lights")) {
-                renderLightsTab();
-                ImGui::EndTabItem();
-            }
+        if (ImGui::BeginTabItem("Lights")) {
+            renderLightsTab();
+            ImGui::EndTabItem();
         }
 
         ImGui::EndTabBar();
@@ -851,19 +851,27 @@ static void renderLightsTab() {
         }
     }
 
+    if(g_app.isDancer){
+        ImGui::TextDisabled("EZ2Dancer player pads and hand sensor lights are still being researched.\nOnly simple cabinet lighting has been implemented for now.");
+    }
+    
     ImGui::BeginChild("##lightsScroll", ImVec2(0, ImGui::GetWindowHeight() - 85), false);
     if (ImGui::BeginTable("##lighttable", 3,
             ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
-        ImGui::TableSetupColumn("Light",   ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        ImGui::TableSetupColumn("Light",   ImGuiTableColumnFlags_WidthFixed, 150.0f);
         ImGui::TableSetupColumn("Binding", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
         ImGui::TableHeadersRow();
 
-        for (int i = 0; i < BindingStore::LIGHT_COUNT; i++) {
+        const char** names = g_app.isDancer ? dancerLightNames : lightNames;
+        int count = g_app.isDancer ? BindingStore::DANCER_LIGHT_COUNT : BindingStore::LIGHT_COUNT;
+        LightBinding* lightArray = g_app.isDancer ? g_app.bindings.dancerLights : g_app.bindings.lights;
+
+        for (int i = 0; i < count; i++) {
             ImGui::PushID(i);
             ImGui::TableNextRow();
 
-            LightBinding& lightBinding = g_app.bindings.lights[i];
+            LightBinding& lightBinding = lightArray[i];
 
             std::string lightLabel = g_app.bindings.getDisplayString(lightBinding);
             bool isTestActive = (s_testTimer > 0.0f && lightBinding.isSet()
@@ -871,7 +879,7 @@ static void renderLightsTab() {
                                 && s_testOutIdx == lightBinding.outputIdx);
 
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextUnformatted(lightNames[i]);
+            ImGui::TextUnformatted(names[i]);
 
             ImGui::TableSetColumnIndex(1);
             if (isTestActive) {
@@ -924,7 +932,8 @@ static void renderLightBindPopup(const std::vector<Device>& outputDevices) {
         return;
     }
 
-    ImGui::Text("Bind Light: %s", (s_bindLightIdx >= 0 ? lightNames[s_bindLightIdx] : "?"));
+    const char** popupNames = g_app.isDancer ? dancerLightNames : lightNames;
+    ImGui::Text("Bind Light: %s", (s_bindLightIdx >= 0 ? popupNames[s_bindLightIdx] : "?"));
     ImGui::Separator();
 
     std::vector<const char*> deviceLabels;
@@ -961,7 +970,7 @@ static void renderLightBindPopup(const std::vector<Device>& outputDevices) {
 
     if ((previousDeviceIndex != s_lightDevIdx || previousOutputIndex != s_lightOutIdx)
         && s_lightDevIdx > 0 && s_lightOutIdx >= 0 && s_bindLightIdx >= 0) {
-        LightBinding& lightBinding = g_app.bindings.lights[s_bindLightIdx];
+        LightBinding& lightBinding = g_app.isDancer ? g_app.bindings.dancerLights[s_bindLightIdx] : g_app.bindings.lights[s_bindLightIdx];
         lightBinding.devicePath = outputDevices[s_lightDevIdx - 1].path;
         lightBinding.deviceName = outputDevices[s_lightDevIdx - 1].name;
         lightBinding.outputIdx  = s_lightOutIdx;

@@ -236,6 +236,19 @@ void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
         }
     }
 
+    if (globalSettings.contains("dancer_light_bindings") && globalSettings["dancer_light_bindings"].is_object()) {
+        const auto& dancerLightBindingsJson = globalSettings["dancer_light_bindings"];
+        for (int i = 0; i < DANCER_LIGHT_COUNT; ++i) {
+            if (!dancerLightBindingsJson.contains(dancerLightNames[i])) {
+                continue;
+            }
+            const auto& bindingJson = dancerLightBindingsJson[dancerLightNames[i]];
+            if (bindingJson.is_object()) {
+                dancerLights[i] = LightBinding::fromJson(bindingJson);
+            }
+        }
+    }
+
     for (int p = 0; p < ANALOG_COUNT; ++p) {
         if (analogs[p].hasMouse()) {
             mgr->setMouseBinding(p, analogs[p].mousePath, analogs[p].mouseAxis, analogs[p].mouseSensitivity);
@@ -272,6 +285,13 @@ void BindingStore::save(SettingsManager& settings) const {
     for (int i = 0; i < LIGHT_COUNT; ++i) {
         if (lights[i].isSet()) {
             gs["light_bindings"][lightNames[i]] = lights[i].toJson();
+        }
+    }
+
+    gs["dancer_light_bindings"] = nlohmann::json::object();
+    for (int i = 0; i < DANCER_LIGHT_COUNT; ++i) {
+        if (dancerLights[i].isSet()) {
+            gs["dancer_light_bindings"][dancerLightNames[i]] = dancerLights[i].toJson();
         }
     }
 

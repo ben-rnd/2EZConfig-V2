@@ -212,6 +212,8 @@ static void initLogger() {
     Logger::init(s_currDirectory, loggingEnabled, "2ez-logs.txt");
     bool verboseOutput = s_settings->gameSettings().value("verbose_output_logging", false);
     initOutputLogging(verboseOutput);
+    bool isDancer = s_gameId.find("ez2dancer") != std::string::npos;
+    initDancerOutput(isDancer);
 }
 
 static void loadSettings(HMODULE hModule) {

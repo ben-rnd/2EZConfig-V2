@@ -116,6 +116,16 @@ static const char* dancerButtonNames[] = {
     "P2 R Sensor Top", "P2 R Sensor Bottom",
 };
 
+enum class DancerLight {
+    // 0x30A cabinet lights (7)
+    NEON, LIGHT_LEFT_TOP, LIGHT_LEFT_MIDDLE, LIGHT_LEFT_BOTTOM,
+    LIGHT_RIGHT_TOP, LIGHT_RIGHT_MIDDLE, LIGHT_RIGHT_BOTTOM,
+    // 0x30C (Hand LEDs) and 0x308 (Pads) require further research.
+    COUNT,
+};
+
 static const char* dancerLightNames[] = {
-    "Stage 1", "Stage 2", "Stage 3", "Stage 4",
+    "Neon",
+    "Spotlight Left Top", "Spotlight Left Middle", "Spotlight Left Bottom",
+    "Spotlight Right Top", "Spotlight Right Middle", "Spotlight Right Bottom",
 };
