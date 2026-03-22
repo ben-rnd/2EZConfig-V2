@@ -7,12 +7,18 @@
 #include <windows.h>
 #include <atomic>
 
-static float s_lightState[BindingStore::LIGHT_COUNT] = {};
+static constexpr int MAX_LIGHT_COUNT = BindingStore::DANCER_LIGHT_COUNT; // 24 (dj) or 7 (dancer cabinet only)
+static float s_lightState[MAX_LIGHT_COUNT] = {};
 static std::atomic<bool> s_lightDirty{ false };
 static std::atomic<bool> s_verboseOutput{ false };
+static bool s_isDancer = false;
 
 void initOutputLogging(bool verbose) {
     s_verboseOutput.store(verbose);
+}
+
+void initDancerOutput(bool isDancer) {
+    s_isDancer = isDancer;
 }
 
 // Each entry maps a light channel to the bit that controls it within a port.
@@ -87,9 +93,40 @@ void handleDJOut(uint16_t port, uint8_t value) {
     s_lightDirty.store(true);
 }
 
+// 0x30A cabinet lights: 16-bit, active-low, simple bit-mapped
+struct LightBit16 {
+    int light;
+    uint16_t mask;
+};
+
+static const LightBit16 dancerCabinetLights[] = {
+    { (int)DancerLight::NEON,                0x0004 }, // b2
+    { (int)DancerLight::LIGHT_LEFT_TOP,      0x0100 }, // b8
+    { (int)DancerLight::LIGHT_LEFT_MIDDLE,   0x0200 }, // b9
+    { (int)DancerLight::LIGHT_LEFT_BOTTOM,   0x0400 }, // b10
+    { (int)DancerLight::LIGHT_RIGHT_TOP,     0x0800 }, // b11
+    { (int)DancerLight::LIGHT_RIGHT_MIDDLE,  0x0001 }, // b0
+    { (int)DancerLight::LIGHT_RIGHT_BOTTOM,  0x0002 }, // b1
+};
+
+static void applyLightsInverted(uint16_t value, const LightBit16* table, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        s_lightState[table[i].light] = (value & table[i].mask) ? 0.0f : 1.0f;
+    }
+}
+
 void handleDancerOut(uint16_t port, uint16_t value) {
     switch (port) {
-        //TODO real light ports.
+        case 0x30A:
+            applyLightsInverted(value, dancerCabinetLights, std::size(dancerCabinetLights));
+            break;
+
+        // 0x30C (Hand Sensor LEDs) and 0x308 (Pads). I suspect there are managed via sub I/O
+        // with 'state" commands sent from the game. May need to emulate an approximation
+        // once more footage of the cab is supplied.
+        // Requires further research. Log only for now.
+        case 0x30C:
+        case 0x308:
         default:
             if (s_verboseOutput.load(std::memory_order_relaxed)) {
                 Logger::warn("[IO] Unhandled dancer port write: 0x" + toHexString(port) + " value: 0b" + toBinaryString(value));
@@ -114,12 +151,18 @@ static DWORD WINAPI lightFlushThread(void* bindingsPtr) {
         }
         s_lightDirty.store(false);
 
-        for (int i = 0; i < BindingStore::LIGHT_COUNT; ++i) {
-            const LightBinding& lightBinding = bindings.lights[i];
-            if (!lightBinding.isSet()) {
-                continue;
+        if (s_isDancer) {
+            for (int i = 0; i < BindingStore::DANCER_LIGHT_COUNT; ++i) {
+                const LightBinding& lb = bindings.dancerLights[i];
+                if (!lb.isSet()) continue;
+                bindings.mgr->setLight(lb.devicePath, lb.outputIdx, s_lightState[i]);
             }
-            bindings.mgr->setLight(lightBinding.devicePath, lightBinding.outputIdx, s_lightState[i]);
+        } else {
+            for (int i = 0; i < BindingStore::LIGHT_COUNT; ++i) {
+                const LightBinding& lb = bindings.lights[i];
+                if (!lb.isSet()) continue;
+                bindings.mgr->setLight(lb.devicePath, lb.outputIdx, s_lightState[i]);
+            }
         }
     }
     return 0;
