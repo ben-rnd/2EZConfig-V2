@@ -108,7 +108,9 @@ int main() {
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::GetIO().IniFilename = nullptr;
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     ImGui_ImplGlfw_InitForOpenGL(g_window, true);
     ImGui_ImplOpenGL2_Init();
@@ -472,11 +474,11 @@ static void renderSettingsTab() {
     gameCheckbox("Enable Logging", "logging_enabled", false);
     {
         bool loggingOn = g_app.settings.gameSettings().value("logging_enabled", false);
-        if (!loggingOn) ImGui::BeginDisabled();
-        ImGui::Indent();
-        gameCheckbox("Verbose Output Port Logging", "verbose_output_logging", false);
-        ImGui::Unindent();
-        if (!loggingOn) ImGui::EndDisabled();
+        if (loggingOn){
+            ImGui::Indent();
+            gameCheckbox("Verbose Output Port Logging", "verbose_output_logging", false);
+            ImGui::Unindent();
+        }
     }
 
     ImGui::SeparatorText("Game Patches");
