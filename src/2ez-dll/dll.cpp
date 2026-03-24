@@ -12,6 +12,8 @@ extern "C" {
 #include "io.hardlock.emulator.h"
 }
 
+extern "C" __declspec(dllexport) void hook_init(void) {}
+
 #include "dll_input.h"
 #include "dll_output.h"
 #include "bindings.h"
@@ -23,7 +25,7 @@ extern "C" {
 #include "utilities.h"
 
 static HMODULE s_dllModule = nullptr;
-static InputManager* s_mgr = nullptr;
+static InputManager* s_input = nullptr;
 static BindingStore s_bindings;
 static SettingsManager* s_settings = nullptr;
 static std::string s_currDirectory;
@@ -154,9 +156,9 @@ static DWORD WINAPI InitThread(void*) {
         s_settings->patchStore().applyEarlyPatches(s_gameId);
     }
 
-    s_mgr = new InputManager();
+    s_input = new InputManager();
     try {
-        s_bindings.load(*s_settings, *s_mgr);
+        s_bindings.load(*s_settings, *s_input);
         Logger::info("[+] Bindings loaded successfully");
     } catch (...) {
         Logger::error("[-] Bindings failed to load");
