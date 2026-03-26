@@ -17,20 +17,20 @@ Basic format outline:
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | yes | Display name shown in the config UI |
-| `notes` | string | no | Technical notes for patch authors, ignored by config and dll |
-| `description` | string | no | Brief description shown to end users |
-| `games` | string[] | shared only | Game IDs this patch applies to, only used under `"shared"` |
-| `type` | string | yes | `"toggle"` or `"value"` |
-| `apply` | string | no | `"super_early"` (before app executes), `"early"` (~10ms delay), or omit for default (~2s delay, good for patches that need initial game setup) |
-| `scan` | string | no | Space-separated hex bytes for pattern scanning, `??` for wildcard |
-| `writes` | array | toggle only | Array of `{ "offset", "bytes" }` objects. Offsets are RVA unless `scan` is present, then relative to match |
-| `offset` | string | value only | Single hex offset to write the selected value to |
-| `options` | string[] | value only | Dropdown options shown in UI, selected index is written to `offset` |
-| `default` | int | no | Default selected index for value patches |
-| `children` | object | no | Nested child patches, only applied when parent is enabled |
+| Field         | Type     | Required    | Description                                                                                                                                    |
+| ------------- | -------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`        | string   | yes         | Display name shown in the config UI                                                                                                            |
+| `notes`       | string   | no          | Technical notes for patch authors, ignored by config and dll                                                                                   |
+| `description` | string   | no          | Brief description shown to end users                                                                                                           |
+| `games`       | string[] | shared only | Game IDs this patch applies to, only used under `"shared"`                                                                                     |
+| `type`        | string   | yes         | `"toggle"` or `"value"`                                                                                                                        |
+| `apply`       | string   | no          | `"super_early"` (before app executes), `"early"` (~10ms delay), or omit for default (~2s delay, good for patches that need initial game setup) |
+| `scan`        | string   | no          | Space-separated hex bytes for pattern scanning, `??` for wildcard                                                                              |
+| `writes`      | array    | toggle only | Array of `{ "offset", "bytes" }` objects. Offsets are RVA unless `scan` is present, then relative to match                                     |
+| `offset`      | string   | value only  | Single hex offset to write the selected value to                                                                                               |
+| `options`     | string[] | value only  | Dropdown options shown in UI, selected index is written to `offset`                                                                            |
+| `default`     | int      | no          | Default selected index for value patches                                                                                                       |
+| `children`    | object   | no          | Nested child patches, only applied when parent is enabled                                                                                      |
 
 ### User Patches
 
@@ -153,40 +153,40 @@ Patches can contain nested child patches. Children are toggled independently in 
 
 The `"apply"` field controls when the patch is written to memory:
 
-| Value | Timing | Use case |
-|-------|--------|----------|
-| *(omitted)* | ~2 seconds after boot | Patches that need the game to finish initial setup first |
-| `"early"` | ~10ms after boot | Patches that need to be applied before the game starts rendering |
-| `"super_early"` | Before the application executes | Patches that must be in place before any game code runs |
+| Value           | Timing                          | Use case                                                         |
+| --------------- | ------------------------------- | ---------------------------------------------------------------- |
+| *(omitted)*     | ~2 seconds after boot           | Patches that need the game to finish initial setup first         |
+| `"early"`       | ~10ms after boot                | Patches that need to be applied before the game starts rendering |
+| `"super_early"` | Before the application executes | Patches that must be in place before any game code runs          |
 
 ### Game IDs
 
-| ID | Game |
-|----|------|
-| `ez2dj_1st` | EZ2DJ 1st |
-| `rmbr_1st` | EZ2DJ Remember 1st |
-| `ez2dj_1st_se` | EZ2DJ 1st SE |
-| `ez2dj_2nd` | EZ2DJ 2nd |
-| `ez2dj_3rd` | EZ2DJ 3rd |
-| `ez2dj_4th` | EZ2DJ 4th |
-| `ez2dj_5th` | EZ2DJ 5th |
-| `ez2dj_6th` | EZ2DJ 6th |
-| `ez2dj_7th` | EZ2DJ 7th |
-| `ez2dj_7th_15` | EZ2DJ 7th 1.5 |
-| `ez2dj_7th_20` | EZ2DJ 7th 2.0 |
-| `ez2dj_cv` | EZ2DJ CV |
-| `ez2dj_be` | EZ2DJ BE |
-| `ez2dj_be_a` | EZ2DJ BE-A |
-| `ez2dj_ae` | EZ2DJ AE |
-| `ez2dj_ae_ic` | EZ2DJ AE IC |
-| `ez2ac_ec` | EZ2AC EC |
-| `ez2ac_ev` | EZ2AC EV |
-| `ez2ac_nt` | EZ2AC NT |
-| `ez2ac_tt` | EZ2AC TT |
-| `ez2ac_fn` | EZ2AC FN |
-| `ez2ac_fn_ex` | EZ2AC FN EX |
-| `ez2dancer_1st` | EZ2Dancer 1st Move |
-| `ez2dancer_2nd` | EZ2Dancer 2nd Move |
-| `ez2dancer_uk` | EZ2Dancer UK Move |
-| `ez2dancer_uk_se` | EZ2Dancer UK Move SE |
-| `ez2dancer_sc` | EZ2Dancer Super China |
+| ID                | Game                  |
+| ----------------- | --------------------- |
+| `ez2dj_1st`       | EZ2DJ 1st             |
+| `rmbr_1st`        | EZ2DJ Remember 1st    |
+| `ez2dj_1st_se`    | EZ2DJ 1st SE          |
+| `ez2dj_2nd`       | EZ2DJ 2nd             |
+| `ez2dj_3rd`       | EZ2DJ 3rd             |
+| `ez2dj_4th`       | EZ2DJ 4th             |
+| `ez2dj_5th`       | EZ2DJ 5th             |
+| `ez2dj_6th`       | EZ2DJ 6th             |
+| `ez2dj_7th`       | EZ2DJ 7th             |
+| `ez2dj_7th_15`    | EZ2DJ 7th 1.5         |
+| `ez2dj_7th_20`    | EZ2DJ 7th 2.0         |
+| `ez2dj_cv`        | EZ2DJ CV              |
+| `ez2dj_be`        | EZ2DJ BE              |
+| `ez2dj_be_a`      | EZ2DJ BE-A            |
+| `ez2dj_ae`        | EZ2DJ AE              |
+| `ez2dj_ae_ic`     | EZ2DJ AE IC           |
+| `ez2ac_ec`        | EZ2AC EC              |
+| `ez2ac_ev`        | EZ2AC EV              |
+| `ez2ac_nt`        | EZ2AC NT              |
+| `ez2ac_tt`        | EZ2AC TT              |
+| `ez2ac_fn`        | EZ2AC FN              |
+| `ez2ac_fn_ex`     | EZ2AC FN EX           |
+| `ez2dancer_1st`   | EZ2Dancer 1st Move    |
+| `ez2dancer_2nd`   | EZ2Dancer 2nd Move    |
+| `ez2dancer_uk`    | EZ2Dancer UK Move     |
+| `ez2dancer_uk_se` | EZ2Dancer UK Move SE  |
+| `ez2dancer_sc`    | EZ2Dancer Super China |
