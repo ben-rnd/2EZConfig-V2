@@ -19,6 +19,18 @@
 #include <string>
 #include <vector>
 
+//Theme colours
+static constexpr ImVec4 FRAME         = { 0.16f, 0.15f, 0.13f, 1.00f };
+static constexpr ImVec4 BORDER        = { 0.28f, 0.26f, 0.21f, 1.00f };
+static constexpr ImVec4 BACKGROUND    = { 0.07f, 0.07f, 0.07f, 1.00f };
+
+static constexpr ImVec4 TEXT          = { 0.92f, 0.91f, 0.88f, 1.00f };
+static constexpr ImVec4 DISABLED_TEXT = { 0.42f, 0.41f, 0.38f, 1.00f };
+
+static constexpr ImVec4 ACCENT        = { 0.83f, 0.44f, 0.10f, 1.00f };
+static constexpr ImVec4 ACCENT_DIM    = { 0.40f, 0.22f, 0.05f, 1.00f };
+static constexpr ImVec4 ACCENT_ACTIVE = { 1.00f, 0.58f, 0.15f, 1.00f };
+
 static std::string getAppDataDir() {
     char pathBuffer[MAX_PATH] = {};
     if (GetEnvironmentVariableA("APPDATA", pathBuffer, MAX_PATH)) {
@@ -294,9 +306,14 @@ static void renderUI() {
         ImGui::EndTabBar();
     }
 
-    ImGui::SetCursorPos({ ImGui::GetWindowWidth() - 280, ImGui::GetWindowHeight() - 20 });
-    ImGui::TextDisabled("Made by kasaski (kissAss) - %s",  s_buildDate);
-
+    {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Made by kasaski (kissAss) - %s",  s_buildDate);
+        float textW = ImGui::CalcTextSize(buf).x;
+        ImGui::SetCursorPos({ ImGui::GetWindowWidth() - textW - 10.0f, ImGui::GetWindowHeight() - 20 });
+        ImGui::TextDisabled("%s", buf);
+    }
+    
     ImGui::End();
 }
 
@@ -519,7 +536,7 @@ static void renderButtonsTab() {
 
             if (s_state == BindState_Listening && s_listenIdx == i) {
                 ImGui::TableSetColumnIndex(0);
-                ImGui::TextColored(ImVec4(1,1,0,1), "Press a button...");
+                ImGui::TextColored(ACCENT_ACTIVE, "Press a button...");
                 ImGui::TableSetColumnIndex(1);
                 char timerDisplay[16]; snprintf(timerDisplay, sizeof(timerDisplay), "(%.1fs)", s_listenTimer);
                 ImGui::TextUnformatted(timerDisplay);
@@ -562,7 +579,7 @@ static void renderButtonsTab() {
                 bool isButtonHeld = g_app.bindings.isHeld(bnd);
 
                 if (isButtonHeld) {
-                    ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s:", actionList[i]);
+                    ImGui::TextColored(ACCENT_ACTIVE, "%s:", actionList[i]);
                 } else {
                     ImGui::Text("%s:", actionList[i]);
                 }
@@ -570,7 +587,7 @@ static void renderButtonsTab() {
                 ImGui::TableSetColumnIndex(1);
 
                 if (isButtonHeld) {
-                    ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s", g_app.bindings.getDisplayString(bnd).c_str());
+                    ImGui::TextColored(ACCENT_ACTIVE, "%s", g_app.bindings.getDisplayString(bnd).c_str());
                 } else {
                     ImGui::TextUnformatted(g_app.bindings.getDisplayString(bnd).c_str());
                 }
@@ -885,7 +902,7 @@ static void renderLightsTab() {
 
             ImGui::TableSetColumnIndex(1);
             if (isTestActive) {
-                ImGui::TextColored(ImVec4(1, 0.7f, 0, 1), "%s", lightLabel.c_str());
+                ImGui::TextColored(ACCENT_ACTIVE, "%s", lightLabel.c_str());
             } else {
                 ImGui::TextUnformatted(lightLabel.c_str());
             }
@@ -1022,7 +1039,7 @@ static void renderVttKeyBind(const char* label, const char* bindId, const char* 
     ImGui::Text("%s %s", label, g_app.bindings.getDisplayString(binding).c_str());
     ImGui::SameLine();
     if (capturing) {
-        ImGui::TextColored(ImVec4(1,1,0,1), "[Press button or key...]");
+        ImGui::TextColored(ACCENT_ACTIVE, "Press a button...");
         CaptureResult capturedInput;
         if (g_app.input->pollCapture(capturedInput)) {
             binding = ButtonBinding::fromCapture(capturedInput);
@@ -1176,10 +1193,10 @@ static nlohmann::json saveSixthPatchState(const std::string& gameId) {
     return patchState;
 }
 
-// --- End 6th Trax helpers ---
+// --- End Launch / cleanup helpers ---
+
 
 static void setTheme() {
-    // Night Traveller theme
     ImGuiStyle& style = ImGui::GetStyle();
     style.FrameRounding    = 4.0f;
     style.WindowBorderSize = 0.0f;
@@ -1188,52 +1205,68 @@ static void setTheme() {
     style.TabRounding      = 4.0f;
 
     ImVec4* colors = ImGui::GetStyle().Colors;
-    colors[ImGuiCol_Text]                 = { 0.92f, 0.91f, 0.88f, 1.00f };  // warm off-white
-    colors[ImGuiCol_TextDisabled]         = { 0.42f, 0.41f, 0.38f, 1.00f };  // mid grey
-    colors[ImGuiCol_WindowBg]             = { 0.07f, 0.07f, 0.07f, 0.97f };  // near black
-    colors[ImGuiCol_ChildBg]              = { 0.00f, 0.00f, 0.00f, 0.00f };
-    colors[ImGuiCol_PopupBg]              = { 0.09f, 0.09f, 0.09f, 0.97f };
-    colors[ImGuiCol_Border]               = { 0.25f, 0.23f, 0.20f, 0.60f };  // warm dark grey
-    colors[ImGuiCol_BorderShadow]         = { 0.00f, 0.00f, 0.00f, 0.00f };
-    colors[ImGuiCol_FrameBg]              = { 0.16f, 0.15f, 0.13f, 1.00f };  // dark charcoal
-    colors[ImGuiCol_FrameBgHovered]       = { 0.24f, 0.22f, 0.18f, 1.00f };
-    colors[ImGuiCol_FrameBgActive]        = { 0.30f, 0.27f, 0.22f, 1.00f };
-    colors[ImGuiCol_TitleBg]              = { 0.10f, 0.07f, 0.02f, 1.00f };  // very dark orange
-    colors[ImGuiCol_TitleBgActive]        = { 0.22f, 0.13f, 0.02f, 1.00f };
-    colors[ImGuiCol_TitleBgCollapsed]     = { 0.10f, 0.07f, 0.02f, 0.80f };
-    colors[ImGuiCol_MenuBarBg]            = { 0.10f, 0.07f, 0.02f, 1.00f };
-    colors[ImGuiCol_ScrollbarBg]          = { 0.02f, 0.02f, 0.02f, 0.53f };
-    colors[ImGuiCol_ScrollbarGrab]        = { 0.32f, 0.32f, 0.30f, 1.00f };
-    colors[ImGuiCol_ScrollbarGrabHovered] = { 0.44f, 0.42f, 0.38f, 1.00f };
-    colors[ImGuiCol_ScrollbarGrabActive]  = { 0.83f, 0.44f, 0.10f, 1.00f };  // orange on active
-    colors[ImGuiCol_CheckMark]            = { 0.88f, 0.50f, 0.10f, 1.00f };  // orange
-    colors[ImGuiCol_SliderGrab]           = { 0.83f, 0.44f, 0.10f, 1.00f };  // orange
-    colors[ImGuiCol_SliderGrabActive]     = { 1.00f, 0.60f, 0.20f, 1.00f };
-    colors[ImGuiCol_Button]               = { 0.83f, 0.44f, 0.10f, 0.30f };
-    colors[ImGuiCol_ButtonHovered]        = { 0.88f, 0.50f, 0.12f, 0.75f };
-    colors[ImGuiCol_ButtonActive]         = { 1.00f, 0.58f, 0.15f, 1.00f };
-    colors[ImGuiCol_Header]               = { 0.55f, 0.28f, 0.04f, 0.75f };  // dark orange
-    colors[ImGuiCol_HeaderHovered]        = { 0.83f, 0.44f, 0.10f, 0.75f };
-    colors[ImGuiCol_HeaderActive]         = { 0.90f, 0.52f, 0.12f, 1.00f };
-    colors[ImGuiCol_Separator]            = { 0.28f, 0.26f, 0.22f, 0.70f };
-    colors[ImGuiCol_SeparatorHovered]     = { 0.83f, 0.44f, 0.10f, 0.80f };
-    colors[ImGuiCol_SeparatorActive]      = { 0.90f, 0.52f, 0.12f, 1.00f };
-    colors[ImGuiCol_ResizeGrip]           = { 0.83f, 0.44f, 0.10f, 0.20f };
-    colors[ImGuiCol_ResizeGripHovered]    = { 0.83f, 0.44f, 0.10f, 0.65f };
-    colors[ImGuiCol_ResizeGripActive]     = { 1.00f, 0.58f, 0.15f, 0.95f };
-    colors[ImGuiCol_Tab]                  = { 0.40f, 0.22f, 0.05f, 1.00f };  // visible dark orange
-    colors[ImGuiCol_TabHovered]           = { 0.90f, 0.50f, 0.12f, 1.00f };
-    colors[ImGuiCol_TabActive]            = { 0.78f, 0.42f, 0.09f, 1.00f };  // bright active orange
-    colors[ImGuiCol_TabUnfocused]         = { 0.25f, 0.14f, 0.03f, 1.00f };
-    colors[ImGuiCol_TabUnfocusedActive]   = { 0.48f, 0.26f, 0.06f, 1.00f };
-    colors[ImGuiCol_PlotLines]            = { 0.55f, 0.55f, 0.52f, 1.00f };
-    colors[ImGuiCol_PlotLinesHovered]     = { 1.00f, 0.58f, 0.15f, 1.00f };
-    colors[ImGuiCol_PlotHistogram]        = { 0.83f, 0.44f, 0.10f, 1.00f };
-    colors[ImGuiCol_PlotHistogramHovered] = { 1.00f, 0.60f, 0.20f, 1.00f };
-    colors[ImGuiCol_TextSelectedBg]       = { 0.83f, 0.44f, 0.10f, 0.35f };
-    colors[ImGuiCol_DragDropTarget]       = { 1.00f, 0.58f, 0.15f, 0.90f };
-    colors[ImGuiCol_NavHighlight]         = { 0.83f, 0.44f, 0.10f, 1.00f };
-    colors[ImGuiCol_NavWindowingHighlight]= { 1.00f, 1.00f, 1.00f, 0.70f };
-    colors[ImGuiCol_NavWindowingDimBg]    = { 0.80f, 0.80f, 0.80f, 0.20f };
-    colors[ImGuiCol_ModalWindowDimBg]     = { 0.00f, 0.00f, 0.00f, 0.65f };
+
+    // text
+    colors[ImGuiCol_Text]                 = TEXT;
+    colors[ImGuiCol_TextDisabled]         = DISABLED_TEXT;
+
+    // backgrounds
+    colors[ImGuiCol_WindowBg]             = BACKGROUND;
+    colors[ImGuiCol_ChildBg]              = { 0, 0, 0, 0 };
+    colors[ImGuiCol_PopupBg]              = BACKGROUND;
+    colors[ImGuiCol_TitleBg]              = BACKGROUND;
+    colors[ImGuiCol_TitleBgActive]        = FRAME;
+    colors[ImGuiCol_TitleBgCollapsed]     = BACKGROUND;
+    colors[ImGuiCol_MenuBarBg]            = BACKGROUND;
+
+    // borders & separators
+    colors[ImGuiCol_Border]               = BORDER;
+    colors[ImGuiCol_BorderShadow]         = { 0, 0, 0, 0 };
+    colors[ImGuiCol_Separator]            = BORDER;
+    colors[ImGuiCol_SeparatorHovered]     = ACCENT;
+    colors[ImGuiCol_SeparatorActive]      = ACCENT_ACTIVE;
+
+    // frames (input fields, combo boxes, etc.)
+    colors[ImGuiCol_FrameBg]              = FRAME;
+    colors[ImGuiCol_FrameBgHovered]       = BORDER;
+    colors[ImGuiCol_FrameBgActive]        = BORDER;
+
+    // scrollbar
+    colors[ImGuiCol_ScrollbarBg]          = BACKGROUND;
+    colors[ImGuiCol_ScrollbarGrab]        = BORDER;
+    colors[ImGuiCol_ScrollbarGrabHovered] = DISABLED_TEXT;
+    colors[ImGuiCol_ScrollbarGrabActive]  = ACCENT;
+
+    // buttons
+    colors[ImGuiCol_Button]               = ACCENT_DIM;
+    colors[ImGuiCol_ButtonHovered]        = ACCENT;
+    colors[ImGuiCol_ButtonActive]         = ACCENT_ACTIVE;
+
+    // headers (collapsing headers, selectable items, etc.)
+    colors[ImGuiCol_Header]               = ACCENT_DIM;
+    colors[ImGuiCol_HeaderHovered]        = ACCENT;
+    colors[ImGuiCol_HeaderActive]         = ACCENT_ACTIVE;
+
+    // widgets
+    colors[ImGuiCol_CheckMark]            = ACCENT;
+    colors[ImGuiCol_SliderGrab]           = ACCENT;
+    colors[ImGuiCol_SliderGrabActive]     = ACCENT_ACTIVE;
+
+    // resize grip
+    colors[ImGuiCol_ResizeGrip]           = ACCENT_DIM;
+    colors[ImGuiCol_ResizeGripHovered]    = ACCENT;
+    colors[ImGuiCol_ResizeGripActive]     = ACCENT_ACTIVE;
+
+    // tabs
+    colors[ImGuiCol_Tab]                  = ACCENT_DIM;
+    colors[ImGuiCol_TabHovered]           = ACCENT_ACTIVE;
+    colors[ImGuiCol_TabActive]            = ACCENT;
+    colors[ImGuiCol_TabUnfocused]         = BACKGROUND;
+    colors[ImGuiCol_TabUnfocusedActive]   = FRAME;
+
+    // plots
+    colors[ImGuiCol_PlotLines]            = DISABLED_TEXT;
+    colors[ImGuiCol_PlotLinesHovered]     = ACCENT_ACTIVE;
+    colors[ImGuiCol_PlotHistogram]        = ACCENT;
+    colors[ImGuiCol_PlotHistogramHovered] = ACCENT_ACTIVE;
 }
