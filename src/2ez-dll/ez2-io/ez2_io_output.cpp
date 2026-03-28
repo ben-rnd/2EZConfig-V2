@@ -1,4 +1,4 @@
-#include "dll_output.h"
+#include "ez2_io_output.h"
 #include "bindings.h"
 #include "input_manager.h"
 #include "game_defs.h"

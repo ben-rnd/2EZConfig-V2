@@ -1,4 +1,4 @@
-#include "dll_input.h"
+#include "ez2_io_input.h"
 #include "bindings.h"
 #include "input_manager.h"
 #include "game_defs.h"
@@ -77,7 +77,7 @@ static const ButtonBit djP2Buttons[] = {
     { (int)DJButton::P2_PEDAL, 0x80 },
 };
 
-// Port 0x300: P1 dance pads 
+// Port 0x300: P1 dance pads
 static const ButtonBit dancerP1Pads[] = {
     { (int)DancerButton::P1_LEFT,   0x00F },
     { (int)DancerButton::P1_CENTRE, 0x0F0 },
@@ -127,7 +127,7 @@ static uint16_t computeDancerSensorPort(IsHeldFn isHeld) {
     if (isHeld((int)DancerButton::SERVICE)) {
         portValue &= 0xFF00 | (1 << 4);
     }
-    
+
     // game expects inverted sensors for some reason.
     return portValue ^ 0xFF00;
 }
