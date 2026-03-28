@@ -198,25 +198,25 @@ enum class SabinLight {
     P2_LED0, P2_LED1, P2_LED2, P2_LED3, P2_LED4,
     P2_LED5, P2_LED6, P2_LED7, P2_LED8,
     // RGB zones (C=Control, M=Middle, B=Bottom, T=Top)
-    CTRL_RED, CTRL_GREEN, CTRL_BLUE,
+    CARD_RED, CARD_GREEN, CARD_BLUE,
+    TOP_RED, TOP_GREEN, TOP_BLUE,
     MID_RED, MID_GREEN, MID_BLUE,
     BOT_RED, BOT_GREEN, BOT_BLUE,
-    TOP_RED, TOP_GREEN, TOP_BLUE,
     // Neon/fluorescent
     NEON_1, NEON_2,
     COUNT,
 };
 
 static const char* sabinLightNames[] = {
-    "P1 LED 0", "P1 LED 1", "P1 LED 2", "P1 LED 3", "P1 LED 4",
-    "P1 LED 5", "P1 LED 6", "P1 LED 7", "P1 LED 8",
-    "P2 LED 0", "P2 LED 1", "P2 LED 2", "P2 LED 3", "P2 LED 4",
-    "P2 LED 5", "P2 LED 6", "P2 LED 7", "P2 LED 8",
-    "Control Red", "Control Green", "Control Blue",
-    "Middle Red", "Middle Green", "Middle Blue",
-    "Bottom Red", "Bottom Green", "Bottom Blue",
-    "Top Red", "Top Green", "Top Blue",
-    "Neon 1", "Neon 2",
+    "P1 Start", "P1 B1", "P1 B2", "P1 B3", "P1 B4",
+    "P1 B5", "P1 Red", "P1 Green", "P1 Blue",
+    "P2 Start", "P2 B1", "P2 B2", "P2 B3", "P2 B4",
+    "P2 B5", "P2 Red", "P2 Green", "P2 Blue",
+    "Card Red", "Card Green", "Card Blue",
+    "Spotlight Red", "Spotlight Green", "Spotlight Blue",
+    "Panel Red", "Panel Green", "Panel Blue",
+    "Subwoofer Red", "Subwoofer Green", "Subwoofer Blue",
+    "Unknown 1", "Unknown 2",
 };
 
 static const char* sabinLightCommands[] = {
