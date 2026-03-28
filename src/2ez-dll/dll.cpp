@@ -16,6 +16,7 @@ extern "C" __declspec(dllexport) void hook_init(void) {}
 
 #include "dll_input.h"
 #include "dll_output.h"
+#include "sabin_io.h"
 #include "bindings.h"
 #include "input_manager.h"
 #include "patch_store.h"
@@ -137,9 +138,13 @@ static DWORD WINAPI InitThread(void*) {
 
     timeBeginPeriod(1);
 
-    if (s_settings->globalSettings().value("io_emu", true)){
-        AddVectoredExceptionHandler(1, IOHandler);
-        Logger::info("[+] IO Hook initilaised");
+    GameFamily family = familyFromGameId(s_gameId);
+
+    if (family == GameFamily::EZ2DJ || family == GameFamily::EZ2Dancer) {
+        if (s_settings->globalSettings().value("io_emu", true)){
+            AddVectoredExceptionHandler(1, IOHandler);
+            Logger::info("[+] IO Hook initilaised");
+        }
     }
 
     if (s_settings->globalSettings().value("high_priority", false)){
@@ -164,8 +169,17 @@ static DWORD WINAPI InitThread(void*) {
         Logger::error("[-] Bindings failed to load");
     }
 
-    startInputPollThread(s_bindings);
-    startLightFlushThread(s_bindings);
+    // Start the appropriate IO handler based on game family
+    switch (family) {
+        case GameFamily::EZ2DJ:
+        case GameFamily::EZ2Dancer:
+            startInputPollThread(s_bindings);
+            startLightFlushThread(s_bindings);
+            break;
+        case GameFamily::SabinSS:
+            SabinIO::installHooks(&s_bindings, s_input);
+            break;
+    }
 
     Sleep(s_settings->globalSettings().value("patch_delay_ms", 2000));
     s_settings->patchStore().applyVersionPatch("2EZConfig V2.0");
@@ -214,7 +228,7 @@ static void initLogger() {
     Logger::init(s_currDirectory, loggingEnabled, "2ez-logs.txt");
     bool verboseOutput = s_settings->gameSettings().value("verbose_output_logging", false);
     initOutputLogging(verboseOutput);
-    bool isDancer = s_gameId.find("ez2dancer") != std::string::npos;
+    bool isDancer = familyFromGameId(s_gameId) == GameFamily::EZ2Dancer;
     initDancerOutput(isDancer);
 }
 

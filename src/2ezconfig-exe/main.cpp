@@ -70,7 +70,7 @@ struct AppState {
     InputManager* input = nullptr;
     BindingStore bindings;
     int gameIdx = 0;
-    bool isDancer = false;
+    GameFamily family = GameFamily::EZ2DJ;
 };
 static AppState g_app;
 static GLFWwindow* g_window = nullptr;
@@ -213,9 +213,6 @@ int main() {
 }
 
 static void autoDetectGame() {
-    static const int DJ_COUNT     = static_cast<int>(sizeof(djGames) / sizeof(djGames[0]));
-    static const int DANCER_COUNT = static_cast<int>(sizeof(dancerGames) / sizeof(dancerGames[0]));
-
     std::string gameId = g_app.settings.gameSettings().value("game_id", "");
     if (gameId.empty()) {
         WIN32_FIND_DATAA findData;
@@ -237,21 +234,8 @@ static void autoDetectGame() {
         gameId = "ez2dj_1st";
     }
 
-    g_app.gameIdx  = 0;
-    g_app.isDancer = false;
-    for (int i = 0; i < DJ_COUNT; i++) {
-        if (gameId == djGames[i].id) {
-            g_app.gameIdx = i;
-            return;
-        }
-    }
-    for (int i = 0; i < DANCER_COUNT; i++) {
-        if (gameId == dancerGames[i].id) {
-            g_app.gameIdx = DJ_COUNT + i;
-            g_app.isDancer = true;
-            return;
-        }
-    }
+    g_app.gameIdx = gameIndexFromId(gameId);
+    g_app.family  = familyFromGameId(gameId);
 }
 
 static void renderUI() {
@@ -291,7 +275,7 @@ static void renderUI() {
             ImGui::EndTabItem();
         }
 
-        if (!g_app.isDancer) {
+        if (g_app.family == GameFamily::EZ2DJ) {
             if (ImGui::BeginTabItem("Analogs")) {
                 renderAnalogsTab();
                 ImGui::EndTabItem();
@@ -383,49 +367,36 @@ static void renderPatchRow(Patch& patch) {
 }
 
 static void renderSettingsTab() {
-    static const int DJ_COUNT     = static_cast<int>(sizeof(djGames)     / sizeof(djGames[0]));
-    static const int DANCER_COUNT = static_cast<int>(sizeof(dancerGames) / sizeof(dancerGames[0]));
-
     float availWidth = ImGui::GetContentRegionAvail().x;
     float gameWidth = availWidth * 0.55f;
 
     ImGui::BeginGroup();
     ImGui::TextUnformatted("Game");
-    const char* previewLabel = g_app.isDancer ? dancerGames[g_app.gameIdx - DJ_COUNT].name : djGames[g_app.gameIdx].name;
+    const char* previewLabel = games[g_app.gameIdx].name;
     ImGui::SetNextItemWidth(gameWidth);
     if (ImGui::BeginCombo("##game", previewLabel)) {
-        ImGui::TextDisabled("EZ2DJ/AC");
-        ImGui::Separator();
-        for (int i = 0; i < DJ_COUNT; i++) {
+        GameFamily lastFamily = static_cast<GameFamily>(-1);
+        for (int i = 0; i < GAME_COUNT; i++) {
+            if (games[i].family != lastFamily) {
+                lastFamily = games[i].family;
+                switch (lastFamily) {
+                    case GameFamily::EZ2DJ:     ImGui::TextDisabled("EZ2DJ/AC"); break;
+                    case GameFamily::EZ2Dancer: ImGui::TextDisabled("EZ2Dancer"); break;
+                    case GameFamily::SabinSS:   ImGui::TextDisabled("Sabin Sound Star"); break;
+                }
+                ImGui::Separator();
+            }
             bool isSelected = (g_app.gameIdx == i);
-            if (ImGui::Selectable(djGames[i].name, isSelected)) {
+            if (ImGui::Selectable(games[i].name, isSelected)) {
                 g_app.gameIdx  = i;
-                g_app.isDancer = false;
-                std::string gameId = djGames[i].id;
+                g_app.family   = games[i].family;
+                std::string gameId = games[i].id;
                 g_app.settings.gameSettings()["game_id"] = gameId;
                 g_app.settings.gameSettings().erase("exe_name");
                 if (gameId == "ez2dj_6th")
                     g_app.settings.gameSettings()["patches"] = saveSixthPatchState(gameId);
                 else
                     g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
-                g_app.settings.save();
-            }
-            if (isSelected) {
-                ImGui::SetItemDefaultFocus();
-            }
-        }
-        ImGui::TextDisabled("EZ2Dancer");
-        ImGui::Separator();
-        for (int i = 0; i < DANCER_COUNT; i++) {
-            int comboIdx = DJ_COUNT + i;
-            bool isSelected = (g_app.gameIdx == comboIdx);
-            if (ImGui::Selectable(dancerGames[i].name, isSelected)) {
-                g_app.gameIdx  = comboIdx;
-                g_app.isDancer = true;
-                std::string gameId = dancerGames[i].id;
-                g_app.settings.gameSettings()["game_id"] = gameId;
-                g_app.settings.gameSettings().erase("exe_name");
-                g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
                 g_app.settings.save();
             }
             if (isSelected) {
@@ -449,7 +420,7 @@ static void renderSettingsTab() {
             strncpy(exeNameBuffer, stored.c_str(), MAX_PATH - 1);
             exeNameBuffer[MAX_PATH - 1] = '\0';
         }
-        const char* defaultExeHint = (g_app.gameIdx >= DJ_COUNT) ? "EZ2Dancer.exe" : djGames[g_app.gameIdx].defaultExeName;
+        const char* defaultExeHint = games[g_app.gameIdx].defaultExeName;
         if (ImGui::InputTextWithHint("##exe_name", defaultExeHint, exeNameBuffer, MAX_PATH)) {
             if (exeNameBuffer[0]) {
                 g_app.settings.gameSettings()["exe_name"] = std::string(exeNameBuffer);
@@ -519,8 +490,13 @@ static void renderButtonsTab() {
         s_prevState = s_state;
     }
 
-    const char** actionList  = g_app.isDancer ? dancerButtonNames : djButtonNames;
-    const int    actionCount = g_app.isDancer ? BindingStore::DANCER_COUNT : BindingStore::BUTTON_COUNT;
+    const char** actionList;
+    int          actionCount;
+    switch (g_app.family) {
+        case GameFamily::EZ2Dancer: actionList = dancerButtonNames; actionCount = BindingStore::DANCER_COUNT; break;
+        case GameFamily::SabinSS:   actionList = sabinButtonNames;  actionCount = BindingStore::SABIN_BUTTON_COUNT; break;
+        default:                    actionList = djButtonNames;     actionCount = BindingStore::BUTTON_COUNT; break;
+    }
 
     ImGui::BeginChild("##buttonsScroll", ImVec2(0, ImGui::GetWindowHeight() - 85), false);
     if (ImGui::BeginTable("##buttonable", 3, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
@@ -532,7 +508,9 @@ static void renderButtonsTab() {
         for (int i = 0; i < actionCount; i++) {
             ImGui::PushID(i);
             ImGui::TableNextRow();
-            ButtonBinding& bnd = g_app.isDancer ? g_app.bindings.dancerButtons[i] : g_app.bindings.buttons[i];
+            ButtonBinding& bnd = (g_app.family == GameFamily::EZ2Dancer) ? g_app.bindings.dancerButtons[i]
+                               : (g_app.family == GameFamily::SabinSS) ? g_app.bindings.sabinButtons[i]
+                               : g_app.bindings.buttons[i];
 
             if (s_state == BindState_Listening && s_listenIdx == i) {
                 ImGui::TableSetColumnIndex(0);
@@ -870,10 +848,10 @@ static void renderLightsTab() {
         }
     }
 
-    if(g_app.isDancer){
+    if(g_app.family == GameFamily::EZ2Dancer){
         ImGui::TextDisabled("EZ2Dancer player pads and hand sensor lights are still being researched.\nOnly simple cabinet lighting has been implemented for now.");
     }
-    
+
     ImGui::BeginChild("##lightsScroll", ImVec2(0, ImGui::GetWindowHeight() - 85), false);
     if (ImGui::BeginTable("##lighttable", 3,
             ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
@@ -882,9 +860,17 @@ static void renderLightsTab() {
         ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
         ImGui::TableHeadersRow();
 
-        const char** names = g_app.isDancer ? dancerLightNames : lightNames;
-        int count = g_app.isDancer ? BindingStore::DANCER_LIGHT_COUNT : BindingStore::LIGHT_COUNT;
-        LightBinding* lightArray = g_app.isDancer ? g_app.bindings.dancerLights : g_app.bindings.lights;
+        const char** names;
+        int count;
+        LightBinding* lightArray;
+        switch (g_app.family) {
+            case GameFamily::EZ2Dancer:
+                names = dancerLightNames; count = BindingStore::DANCER_LIGHT_COUNT; lightArray = g_app.bindings.dancerLights; break;
+            case GameFamily::SabinSS:
+                names = sabinLightNames;  count = BindingStore::SABIN_LIGHT_COUNT;  lightArray = g_app.bindings.sabinLights;  break;
+            default:
+                names = lightNames;       count = BindingStore::LIGHT_COUNT;        lightArray = g_app.bindings.lights;       break;
+        }
 
         for (int i = 0; i < count; i++) {
             ImGui::PushID(i);
@@ -951,7 +937,12 @@ static void renderLightBindPopup(const std::vector<Device>& outputDevices) {
         return;
     }
 
-    const char** popupNames = g_app.isDancer ? dancerLightNames : lightNames;
+    const char** popupNames;
+    switch (g_app.family) {
+        case GameFamily::EZ2Dancer: popupNames = dancerLightNames; break;
+        case GameFamily::SabinSS:   popupNames = sabinLightNames;  break;
+        default:                    popupNames = lightNames;       break;
+    }
     ImGui::Text("Bind Light: %s", (s_bindLightIdx >= 0 ? popupNames[s_bindLightIdx] : "?"));
     ImGui::Separator();
 
@@ -989,7 +980,9 @@ static void renderLightBindPopup(const std::vector<Device>& outputDevices) {
 
     if ((previousDeviceIndex != s_lightDevIdx || previousOutputIndex != s_lightOutIdx)
         && s_lightDevIdx > 0 && s_lightOutIdx >= 0 && s_bindLightIdx >= 0) {
-        LightBinding& lightBinding = g_app.isDancer ? g_app.bindings.dancerLights[s_bindLightIdx] : g_app.bindings.lights[s_bindLightIdx];
+        LightBinding& lightBinding = (g_app.family == GameFamily::EZ2Dancer) ? g_app.bindings.dancerLights[s_bindLightIdx]
+                                   : (g_app.family == GameFamily::SabinSS) ? g_app.bindings.sabinLights[s_bindLightIdx]
+                                   : g_app.bindings.lights[s_bindLightIdx];
         lightBinding.devicePath = outputDevices[s_lightDevIdx - 1].path;
         lightBinding.deviceName = outputDevices[s_lightDevIdx - 1].name;
         lightBinding.outputIdx  = s_lightOutIdx;
@@ -1094,8 +1087,7 @@ static void gameCheckbox(const char* label, const char* key, bool defaultVal) {
 // --- Launch / cleanup helpers ---
 
 static std::string resolveActiveExeName() {
-    static const int DJ_COUNT = static_cast<int>(sizeof(djGames) / sizeof(djGames[0]));
-    const char* defaultExe = (g_app.gameIdx >= DJ_COUNT) ? "EZ2Dancer.exe" : djGames[g_app.gameIdx].defaultExeName;
+    const char* defaultExe = games[g_app.gameIdx].defaultExeName;
     std::string exeOverride = g_app.settings.gameSettings().value("exe_name", "");
     return exeOverride.empty() ? defaultExe : exeOverride;
 }

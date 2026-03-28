@@ -6,6 +6,7 @@
 //#include "nativecore/mem.h"
 #include "io.hardlock.emulator.h"
 #include "io.hardlock.hooks.h"
+#include "memutils.h"
 
 typedef NTSTATUS __stdcall tNtCreateFile(PHANDLE FileHandle, DWORD DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions, PVOID EaBuffer, ULONG EaLength);
 typedef NTSTATUS __stdcall tNtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode, PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer, ULONG OutputBufferLength);
@@ -44,7 +45,7 @@ NTSTATUS NTAPI x_NtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_
 
 int InitHooks() {
 
-    HotPatch_patch("ntdll.dll", "NtCreateFile",          0x10, x_NtCreateFile,          (void**)&ntdll_NtCreateFile);
-    HotPatch_patch("ntdll.dll", "NtDeviceIoControlFile", 0x10, x_NtDeviceIoControlFile, (void**)&ntdll_NtDeviceIoControlFile);
+    memutils_hotpatch_import("ntdll.dll", "NtCreateFile",          0x10, x_NtCreateFile,          (void**)&ntdll_NtCreateFile);
+    memutils_hotpatch_import("ntdll.dll", "NtDeviceIoControlFile", 0x10, x_NtDeviceIoControlFile, (void**)&ntdll_NtDeviceIoControlFile);
     return TRUE;
 }

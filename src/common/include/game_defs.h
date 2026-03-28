@@ -1,48 +1,71 @@
 #pragma once
 
-struct DJGame {
+#include <string>
+
+// ============================================================================
+// Game families — determines which IO handler the DLL uses
+// ============================================================================
+enum class GameFamily { EZ2DJ, EZ2Dancer, SabinSS };
+
+struct Game {
     const char* name;
     const char* defaultExeName;
     const char* id;
+    GameFamily family;
 };
 
-static DJGame djGames[] = {
-    {"The 1st Tracks",                          "EZ2DJ.exe",          "ez2dj_1st"},
-    {"The 1st Tracks Special Edition",          "EZ2DJ.exe",          "ez2dj_1st_se"},
-    {"2nd Trax ~It rules once again~",          "EZ2DJ.exe",          "ez2dj_2nd"},
-    {"3rd Trax ~Absolute Pitch~",               "EZ2DJ.exe",          "ez2dj_3rd"},
-    {"4th Trax ~OVER MIND~",                    "EZ2DJ.exe",          "ez2dj_4th"},
-    {"Platinum",                                "EZ2DJ.exe",          "ez2dj_pt"},
-    {"6th Trax ~Self Evolution~",               "EZ2DJ-Launcher.exe", "ez2dj_6th"},
-    {"7th Trax ~Resistance~",                   "EZ2DJ.exe",          "ez2dj_7th"},
-    {"7th Trax Ver 1.5",                        "EZ2DJ.exe",          "ez2dj_7th_15"},
-    {"7th Trax Ver 2.0",                        "EZ2DJ.exe",          "ez2dj_7th_20"},
-    {"Codename: Violet",                        "EZ2DJ.exe",          "ez2dj_cv"},
-    {"Bonus Edition",                           "EZ2DJBe.exe",        "ez2dj_be"},
-    {"Bonus Edition revision A",                "EZ2DJBe.exe",        "ez2dj_be_a"},
-    {"Azure ExpressioN",                        "EZ2DJ.exe",          "ez2dj_ae"},
-    {"Azure ExpressioN Integral Composition",   "EZ2DJ.exe",          "ez2dj_ae_ic"},
-    {"Endless Circulation",                     "EZ2AC.exe",          "ez2ac_ec"},
-    {"Evolve",                                  "EZ2AC.exe",          "ez2ac_ev"},
-    {"Night Traveller",                         "EZ2AC.exe",          "ez2ac_nt"},
-    {"Time Traveller",                          "EZ2AC.exe",          "ez2ac_tt"},
-    {"Final",                                   "EZ2AC.exe",          "ez2ac_fn"},
-    {"Final:EX",                                "EZ2AC.exe",          "ez2ac_fn_ex"},
+static Game games[] = {
+    // EZ2DJ / EZ2AC
+    {"The 1st Tracks",                          "EZ2DJ.exe",          "ez2dj_1st",    GameFamily::EZ2DJ},
+    {"The 1st Tracks Special Edition",          "EZ2DJ.exe",          "ez2dj_1st_se", GameFamily::EZ2DJ},
+    {"2nd Trax ~It rules once again~",          "EZ2DJ.exe",          "ez2dj_2nd",    GameFamily::EZ2DJ},
+    {"3rd Trax ~Absolute Pitch~",               "EZ2DJ.exe",          "ez2dj_3rd",    GameFamily::EZ2DJ},
+    {"4th Trax ~OVER MIND~",                    "EZ2DJ.exe",          "ez2dj_4th",    GameFamily::EZ2DJ},
+    {"Platinum",                                "EZ2DJ.exe",          "ez2dj_pt",     GameFamily::EZ2DJ},
+    {"6th Trax ~Self Evolution~",               "EZ2DJ-Launcher.exe", "ez2dj_6th",    GameFamily::EZ2DJ},
+    {"7th Trax ~Resistance~",                   "EZ2DJ.exe",          "ez2dj_7th",    GameFamily::EZ2DJ},
+    {"7th Trax Ver 1.5",                        "EZ2DJ.exe",          "ez2dj_7th_15", GameFamily::EZ2DJ},
+    {"7th Trax Ver 2.0",                        "EZ2DJ.exe",          "ez2dj_7th_20", GameFamily::EZ2DJ},
+    {"Codename: Violet",                        "EZ2DJ.exe",          "ez2dj_cv",     GameFamily::EZ2DJ},
+    {"Bonus Edition",                           "EZ2DJBe.exe",        "ez2dj_be",     GameFamily::EZ2DJ},
+    {"Bonus Edition revision A",                "EZ2DJBe.exe",        "ez2dj_be_a",   GameFamily::EZ2DJ},
+    {"Azure ExpressioN",                        "EZ2DJ.exe",          "ez2dj_ae",     GameFamily::EZ2DJ},
+    {"Azure ExpressioN Integral Composition",   "EZ2DJ.exe",          "ez2dj_ae_ic",  GameFamily::EZ2DJ},
+    {"Endless Circulation",                     "EZ2AC.exe",          "ez2ac_ec",     GameFamily::EZ2DJ},
+    {"Evolve",                                  "EZ2AC.exe",          "ez2ac_ev",     GameFamily::EZ2DJ},
+    {"Night Traveller",                         "EZ2AC.exe",          "ez2ac_nt",     GameFamily::EZ2DJ},
+    {"Time Traveller",                          "EZ2AC.exe",          "ez2ac_tt",     GameFamily::EZ2DJ},
+    {"Final",                                   "EZ2AC.exe",          "ez2ac_fn",     GameFamily::EZ2DJ},
+    {"Final:EX",                                "EZ2AC.exe",          "ez2ac_fn_ex",  GameFamily::EZ2DJ},
+    // EZ2Dancer
+    {"1st Move",    "EZ2Dancer.exe", "ez2dancer_1st",    GameFamily::EZ2Dancer},
+    {"2nd Move",    "EZ2Dancer.exe", "ez2dancer_2nd",    GameFamily::EZ2Dancer},
+    {"UK Move",     "EZ2Dancer.exe", "ez2dancer_uk",     GameFamily::EZ2Dancer},
+    {"UK Move SE",  "EZ2Dancer.exe", "ez2dancer_uk_se",  GameFamily::EZ2Dancer},
+    {"Super China", "EZ2Dancer.exe", "ez2dancer_sc",     GameFamily::EZ2Dancer},
+    // Sabin Sound Star
+    {"Sabin Sound Star: Renascence Burst", "3s.exe", "3s_rb", GameFamily::SabinSS},
 };
 
-struct DancerGame {
-    const char* name;
-    const char* id;
-};
+static constexpr int GAME_COUNT = sizeof(games) / sizeof(games[0]);
 
-static DancerGame dancerGames[] = {
-    {"1st Move",    "ez2dancer_1st"},
-    {"2nd Move",    "ez2dancer_2nd"},
-    {"UK Move",     "ez2dancer_uk"},
-    {"UK Move SE",  "ez2dancer_uk_se"},
-    {"Super China", "ez2dancer_sc"},
-};
+static GameFamily familyFromGameId(const std::string& id) {
+    for (int i = 0; i < GAME_COUNT; i++) {
+        if (id == games[i].id) return games[i].family;
+    }
+    return GameFamily::EZ2DJ; // default
+}
 
+static int gameIndexFromId(const std::string& id) {
+    for (int i = 0; i < GAME_COUNT; i++) {
+        if (id == games[i].id) return i;
+    }
+    return 0;
+}
+
+// ============================================================================
+// EZ2DJ buttons, analogs, lights
+// ============================================================================
 enum class DJButton {
     TEST = 0, SERVICE,
     EFFECTOR_1, EFFECTOR_2, EFFECTOR_3, EFFECTOR_4,
@@ -95,6 +118,9 @@ static const char* lightNames[] = {
     "Blue Lamp L", "Blue Lamp R",
 };
 
+// ============================================================================
+// EZ2Dancer buttons, lights
+// ============================================================================
 enum class DancerButton {
     TEST = 0, SERVICE,
     P1_LEFT, P1_CENTRE, P1_RIGHT,
@@ -128,4 +154,72 @@ static const char* dancerLightNames[] = {
     "Neon",
     "Spotlight Left Top", "Spotlight Left Middle", "Spotlight Left Bottom",
     "Spotlight Right Top", "Spotlight Right Middle", "Spotlight Right Bottom",
+};
+
+// ============================================================================
+// Sabin Sound Star buttons, lights, commands
+// ============================================================================
+enum class SabinButton {
+    TEST = 0, SERVICE, COIN, BILL,
+    P1_BTN0, P1_BTN1, P1_BTN2, P1_BTN3, P1_BTN4,
+    P1_BTN5, P1_BTN6, P1_BTN7, P1_BTN8, P1_PEDAL,
+    P2_BTN0, P2_BTN1, P2_BTN2, P2_BTN3, P2_BTN4,
+    P2_BTN5, P2_BTN6, P2_BTN7, P2_BTN8, P2_PEDAL,
+    COUNT,
+};
+
+static const char* sabinButtonNames[] = {
+    "Test", "Service", "Coin", "Bill",
+    "P1 Start", "P1 B1", "P1 B2", "P1 B3", "P1 B4", "P1 B5",
+    "P1 Red", "P1 Green", "P1 Blue", "P1 Pedal",
+    "P2 Start", "P2 B1", "P2 B2", "P2 B3", "P2 B4", "P2 B5",
+    "P2 Red", "P2 Green", "P2 Blue", "P2 Pedal",
+};
+
+static const char* sabinButtonCommands[] = {
+    "Tet", "Svce", "Coin", "Bill",
+    "S10", "S11", "S12", "S13", "S14",
+    "S15", "S16", "S17", "S18", "F10",
+    "S20", "S21", "S22", "S23", "S24",
+    "S25", "S26", "S27", "S28", "F20",
+};
+
+enum class SabinLight {
+    // Button LEDs
+    P1_LED0 = 0, P1_LED1, P1_LED2, P1_LED3, P1_LED4,
+    P1_LED5, P1_LED6, P1_LED7, P1_LED8,
+    P2_LED0, P2_LED1, P2_LED2, P2_LED3, P2_LED4,
+    P2_LED5, P2_LED6, P2_LED7, P2_LED8,
+    // RGB zones (C=Control, M=Middle, B=Bottom, T=Top)
+    CTRL_RED, CTRL_GREEN, CTRL_BLUE,
+    MID_RED, MID_GREEN, MID_BLUE,
+    BOT_RED, BOT_GREEN, BOT_BLUE,
+    TOP_RED, TOP_GREEN, TOP_BLUE,
+    // Neon/fluorescent
+    NEON_1, NEON_2,
+    COUNT,
+};
+
+static const char* sabinLightNames[] = {
+    "P1 LED 0", "P1 LED 1", "P1 LED 2", "P1 LED 3", "P1 LED 4",
+    "P1 LED 5", "P1 LED 6", "P1 LED 7", "P1 LED 8",
+    "P2 LED 0", "P2 LED 1", "P2 LED 2", "P2 LED 3", "P2 LED 4",
+    "P2 LED 5", "P2 LED 6", "P2 LED 7", "P2 LED 8",
+    "Control Red", "Control Green", "Control Blue",
+    "Middle Red", "Middle Green", "Middle Blue",
+    "Bottom Red", "Bottom Green", "Bottom Blue",
+    "Top Red", "Top Green", "Top Blue",
+    "Neon 1", "Neon 2",
+};
+
+static const char* sabinLightCommands[] = {
+    "L10", "L11", "L12", "L13", "L14",
+    "L15", "L16", "L17", "L18",
+    "L20", "L21", "L22", "L23", "L24",
+    "L25", "L26", "L27", "L28",
+    "LCR", "LCG", "LCB",
+    "LMR", "LMG", "LMB",
+    "LBR", "LBG", "LBB",
+    "LTR", "LTG", "LTB",
+    "L30", "L31",
 };
