@@ -7,7 +7,9 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
-#include "ez2_io.h"
+#include "shared_io.h"
+#include "ez2dj_io.h"
+#include "ez2dancer_io.h"
 #include "sabin_io.h"
 #include "bindings.h"
 #include "input_manager.h"
@@ -81,15 +83,6 @@ static DWORD WINAPI InitThread(void*) {
         Logger::info("[+] High Priority process initialised");
     }
 
-    resumeThreads(suspended);
-
-    // Allow dongle/hardware to stabilize before continuing.
-    Sleep(s_settings->globalSettings().value("shim_delay", 10));
-
-    if (!s_gameId.empty()){
-        s_settings->patchStore().applyEarlyPatches(s_gameId);
-    }
-
     s_input = new InputManager();
     try {
         s_bindings.load(*s_settings, *s_input);
@@ -102,12 +95,23 @@ static DWORD WINAPI InitThread(void*) {
     GameFamily family = familyFromGameId(s_gameId);
     switch (family) {
         case GameFamily::EZ2DJ:
+            EZ2DJIO::installHooks(&s_bindings, s_input, s_settings);
+            break;
         case GameFamily::EZ2Dancer:
-            EZ2IO::installHooks(&s_bindings, s_input, s_settings, s_gameId);
+            EZ2DancerIO::installHooks(&s_bindings, s_input, s_settings);
             break;
         case GameFamily::SabinSS:
             SabinIO::installHooks(&s_bindings, s_input);
             break;
+    }
+
+    resumeThreads(suspended);
+
+    // Allow dongle/hardware to stabilize before continuing.
+    Sleep(s_settings->globalSettings().value("shim_delay", 10));
+
+    if (!s_gameId.empty()){
+        s_settings->patchStore().applyEarlyPatches(s_gameId);
     }
 
     Sleep(s_settings->globalSettings().value("patch_delay_ms", 2000));
@@ -180,7 +184,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         // EZ2-specific early init (hardlock + remember1st) — must run before threads
         GameFamily family = familyFromGameId(s_gameId);
         if (s_settings && (family == GameFamily::EZ2DJ || family == GameFamily::EZ2Dancer)) {
-            EZ2IO::earlyInit(s_settings, s_gameId);
+            SharedIO::earlyInit(s_settings, s_gameId);
         }
 
         initLogger();
