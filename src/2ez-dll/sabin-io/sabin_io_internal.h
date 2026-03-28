@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "sabin_io.h"
 
 // Internal functions shared between io_input.cpp, io_output.cpp, and io_hooks.cpp.
@@ -12,5 +13,7 @@ void initOutput();
 void onSerialWrite(const uint8_t* data, uint32_t length);
 bool getLightState(int lightIndex);
 void processButton(int buttonIndex, bool pressed);
+
+extern std::atomic<bool> s_lightDirty;
 
 }  // namespace SabinIO

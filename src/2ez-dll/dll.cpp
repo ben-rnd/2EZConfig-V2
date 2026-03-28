@@ -180,15 +180,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         s_dllModule = hModule;
         loadSettings(hModule);
-
-        // EZ2-specific early init (hardlock + remember1st) — must run before threads
-        GameFamily family = familyFromGameId(s_gameId);
-        if (s_settings && (family == GameFamily::EZ2DJ || family == GameFamily::EZ2Dancer)) {
-            SharedIO::earlyInit(s_settings, s_gameId);
-        }
-
         initLogger();
         applySuperEarlyPatches();
+        SharedIO::earlyInit(s_settings, s_gameId, familyFromGameId(s_gameId));
         CreateThread(nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(InitThread), nullptr, 0, nullptr);
     }
     return TRUE;

@@ -2,9 +2,7 @@
 
 #include <string>
 
-// ============================================================================
 // Game families — determines which IO handler the DLL uses
-// ============================================================================
 enum class GameFamily { EZ2DJ, EZ2Dancer, SabinSS };
 
 struct Game {
@@ -78,9 +76,7 @@ static int firstGameIndexForFamily(GameFamily family) {
     return 0;
 }
 
-// ============================================================================
 // EZ2DJ buttons, analogs, lights
-// ============================================================================
 enum class DJButton {
     TEST = 0, SERVICE,
     EFFECTOR_1, EFFECTOR_2, EFFECTOR_3, EFFECTOR_4,
@@ -133,9 +129,7 @@ static const char* lightNames[] = {
     "Blue Lamp L", "Blue Lamp R",
 };
 
-// ============================================================================
 // EZ2Dancer buttons, lights
-// ============================================================================
 enum class DancerButton {
     TEST = 0, SERVICE,
     P1_LEFT, P1_CENTRE, P1_RIGHT,
@@ -171,9 +165,7 @@ static const char* dancerLightNames[] = {
     "Spotlight Right Top", "Spotlight Right Middle", "Spotlight Right Bottom",
 };
 
-// ============================================================================
 // Sabin Sound Star buttons, lights, commands
-// ============================================================================
 enum class SabinButton {
     TEST = 0, SERVICE, COIN, BILL,
     P1_BTN0, P1_BTN1, P1_BTN2, P1_BTN3, P1_BTN4,

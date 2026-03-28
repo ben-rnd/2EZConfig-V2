@@ -490,7 +490,7 @@ static void selectGame(int gameIdx) {
 static void renderSettingsTab() {
     float availWidth = ImGui::GetContentRegionAvail().x;
 
-    // --- Game Family dropdown ---
+    // Game Family dropdown
     ImGui::TextUnformatted("Game");
     int familyIdx = static_cast<int>(g_app.family);
     ImGui::SetNextItemWidth(availWidth * 0.35f);
@@ -502,7 +502,7 @@ static void renderSettingsTab() {
         }
     }
 
-    // --- Version dropdown (only games from selected family) ---
+    // Version dropdown (only games from selected family)
     ImGui::SameLine();
     ImGui::SetNextItemWidth(availWidth * 0.35f);
     if (ImGui::BeginCombo("##version", games[g_app.gameIdx].name)) {
@@ -519,7 +519,7 @@ static void renderSettingsTab() {
         ImGui::EndCombo();
     }
 
-    // --- Exe Name ---
+    // Exe Name
     ImGui::TextUnformatted("Exe Name Override");
     ImGui::SetNextItemWidth(-1);
     {
@@ -1194,7 +1194,7 @@ static void gameCheckbox(const char* label, const char* key, bool defaultVal) {
     }
 }
 
-// --- Launch / cleanup helpers ---
+// Launch / cleanup helpers
 
 static std::string resolveActiveExeName() {
     const char* defaultExe = games[g_app.gameIdx].defaultExeName;
@@ -1295,7 +1295,7 @@ static nlohmann::json saveSixthPatchState(const std::string& gameId) {
     return patchState;
 }
 
-// --- End Launch / cleanup helpers ---
+// End Launch / cleanup helpers
 
 
 static void setTheme() {

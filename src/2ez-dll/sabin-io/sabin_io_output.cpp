@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cstring>
 #include <string>
 
@@ -8,6 +9,7 @@
 namespace SabinIO {
 
 static bool s_lightStates[static_cast<int>(SabinLight::COUNT)] = {};
+std::atomic<bool> s_lightDirty{ false };
 
 static char s_parseBuf[64] = {};
 static int s_parseLen = 0;
@@ -28,7 +30,10 @@ static void processCommand(const char* cmd, int len) {
 
     for (int i = 0; i < static_cast<int>(SabinLight::COUNT); i++) {
         if (base == sabinLightCommands[i]) {
-            s_lightStates[i] = on;
+            if (s_lightStates[i] != on) {
+                s_lightStates[i] = on;
+                s_lightDirty.store(true);
+            }
             return;
         }
     }

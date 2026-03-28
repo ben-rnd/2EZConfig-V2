@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "bindings.h"
 #include "game_defs.h"
@@ -30,8 +32,7 @@ typedef void(__attribute__((thiscall)) *SerialWriteFn)(void* thisPtr, const char
 static SerialWriteFn Real_SerialWrite = nullptr;
 
 static void __attribute__((thiscall)) Hook_SerialWrite(void* thisPtr, const char* data, int length) {
-    SabinIO::onSerialWrite(reinterpret_cast<const uint8_t*>(data),
-                           static_cast<uint32_t>(length));
+    SabinIO::onSerialWrite(reinterpret_cast<const uint8_t*>(data), static_cast<uint32_t>(length));
     Real_SerialWrite(thisPtr, data, length);
 }
 
@@ -50,15 +51,48 @@ static void tryInitIOBuffer() {
 static BindingStore* s_bindings = nullptr;
 static InputManager* s_input = nullptr;
 
+struct BoundDevice {
+    std::string path;
+    std::string name;
+};
+
+static std::vector<BoundDevice> s_boundDevices;
+
+static void addUnique(const std::string& devicePath, const std::string& deviceName) {
+    if (devicePath.empty()) return;
+    for (const auto& device : s_boundDevices) {
+        if (device.path == devicePath) return;
+    }
+    s_boundDevices.push_back({ devicePath, deviceName });
+}
+
+static void initBoundDevices() {
+    for (auto& binding : s_bindings->sabinButtons) {
+        if (binding.isSet() && !binding.isKeyboard()) {
+            addUnique(binding.devicePath, binding.deviceName);
+        }
+    }
+    Logger::info("[Sabin Input] " + std::to_string(s_boundDevices.size()) + " bound device(s)");
+}
+
 static DWORD WINAPI inputThread(void*) {
     timeBeginPeriod(1);
+    initBoundDevices();
 
     while (true) {
         tryInitIOBuffer();
 
         if (s_ioBufReady) {
+            BindingStore::DeviceSnapshotMap deviceSnapshots;
+            for (const auto& device : s_boundDevices) {
+                DeviceSnapshot snapshot;
+                if (s_bindings->mgr->snapshotDevice(device.path, snapshot)) {
+                    deviceSnapshots[device.path] = std::move(snapshot);
+                }
+            }
+
             for (int i = 0; i < static_cast<int>(SabinButton::COUNT); i++) {
-                bool held = s_bindings->isHeld(s_bindings->sabinButtons[i]);
+                bool held = s_bindings->isHeldSnapshot(s_bindings->sabinButtons[i], deviceSnapshots);
                 SabinIO::processButton(i, held);
             }
 
@@ -79,6 +113,10 @@ static DWORD WINAPI outputThread(void*) {
     timeBeginPeriod(1);
 
     while (true) {
+        Sleep(1);
+        if (!SabinIO::s_lightDirty.load()) continue;
+        SabinIO::s_lightDirty.store(false);
+
         for (int i = 0; i < static_cast<int>(SabinLight::COUNT); i++) {
             const auto& lb = s_bindings->sabinLights[i];
             if (lb.isSet()) {
@@ -86,8 +124,6 @@ static DWORD WINAPI outputThread(void*) {
                 s_input->setLight(lb.devicePath, lb.outputIdx, val);
             }
         }
-
-        Sleep(1);
     }
     return 0;
 }
@@ -98,8 +134,7 @@ void SabinIO::installHooks(BindingStore* bindings, InputManager* input) {
 
     void* serialWriteAddr = reinterpret_cast<void*>(gameBase() + RVA_SERIAL_WRITE_FN);
     struct HotPatchInfo ctx;
-    if (memutils_hotpatch(serialWriteAddr, reinterpret_cast<void*>(&Hook_SerialWrite),
-                          9, &ctx, reinterpret_cast<void**>(&Real_SerialWrite))) {
+    if (memutils_hotpatch(serialWriteAddr, reinterpret_cast<void*>(&Hook_SerialWrite), 9, &ctx, reinterpret_cast<void**>(&Real_SerialWrite))) {
         Logger::info("[IO] Serial_Write hooked");
     } else {
         Logger::error("[IO] Failed to hook Serial_Write");
