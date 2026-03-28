@@ -45,7 +45,12 @@ static void resolveRemember1st(std::string& gameId) {
     }
 }
 
-void SharedIO::earlyInit(SettingsManager* settings, std::string& gameId) {
-    resolveRemember1st(gameId);
-    initHardlock(settings);
+void SharedIO::earlyInit(SettingsManager* settings, std::string& gameId, GameFamily family) {
+    if(!settings){
+        return;
+    }
+    if (family == GameFamily::EZ2DJ || family == GameFamily::EZ2Dancer) {
+        resolveRemember1st(gameId);
+        initHardlock(settings);
+    }
 }

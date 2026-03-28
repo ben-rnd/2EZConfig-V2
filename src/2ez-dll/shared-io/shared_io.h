@@ -1,12 +1,11 @@
 #pragma once
 #include <string>
+#include "game_defs.h"
 
 class SettingsManager;
 
 namespace SharedIO {
 
-// Called from DllMain before threads — early init for game families that need it
-// Currently: EZ2 hardlock init + remember1st resolution
-void earlyInit(SettingsManager* settings, std::string& gameId);
+void earlyInit(SettingsManager* settings, std::string& gameId, GameFamily family);
 
 }  // namespace SharedIO
