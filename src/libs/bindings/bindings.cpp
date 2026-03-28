@@ -249,6 +249,32 @@ void BindingStore::load(SettingsManager& settings, InputManager& inputMgr) {
         }
     }
 
+    if (globalSettings.contains("sabin_button_bindings") && globalSettings["sabin_button_bindings"].is_object()) {
+        const auto& buttonBindingsJson = globalSettings["sabin_button_bindings"];
+        for (int i = 0; i < SABIN_BUTTON_COUNT; ++i) {
+            if (!buttonBindingsJson.contains(sabinButtonNames[i])) {
+                continue;
+            }
+            const auto& bindingJson = buttonBindingsJson[sabinButtonNames[i]];
+            if (bindingJson.is_object()) {
+                sabinButtons[i] = ButtonBinding::fromJson(bindingJson);
+            }
+        }
+    }
+
+    if (globalSettings.contains("sabin_light_bindings") && globalSettings["sabin_light_bindings"].is_object()) {
+        const auto& sabinLightBindingsJson = globalSettings["sabin_light_bindings"];
+        for (int i = 0; i < SABIN_LIGHT_COUNT; ++i) {
+            if (!sabinLightBindingsJson.contains(sabinLightNames[i])) {
+                continue;
+            }
+            const auto& bindingJson = sabinLightBindingsJson[sabinLightNames[i]];
+            if (bindingJson.is_object()) {
+                sabinLights[i] = LightBinding::fromJson(bindingJson);
+            }
+        }
+    }
+
     for (int p = 0; p < ANALOG_COUNT; ++p) {
         if (analogs[p].hasMouse()) {
             mgr->setMouseBinding(p, analogs[p].mousePath, analogs[p].mouseAxis, analogs[p].mouseSensitivity);
@@ -292,6 +318,20 @@ void BindingStore::save(SettingsManager& settings) const {
     for (int i = 0; i < DANCER_LIGHT_COUNT; ++i) {
         if (dancerLights[i].isSet()) {
             gs["dancer_light_bindings"][dancerLightNames[i]] = dancerLights[i].toJson();
+        }
+    }
+
+    gs["sabin_button_bindings"] = nlohmann::json::object();
+    for (int i = 0; i < SABIN_BUTTON_COUNT; ++i) {
+        if (sabinButtons[i].isSet()) {
+            gs["sabin_button_bindings"][sabinButtonNames[i]] = sabinButtons[i].toJson();
+        }
+    }
+
+    gs["sabin_light_bindings"] = nlohmann::json::object();
+    for (int i = 0; i < SABIN_LIGHT_COUNT; ++i) {
+        if (sabinLights[i].isSet()) {
+            gs["sabin_light_bindings"][sabinLightNames[i]] = sabinLights[i].toJson();
         }
     }
 
