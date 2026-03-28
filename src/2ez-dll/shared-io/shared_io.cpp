@@ -9,6 +9,7 @@ extern "C" {
 }
 
 #include "shared_io.h"
+#include "sabin_io.h"
 #include "settings.h"
 #include "logger.h"
 #include "utilities.h"
@@ -52,5 +53,8 @@ void SharedIO::earlyInit(SettingsManager* settings, std::string& gameId, GameFam
     if (family == GameFamily::EZ2DJ || family == GameFamily::EZ2Dancer) {
         resolveRemember1st(gameId);
         initHardlock(settings);
+    }
+    if (family == GameFamily::SabinSS) {
+        SabinIO::installEarlyHook();
     }
 }

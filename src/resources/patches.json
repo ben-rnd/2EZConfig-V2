@@ -1,5 +1,5 @@
 {
-  "ver": 10,
+  "ver": 15,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -193,6 +193,65 @@
         { "offset": "0x4B773", "bytes": "00" },
         { "offset": "0x47CBA", "bytes": "00" }
       ]
+    }
+  },
+  "ez2dancer_1st": {},
+  "ez2dancer_2nd": {},
+  "ez2dancer_uk": {},
+  "ez2dancer_uk_se": {},
+  "ez2dancer_sc": {},
+  "3s_rb":{
+    "force_60hz": {
+        "name": "Force 60Hz",
+        "description": "Forces D3D9 to request 60Hz in fullscreen mode.",
+        "type": "toggle",
+        "apply": "super_early",
+        "writes": [
+          { "offset": "0x1671D", "bytes": "c7 85 b0 fe ff ff 3c 00 00 00" }
+        ]
+    },
+    "disable_exit_shutdown": {
+        "name": "Disable Shutdown/Reboot on Exit",
+        "notes": "NOPs ExitWindowsEx calls that would reboot/shutdown the PC when the game exits.",
+        "description": "Prevents the game from rebooting or shutting down the PC on exit.",
+        "type": "toggle",
+        "apply": "super_early",
+        "writes": [
+          { "offset": "0x5508A", "bytes": "90 90 90 90 90 90 90 90 90 90" },
+          { "offset": "0x5509E", "bytes": "90 90 90 90 90 90 90 90 90 90" }
+        ]
+    },
+    "card_strip": {
+        "name": "'WGC' Mode",
+        "description": "Removes smart card requirement for accessing questmode and saving highscores. All songs and quests are unlocked.",
+        "type": "toggle",
+        "apply": "early",
+        "writes": [
+          { "offset": "0x17C91", "bytes": "08" },
+          { "offset": "0x43E8B", "bytes": "0b" },
+          { "offset": "0x4D9E1", "bytes": "01" },
+          { "offset": "0x4DC09", "bytes": "01" },
+          { "offset": "0x4DC77", "bytes": "01" },
+          { "offset": "0x4DD29", "bytes": "01" },
+          { "offset": "0x4DD51", "bytes": "01 00 00 00" },
+          { "offset": "0x4DDAD", "bytes": "01 00 00 00" },
+          { "offset": "0x4DE13", "bytes": "01 00 00 00" },
+          { "offset": "0x4DE55", "bytes": "01 00 00 00" },
+          { "offset": "0x4E096", "bytes": "01" },
+          { "offset": "0x4F595", "bytes": "7f 96 98" },
+          { "offset": "0x4F59F", "bytes": "50 c3" },
+          { "offset": "0x4F5A5", "bytes": "0c" },
+          { "offset": "0x4F5A9", "bytes": "1e" },
+          { "offset": "0x4F5F9", "bytes": "0a" },
+          { "offset": "0x4F615", "bytes": "0a" },
+          { "offset": "0x50751", "bytes": "04" },
+          { "offset": "0x50842", "bytes": "f0 17 c7" },
+          { "offset": "0x50855", "bytes": "02" },
+          { "offset": "0x50984", "bytes": "04" },
+          { "offset": "0x509D8", "bytes": "02" },
+          { "offset": "0x50A4A", "bytes": "01" },
+          { "offset": "0x50BB9", "bytes": "ff" }
+        ]
     }
   }
 }
