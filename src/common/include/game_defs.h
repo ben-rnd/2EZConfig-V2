@@ -44,10 +44,17 @@ static Game games[] = {
     {"UK Move SE",  "EZ2Dancer.exe", "ez2dancer_uk_se",  GameFamily::EZ2Dancer},
     {"Super China", "EZ2Dancer.exe", "ez2dancer_sc",     GameFamily::EZ2Dancer},
     // Sabin Sound Star
-    {"Sabin Sound Star: Renascence Burst", "3s.exe", "3s_rb", GameFamily::SabinSS},
+    {"Renascence Burst", "3s.exe", "3s_rb", GameFamily::SabinSS},
 };
 
 static constexpr int GAME_COUNT = sizeof(games) / sizeof(games[0]);
+
+static constexpr const char* gameFamilyNames[] = {
+    "EZ2DJ/AC",
+    "EZ2Dancer",
+    "Sabin Sound Star",
+};
+static constexpr int GAME_FAMILY_COUNT = sizeof(gameFamilyNames) / sizeof(gameFamilyNames[0]);
 
 static GameFamily familyFromGameId(const std::string& id) {
     for (int i = 0; i < GAME_COUNT; i++) {
@@ -59,6 +66,14 @@ static GameFamily familyFromGameId(const std::string& id) {
 static int gameIndexFromId(const std::string& id) {
     for (int i = 0; i < GAME_COUNT; i++) {
         if (id == games[i].id) return i;
+    }
+    return 0;
+}
+
+// Returns the first game index in games[] that belongs to the given family.
+static int firstGameIndexForFamily(GameFamily family) {
+    for (int i = 0; i < GAME_COUNT; i++) {
+        if (games[i].family == family) return i;
     }
     return 0;
 }

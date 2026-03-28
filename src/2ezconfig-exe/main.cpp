@@ -19,17 +19,120 @@
 #include <string>
 #include <vector>
 
-//Theme colours
-static constexpr ImVec4 FRAME         = { 0.16f, 0.15f, 0.13f, 1.00f };
-static constexpr ImVec4 BORDER        = { 0.28f, 0.26f, 0.21f, 1.00f };
-static constexpr ImVec4 BACKGROUND    = { 0.07f, 0.07f, 0.07f, 1.00f };
+// Per-family theme colours
+struct Theme {
+    ImVec4 frame, border, background;
+    ImVec4 text, disabledText;
+    ImVec4 accent, accentDim, accentActive;
+};
 
-static constexpr ImVec4 TEXT          = { 0.92f, 0.91f, 0.88f, 1.00f };
-static constexpr ImVec4 DISABLED_TEXT = { 0.42f, 0.41f, 0.38f, 1.00f };
+// EZ2DJ/AC — warm orange
+static constexpr Theme THEME_EZ2DJ = {
+    { 0.16f, 0.15f, 0.13f, 1.00f }, // frame
+    { 0.28f, 0.26f, 0.21f, 1.00f }, // border
+    { 0.07f, 0.07f, 0.07f, 1.00f }, // background
+    { 1.00f, 1.00f, 1.00f, 1.00f }, // text
+    { 0.42f, 0.41f, 0.38f, 1.00f }, // disabled text
+    { 0.83f, 0.44f, 0.10f, 1.00f }, // accent
+    { 0.40f, 0.22f, 0.05f, 1.00f }, // accent dim
+    { 1.00f, 0.58f, 0.15f, 1.00f }, // accent active
+};
 
-static constexpr ImVec4 ACCENT        = { 0.83f, 0.44f, 0.10f, 1.00f };
-static constexpr ImVec4 ACCENT_DIM    = { 0.40f, 0.22f, 0.05f, 1.00f };
-static constexpr ImVec4 ACCENT_ACTIVE = { 1.00f, 0.58f, 0.15f, 1.00f };
+// EZ2Dancer — blue base, pink accent, bright green hovers
+static constexpr Theme THEME_DANCER = {
+    { 0.10f, 0.18f, 0.30f, 1.00f }, // frame (blue-grey)
+    { 0.20f, 0.40f, 0.65f, 1.00f }, // border (bright blue)
+    { 0.06f, 0.10f, 0.18f, 1.00f }, // background (blue-black)
+    { 1.00f, 1.00f, 1.00f, 1.00f }, // text
+    { 0.35f, 0.50f, 0.65f, 1.00f }, // disabled text (muted blue)
+    { 0.30f, 0.58f, 0.95f, 1.00f }, // accent (bright blue — buttons, tabs, checks)
+    { 0.85f, 0.20f, 0.50f, 1.00f }, // accent dim (pink — resting buttons/headers)
+    { 0.55f, 0.92f, 0.45f, 1.00f }, // accent active (bright green — hovers)
+};
+
+// Sabin Sound Star — green/teal
+static constexpr Theme THEME_SABIN = {
+    { 0.10f, 0.12f, 0.10f, 1.00f }, // frame
+    { 0.15f, 0.28f, 0.28f, 1.00f }, // border
+    { 0.05f, 0.06f, 0.05f, 1.00f }, // background
+    { 1.00f, 1.00f, 1.00f, 1.00f }, // text
+    { 0.30f, 0.45f, 0.48f, 1.00f }, // disabled text
+    { 0.18f, 0.80f, 0.30f, 1.00f }, // accent
+    { 0.08f, 0.28f, 0.28f, 1.00f }, // accent dim
+    { 0.10f, 0.70f, 0.90f, 1.00f }, // accent active
+};
+
+static const Theme& themeForFamily(GameFamily family) {
+    switch (family) {
+        case GameFamily::EZ2Dancer: return THEME_DANCER;
+        case GameFamily::SabinSS:   return THEME_SABIN;
+        default:                    return THEME_EZ2DJ;
+    }
+}
+
+// Active theme (mutable — switched on family change)
+static ImVec4 FRAME         = THEME_EZ2DJ.frame;
+static ImVec4 BORDER        = THEME_EZ2DJ.border;
+static ImVec4 BACKGROUND    = THEME_EZ2DJ.background;
+static ImVec4 TEXT          = THEME_EZ2DJ.text;
+static ImVec4 DISABLED_TEXT = THEME_EZ2DJ.disabledText;
+static ImVec4 ACCENT        = THEME_EZ2DJ.accent;
+static ImVec4 ACCENT_DIM    = THEME_EZ2DJ.accentDim;
+static ImVec4 ACCENT_ACTIVE = THEME_EZ2DJ.accentActive;
+
+static void applyTheme(GameFamily family) {
+    const Theme& t = themeForFamily(family);
+    FRAME         = t.frame;
+    BORDER        = t.border;
+    BACKGROUND    = t.background;
+    TEXT          = t.text;
+    DISABLED_TEXT = t.disabledText;
+    ACCENT        = t.accent;
+    ACCENT_DIM    = t.accentDim;
+    ACCENT_ACTIVE = t.accentActive;
+    // Re-apply to ImGui style
+    ImVec4* colors = ImGui::GetStyle().Colors;
+    colors[ImGuiCol_Text]                 = TEXT;
+    colors[ImGuiCol_TextDisabled]         = DISABLED_TEXT;
+    colors[ImGuiCol_WindowBg]             = BACKGROUND;
+    colors[ImGuiCol_PopupBg]              = BACKGROUND;
+    colors[ImGuiCol_TitleBg]              = BACKGROUND;
+    colors[ImGuiCol_TitleBgActive]        = FRAME;
+    colors[ImGuiCol_TitleBgCollapsed]     = BACKGROUND;
+    colors[ImGuiCol_MenuBarBg]            = BACKGROUND;
+    colors[ImGuiCol_Border]               = BORDER;
+    colors[ImGuiCol_Separator]            = BORDER;
+    colors[ImGuiCol_SeparatorHovered]     = ACCENT;
+    colors[ImGuiCol_SeparatorActive]      = ACCENT_ACTIVE;
+    colors[ImGuiCol_FrameBg]              = FRAME;
+    colors[ImGuiCol_FrameBgHovered]       = BORDER;
+    colors[ImGuiCol_FrameBgActive]        = BORDER;
+    colors[ImGuiCol_ScrollbarBg]          = BACKGROUND;
+    colors[ImGuiCol_ScrollbarGrab]        = BORDER;
+    colors[ImGuiCol_ScrollbarGrabHovered] = DISABLED_TEXT;
+    colors[ImGuiCol_ScrollbarGrabActive]  = ACCENT;
+    colors[ImGuiCol_Button]               = ACCENT_DIM;
+    colors[ImGuiCol_ButtonHovered]        = ACCENT;
+    colors[ImGuiCol_ButtonActive]         = ACCENT_ACTIVE;
+    colors[ImGuiCol_Header]               = ACCENT_DIM;
+    colors[ImGuiCol_HeaderHovered]        = ACCENT;
+    colors[ImGuiCol_HeaderActive]         = ACCENT_ACTIVE;
+    colors[ImGuiCol_CheckMark]            = ACCENT;
+    colors[ImGuiCol_SliderGrab]           = ACCENT;
+    colors[ImGuiCol_SliderGrabActive]     = ACCENT_ACTIVE;
+    colors[ImGuiCol_ResizeGrip]           = ACCENT_DIM;
+    colors[ImGuiCol_ResizeGripHovered]    = ACCENT;
+    colors[ImGuiCol_ResizeGripActive]     = ACCENT_ACTIVE;
+    colors[ImGuiCol_Tab]                  = ACCENT_DIM;
+    colors[ImGuiCol_TabHovered]           = ACCENT_ACTIVE;
+    colors[ImGuiCol_TabActive]            = ACCENT;
+    colors[ImGuiCol_TabUnfocused]         = BACKGROUND;
+    colors[ImGuiCol_TabUnfocusedActive]   = FRAME;
+    colors[ImGuiCol_PlotLines]            = DISABLED_TEXT;
+    colors[ImGuiCol_PlotLinesHovered]     = ACCENT_ACTIVE;
+    colors[ImGuiCol_PlotHistogram]        = ACCENT;
+    colors[ImGuiCol_PlotHistogramHovered] = ACCENT_ACTIVE;
+}
 
 static std::string getAppDataDir() {
     char pathBuffer[MAX_PATH] = {};
@@ -174,6 +277,7 @@ int main() {
     g_app.bindings.load(g_app.settings, *g_app.input);
 
     autoDetectGame();
+    applyTheme(g_app.family);
 
     if (g_app.settings.gameSettings().value("skip_ui", false)) {
         launchGame();
@@ -197,7 +301,7 @@ int main() {
         int frameWidth, frameHeight;
         glfwGetFramebufferSize(g_window, &frameWidth, &frameHeight);
         glViewport(0, 0, frameWidth, frameHeight);
-        glClearColor(0.07f, 0.07f, 0.07f, 1.0f);
+        glClearColor(BACKGROUND.x, BACKGROUND.y, BACKGROUND.z, BACKGROUND.w);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(g_window);
@@ -366,38 +470,47 @@ static void renderPatchRow(Patch& patch) {
     }
 }
 
+static void selectGame(int gameIdx) {
+    GameFamily prevFamily = g_app.family;
+    g_app.gameIdx  = gameIdx;
+    g_app.family   = games[gameIdx].family;
+    if (g_app.family != prevFamily) {
+        applyTheme(g_app.family);
+    }
+    std::string gameId = games[gameIdx].id;
+    g_app.settings.gameSettings()["game_id"] = gameId;
+    g_app.settings.gameSettings().erase("exe_name");
+    if (gameId == "ez2dj_6th")
+        g_app.settings.gameSettings()["patches"] = saveSixthPatchState(gameId);
+    else
+        g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
+    g_app.settings.save();
+}
+
 static void renderSettingsTab() {
     float availWidth = ImGui::GetContentRegionAvail().x;
-    float gameWidth = availWidth * 0.55f;
 
-    ImGui::BeginGroup();
+    // --- Game Family dropdown ---
     ImGui::TextUnformatted("Game");
-    const char* previewLabel = games[g_app.gameIdx].name;
-    ImGui::SetNextItemWidth(gameWidth);
-    if (ImGui::BeginCombo("##game", previewLabel)) {
-        GameFamily lastFamily = static_cast<GameFamily>(-1);
+    int familyIdx = static_cast<int>(g_app.family);
+    ImGui::SetNextItemWidth(availWidth * 0.35f);
+    if (ImGui::Combo("##family", &familyIdx, gameFamilyNames, GAME_FAMILY_COUNT)) {
+        GameFamily newFamily = static_cast<GameFamily>(familyIdx);
+        if (newFamily != g_app.family) {
+            // Switch to the first game in the new family
+            selectGame(firstGameIndexForFamily(newFamily));
+        }
+    }
+
+    // --- Version dropdown (only games from selected family) ---
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(availWidth * 0.35f);
+    if (ImGui::BeginCombo("##version", games[g_app.gameIdx].name)) {
         for (int i = 0; i < GAME_COUNT; i++) {
-            if (games[i].family != lastFamily) {
-                lastFamily = games[i].family;
-                switch (lastFamily) {
-                    case GameFamily::EZ2DJ:     ImGui::TextDisabled("EZ2DJ/AC"); break;
-                    case GameFamily::EZ2Dancer: ImGui::TextDisabled("EZ2Dancer"); break;
-                    case GameFamily::SabinSS:   ImGui::TextDisabled("Sabin Sound Star"); break;
-                }
-                ImGui::Separator();
-            }
+            if (games[i].family != g_app.family) continue;
             bool isSelected = (g_app.gameIdx == i);
             if (ImGui::Selectable(games[i].name, isSelected)) {
-                g_app.gameIdx  = i;
-                g_app.family   = games[i].family;
-                std::string gameId = games[i].id;
-                g_app.settings.gameSettings()["game_id"] = gameId;
-                g_app.settings.gameSettings().erase("exe_name");
-                if (gameId == "ez2dj_6th")
-                    g_app.settings.gameSettings()["patches"] = saveSixthPatchState(gameId);
-                else
-                    g_app.settings.gameSettings()["patches"] = g_app.settings.patchStore().saveState(gameId);
-                g_app.settings.save();
+                selectGame(i);
             }
             if (isSelected) {
                 ImGui::SetItemDefaultFocus();
@@ -406,10 +519,8 @@ static void renderSettingsTab() {
         ImGui::EndCombo();
     }
 
-    ImGui::EndGroup();
-    ImGui::SameLine();
-    ImGui::BeginGroup();
-    ImGui::TextUnformatted("Exe Name");
+    // --- Exe Name ---
+    ImGui::TextUnformatted("Exe Name Override");
     ImGui::SetNextItemWidth(-1);
     {
         static char exeNameBuffer[MAX_PATH] = {};
@@ -430,7 +541,6 @@ static void renderSettingsTab() {
             g_app.settings.save();
         }
     }
-    ImGui::EndGroup();
 
     {
         static char extraDllsBuffer[2048] = {};
@@ -1196,69 +1306,11 @@ static void setTheme() {
     style.GrabRounding     = 4.0f;
     style.TabRounding      = 4.0f;
 
+    // Fixed colours (not theme-dependent)
     ImVec4* colors = ImGui::GetStyle().Colors;
-
-    // text
-    colors[ImGuiCol_Text]                 = TEXT;
-    colors[ImGuiCol_TextDisabled]         = DISABLED_TEXT;
-
-    // backgrounds
-    colors[ImGuiCol_WindowBg]             = BACKGROUND;
     colors[ImGuiCol_ChildBg]              = { 0, 0, 0, 0 };
-    colors[ImGuiCol_PopupBg]              = BACKGROUND;
-    colors[ImGuiCol_TitleBg]              = BACKGROUND;
-    colors[ImGuiCol_TitleBgActive]        = FRAME;
-    colors[ImGuiCol_TitleBgCollapsed]     = BACKGROUND;
-    colors[ImGuiCol_MenuBarBg]            = BACKGROUND;
-
-    // borders & separators
-    colors[ImGuiCol_Border]               = BORDER;
     colors[ImGuiCol_BorderShadow]         = { 0, 0, 0, 0 };
-    colors[ImGuiCol_Separator]            = BORDER;
-    colors[ImGuiCol_SeparatorHovered]     = ACCENT;
-    colors[ImGuiCol_SeparatorActive]      = ACCENT_ACTIVE;
 
-    // frames (input fields, combo boxes, etc.)
-    colors[ImGuiCol_FrameBg]              = FRAME;
-    colors[ImGuiCol_FrameBgHovered]       = BORDER;
-    colors[ImGuiCol_FrameBgActive]        = BORDER;
-
-    // scrollbar
-    colors[ImGuiCol_ScrollbarBg]          = BACKGROUND;
-    colors[ImGuiCol_ScrollbarGrab]        = BORDER;
-    colors[ImGuiCol_ScrollbarGrabHovered] = DISABLED_TEXT;
-    colors[ImGuiCol_ScrollbarGrabActive]  = ACCENT;
-
-    // buttons
-    colors[ImGuiCol_Button]               = ACCENT_DIM;
-    colors[ImGuiCol_ButtonHovered]        = ACCENT;
-    colors[ImGuiCol_ButtonActive]         = ACCENT_ACTIVE;
-
-    // headers (collapsing headers, selectable items, etc.)
-    colors[ImGuiCol_Header]               = ACCENT_DIM;
-    colors[ImGuiCol_HeaderHovered]        = ACCENT;
-    colors[ImGuiCol_HeaderActive]         = ACCENT_ACTIVE;
-
-    // widgets
-    colors[ImGuiCol_CheckMark]            = ACCENT;
-    colors[ImGuiCol_SliderGrab]           = ACCENT;
-    colors[ImGuiCol_SliderGrabActive]     = ACCENT_ACTIVE;
-
-    // resize grip
-    colors[ImGuiCol_ResizeGrip]           = ACCENT_DIM;
-    colors[ImGuiCol_ResizeGripHovered]    = ACCENT;
-    colors[ImGuiCol_ResizeGripActive]     = ACCENT_ACTIVE;
-
-    // tabs
-    colors[ImGuiCol_Tab]                  = ACCENT_DIM;
-    colors[ImGuiCol_TabHovered]           = ACCENT_ACTIVE;
-    colors[ImGuiCol_TabActive]            = ACCENT;
-    colors[ImGuiCol_TabUnfocused]         = BACKGROUND;
-    colors[ImGuiCol_TabUnfocusedActive]   = FRAME;
-
-    // plots
-    colors[ImGuiCol_PlotLines]            = DISABLED_TEXT;
-    colors[ImGuiCol_PlotLinesHovered]     = ACCENT_ACTIVE;
-    colors[ImGuiCol_PlotHistogram]        = ACCENT;
-    colors[ImGuiCol_PlotHistogramHovered] = ACCENT_ACTIVE;
+    // Apply initial theme colours
+    applyTheme(g_app.family);
 }
