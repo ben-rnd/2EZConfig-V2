@@ -1,10 +1,10 @@
 # EZ2Config V2 ~ it rules once again ~
 A Complete Rewrite of the orginal [2EZConfig](https://github.com/ben-rnd/2EZConfig).
 
-This tool is designed to enable USB controllers to work with all versions of EZ2DJ/AC, as well as offering various patches that make the home experience more enjoyable. 
+This tool is designed to enable USB controllers to work with all versions of EZ2DJ/AC, EZ2Dancer and Sabin Sound Star: Renascence Burst, as well as offering various patches that make the home experience more enjoyable. 
 
 ## Features
-- Supports all EZ2DJ/AC and EZ2Dancer games compatible with Windows XP or newer.
+- Supports EZ2DJ/AC, EZ2Dancer and Sabin Sound Star: Renascence Burst, compatible with Windows XP or newer.
 - Full IO Emualtion. Feels just like the real thing.
 - JSON defined patch library, supporting basic RVA offset or pattern scan patches. Users can create their own patches in a user-patches.json file located in the game directory which will load the next time you open 2EZConfig. Please see the readme under the patches documentation folder for details about the patching system and how to define your own patches.
 - 60hz patches for (almost)all games. Now you never have to manually switch your refresh rate again. The game will request a 60hz refresh rate on boot, reverting once the game closes. 60hz is essential for accurate game timing.
