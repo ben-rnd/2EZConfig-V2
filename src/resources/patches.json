@@ -1,5 +1,5 @@
 {
-  "ver": 15,
+  "ver": 16,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -215,7 +215,7 @@
         "notes": "NOPs ExitWindowsEx calls that would reboot/shutdown the PC when the game exits.",
         "description": "Prevents the game from rebooting or shutting down the PC on exit.",
         "type": "toggle",
-        "apply": "super_early",
+        "apply": "early",
         "writes": [
           { "offset": "0x5508A", "bytes": "90 90 90 90 90 90 90 90 90 90" },
           { "offset": "0x5509E", "bytes": "90 90 90 90 90 90 90 90 90 90" }
@@ -225,7 +225,6 @@
         "name": "'WGC' Mode",
         "description": "Removes smart card requirement for accessing questmode and saving highscores. All songs and quests are unlocked.",
         "type": "toggle",
-        "apply": "early",
         "writes": [
           { "offset": "0x17C91", "bytes": "08" },
           { "offset": "0x43E8B", "bytes": "0b" },

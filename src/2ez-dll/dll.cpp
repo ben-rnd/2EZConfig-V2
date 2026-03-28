@@ -7,7 +7,6 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
-#include "shared_io.h"
 #include "ez2dj_io.h"
 #include "ez2dancer_io.h"
 #include "sabin_io.h"
@@ -18,14 +17,20 @@
 #include "game_defs.h"
 #include "logger.h"
 
+extern "C" {
+#include "io.hardlock.hooks.h"
+#include "io.hardlock.emulator.h"
+}
+#include "utilities.h"
+
 extern "C" __declspec(dllexport) void hook_init(void) {}
 
-static HMODULE s_dllModule = nullptr;
 static InputManager* s_input = nullptr;
 static BindingStore s_bindings;
 static SettingsManager* s_settings = nullptr;
 static std::string s_currDirectory;
 static std::string s_gameId;
+static GameFamily s_gameFamily;
 
 static void suspendOtherThreads(std::vector<HANDLE>& out) {
     DWORD myTid = GetCurrentThreadId();
@@ -68,15 +73,12 @@ static std::string getAppDataDir() {
 }
 
 static DWORD WINAPI InitThread(void*) {
+    timeBeginPeriod(1);
+
     if (!s_settings) {
         Logger::error("[-] Settings not loaded, InitThread aborting");
         return 0;
     }
-
-    std::vector<HANDLE> suspended;
-    suspendOtherThreads(suspended);
-
-    timeBeginPeriod(1);
 
     if (s_settings->globalSettings().value("high_priority", false)){
         SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
@@ -91,36 +93,33 @@ static DWORD WINAPI InitThread(void*) {
         Logger::error("[-] Bindings failed to load");
     }
 
-    if(s_settings->globalSettings().value("io_emu", false)){
-        // Dispatch to the appropriate IO handler based on game family
-        GameFamily family = familyFromGameId(s_gameId);
-        switch (family) {
-            case GameFamily::EZ2DJ:
-                EZ2DJIO::installHooks(&s_bindings, s_input, s_settings);
-                break;
-            case GameFamily::EZ2Dancer:
-                EZ2DancerIO::installHooks(&s_bindings, s_input, s_settings);
-                break;
-            case GameFamily::SabinSS:
-                SabinIO::installHooks(&s_bindings, s_input);
-                break;
-        }
+    //Initialise the appropriate IO handler based on game family
+    switch (s_gameFamily) {
+        case GameFamily::EZ2DJ:
+            EZ2DJIO::initialiseIO(&s_bindings, s_input, s_settings);
+            break;
+        case GameFamily::EZ2Dancer:
+            EZ2DancerIO::initialiseIO(&s_bindings, s_input, s_settings);
+            break;
+        case GameFamily::SabinSS:
+            SabinIO::initialiseIO(&s_bindings, s_input);
+            break;
     }
     
-    resumeThreads(suspended);
-
-    // Allow dongle/hardware to stabilize before continuing.
+    //Apply patches that need to be run after decryption is finished.
+    // 10ms seems to work reliably.
     Sleep(s_settings->globalSettings().value("shim_delay", 10));
+    s_settings->patchStore().applyEarlyPatches(s_gameId);
+    
 
-    if (!s_gameId.empty()){
-        s_settings->patchStore().applyEarlyPatches(s_gameId);
-    }
 
+    //Apply non critical patches that rely on game state being established. Apply last.
     Sleep(s_settings->globalSettings().value("patch_delay_ms", 2000));
-    s_settings->patchStore().applyVersionPatch("2EZConfig V2.0");
-    if (!s_gameId.empty()){
-        s_settings->patchStore().applyPatches(s_gameId);
+    if(s_gameFamily == GameFamily::EZ2DJ || s_gameFamily == GameFamily::EZ2Dancer){
+        s_settings->patchStore().applyVersionPatch("2EZConfig V2.0");
     }
+    
+    s_settings->patchStore().applyPatches(s_gameId);
 
     return 0;
 }
@@ -130,6 +129,60 @@ static void applySuperEarlyPatches() {
         return;
     }
     s_settings->patchStore().applySuperEarlyPatches(s_gameId);
+}
+
+static void initHardlock() {
+    if (!s_settings->gameSettings().value("hardlock_enabled", false)) {
+        return;
+    }
+    auto hardlockConfig = s_settings->gameSettings().value("hardlock", nlohmann::json::object());
+    auto modAd = static_cast<unsigned short>(std::stoul(hardlockConfig.value("ModAd", "0"), nullptr, 16));
+    auto seed1 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed1", "0"), nullptr, 16));
+    auto seed2 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed2", "0"), nullptr, 16));
+    auto seed3 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed3", "0"), nullptr, 16));
+    Logger::info("[Hardlock] ModAd=0x" + toHexString(modAd) + " Seeds=0x" + toHexString(seed1) + ",0x" + toHexString(seed2) + ",0x" + toHexString(seed3));
+    if (LoadHardLockInfo(modAd, seed1, seed2, seed3) && InitHooks()) {
+        Logger::info("[+] Hardlock initialised");
+    } else {
+        Logger::error("[-] Hardlock initialisation failed");
+    }
+}
+
+static void resolveRemember1st() {
+    if (s_gameId != "ez2dj_6th") return;
+    char exePath[MAX_PATH] = {};
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    const char* exeName = strrchr(exePath, '\\');
+    exeName = exeName ? exeName + 1 : exePath;
+    if (_stricmp(exeName, "EZ2DJ.exe") == 0) {
+        s_gameId = "rmbr_1st";
+        Logger::info("[Init] Remember 1st detected, using rmbr_1st patches");
+    }
+}
+
+static void earlyInit() {
+
+    if (!s_settings) {
+        return;
+    }
+
+    applySuperEarlyPatches();
+
+    GameFamily family = familyFromGameId(s_gameId);
+    switch (family) {
+        case GameFamily::EZ2DJ:
+            resolveRemember1st();
+            initHardlock();
+            EZ2DJIO::installHooks(s_settings);
+            break;
+        case GameFamily::EZ2Dancer:
+            initHardlock();
+            EZ2DancerIO::installHooks(s_settings);
+            break;
+        case GameFamily::SabinSS:
+            SabinIO::installHooks();
+            break;
+    }
 }
 
 static void loadSettings(HMODULE hModule) {
@@ -166,6 +219,8 @@ static void loadSettings(HMODULE hModule) {
     }
 
     s_gameId = s_settings->gameSettings().value("game_id", "");
+    s_gameFamily = familyFromGameId(s_gameId);
+
     Logger::info("[Init] DLL dir: " + s_currDirectory);
     Logger::info("[Init] Game ID: " + (s_gameId.empty() ? "(none)" : s_gameId));
 }
@@ -180,11 +235,9 @@ static void initLogger() {
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
-        s_dllModule = hModule;
         loadSettings(hModule);
         initLogger();
-        applySuperEarlyPatches();
-        SharedIO::earlyInit(s_settings, s_gameId, familyFromGameId(s_gameId));
+        earlyInit();
         CreateThread(nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(InitThread), nullptr, 0, nullptr);
     }
     return TRUE;

@@ -37,15 +37,17 @@ static LONG WINAPI DJIOHandler(PEXCEPTION_POINTERS ex) {
     }
 }
 
-void EZ2DJIO::installHooks(BindingStore* bindings, InputManager* input,
+void EZ2DJIO::installHooks(SettingsManager* settings) {
+    if (settings->globalSettings().value("io_emu", true)) {
+        AddVectoredExceptionHandler(1, DJIOHandler);
+        Logger::info("[+] DJ IO VEH installed (early)");
+    }
+}
+
+void EZ2DJIO::initialiseIO(BindingStore* bindings, InputManager* input,
                             SettingsManager* settings) {
     bool verbose = settings->gameSettings().value("verbose_output_logging", false);
     initDJOutputLogging(verbose);
-
-    if (settings->globalSettings().value("io_emu", true)) {
-        AddVectoredExceptionHandler(1, DJIOHandler);
-        Logger::info("[+] DJ IO Hook initialised");
-    }
 
     startDJInputPollThread(*bindings);
     startDJLightFlushThread(*bindings);

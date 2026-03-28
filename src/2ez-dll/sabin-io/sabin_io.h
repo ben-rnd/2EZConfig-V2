@@ -29,7 +29,7 @@ struct SerialIO {
 };
 
 // Public API — called from dll.cpp
-void installEarlyHook();
-void installHooks(BindingStore* bindings, InputManager* input);
+void installHooks();
+void initialiseIO(BindingStore* bindings, InputManager* input);
 
 }  // namespace SabinIO

@@ -44,15 +44,17 @@ static LONG WINAPI DancerIOHandler(PEXCEPTION_POINTERS ex) {
     }
 }
 
-void EZ2DancerIO::installHooks(BindingStore* bindings, InputManager* input,
+void EZ2DancerIO::installHooks(SettingsManager* settings) {
+    if (settings->globalSettings().value("io_emu", true)) {
+        AddVectoredExceptionHandler(1, DancerIOHandler);
+        Logger::info("[+] Dancer IO VEH installed (early)");
+    }
+}
+
+void EZ2DancerIO::initialiseIO(BindingStore* bindings, InputManager* input,
                                 SettingsManager* settings) {
     bool verbose = settings->gameSettings().value("verbose_output_logging", false);
     initDancerOutputLogging(verbose);
-
-    if (settings->globalSettings().value("io_emu", true)) {
-        AddVectoredExceptionHandler(1, DancerIOHandler);
-        Logger::info("[+] Dancer IO Hook initialised");
-    }
 
     startDancerInputPollThread(*bindings);
     startDancerLightFlushThread(*bindings);

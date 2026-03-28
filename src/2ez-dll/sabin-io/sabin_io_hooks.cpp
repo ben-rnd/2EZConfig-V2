@@ -128,7 +128,7 @@ static DWORD WINAPI outputThread(void*) {
     return 0;
 }
 
-void SabinIO::installEarlyHook() {
+void SabinIO::installHooks() {
     void* serialWriteAddr = reinterpret_cast<void*>(gameBase() + RVA_SERIAL_WRITE_FN);
     struct HotPatchInfo ctx;
     if (memutils_hotpatch(serialWriteAddr, reinterpret_cast<void*>(&Hook_SerialWrite), 9, &ctx, reinterpret_cast<void**>(&Real_SerialWrite))) {
@@ -139,7 +139,7 @@ void SabinIO::installEarlyHook() {
     SabinIO::initOutput();
 }
 
-void SabinIO::installHooks(BindingStore* bindings, InputManager* input) {
+void SabinIO::initialiseIO(BindingStore* bindings, InputManager* input) {
     s_bindings = bindings;
     s_input = input;
 
