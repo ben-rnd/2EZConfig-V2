@@ -128,19 +128,21 @@ static DWORD WINAPI outputThread(void*) {
     return 0;
 }
 
+void SabinIO::installEarlyHook() {
+    void* serialWriteAddr = reinterpret_cast<void*>(gameBase() + RVA_SERIAL_WRITE_FN);
+    struct HotPatchInfo ctx;
+    if (memutils_hotpatch(serialWriteAddr, reinterpret_cast<void*>(&Hook_SerialWrite), 9, &ctx, reinterpret_cast<void**>(&Real_SerialWrite))) {
+        Logger::info("[IO] Serial_Write hooked (early)");
+    } else {
+        Logger::error("[IO] Failed to hook Serial_Write");
+    }
+    SabinIO::initOutput();
+}
+
 void SabinIO::installHooks(BindingStore* bindings, InputManager* input) {
     s_bindings = bindings;
     s_input = input;
 
-    void* serialWriteAddr = reinterpret_cast<void*>(gameBase() + RVA_SERIAL_WRITE_FN);
-    struct HotPatchInfo ctx;
-    if (memutils_hotpatch(serialWriteAddr, reinterpret_cast<void*>(&Hook_SerialWrite), 9, &ctx, reinterpret_cast<void**>(&Real_SerialWrite))) {
-        Logger::info("[IO] Serial_Write hooked");
-    } else {
-        Logger::error("[IO] Failed to hook Serial_Write");
-    }
-
-    SabinIO::initOutput();
     tryInitIOBuffer();
 
     CreateThread(nullptr, 0, inputThread, nullptr, 0, nullptr);

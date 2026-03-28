@@ -91,20 +91,22 @@ static DWORD WINAPI InitThread(void*) {
         Logger::error("[-] Bindings failed to load");
     }
 
-    // Dispatch to the appropriate IO handler based on game family
-    GameFamily family = familyFromGameId(s_gameId);
-    switch (family) {
-        case GameFamily::EZ2DJ:
-            EZ2DJIO::installHooks(&s_bindings, s_input, s_settings);
-            break;
-        case GameFamily::EZ2Dancer:
-            EZ2DancerIO::installHooks(&s_bindings, s_input, s_settings);
-            break;
-        case GameFamily::SabinSS:
-            SabinIO::installHooks(&s_bindings, s_input);
-            break;
+    if(s_settings->globalSettings().value("io_emu", false)){
+        // Dispatch to the appropriate IO handler based on game family
+        GameFamily family = familyFromGameId(s_gameId);
+        switch (family) {
+            case GameFamily::EZ2DJ:
+                EZ2DJIO::installHooks(&s_bindings, s_input, s_settings);
+                break;
+            case GameFamily::EZ2Dancer:
+                EZ2DancerIO::installHooks(&s_bindings, s_input, s_settings);
+                break;
+            case GameFamily::SabinSS:
+                SabinIO::installHooks(&s_bindings, s_input);
+                break;
+        }
     }
-
+    
     resumeThreads(suspended);
 
     // Allow dongle/hardware to stabilize before continuing.
