@@ -7,15 +7,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
-extern "C" {
-#include "io.hardlock.hooks.h"
-#include "io.hardlock.emulator.h"
-}
-
-extern "C" __declspec(dllexport) void hook_init(void) {}
-
-#include "dll_input.h"
-#include "dll_output.h"
+#include "ez2_io.h"
 #include "sabin_io.h"
 #include "bindings.h"
 #include "input_manager.h"
@@ -23,7 +15,8 @@ extern "C" __declspec(dllexport) void hook_init(void) {}
 #include "settings.h"
 #include "game_defs.h"
 #include "logger.h"
-#include "utilities.h"
+
+extern "C" __declspec(dllexport) void hook_init(void) {}
 
 static HMODULE s_dllModule = nullptr;
 static InputManager* s_input = nullptr;
@@ -31,56 +24,6 @@ static BindingStore s_bindings;
 static SettingsManager* s_settings = nullptr;
 static std::string s_currDirectory;
 static std::string s_gameId;
-
-static LONG WINAPI IOHandler(PEXCEPTION_POINTERS ex) {
-    if (ex->ExceptionRecord->ExceptionCode != EXCEPTION_PRIV_INSTRUCTION) {
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-
-    auto* context = ex->ContextRecord;
-    uint8_t* instructionPtr = reinterpret_cast<uint8_t*>(context->Eip);
-    uint16_t port = static_cast<uint16_t>(context->Edx & 0xFFFF);
-    uint8_t opcode = instructionPtr[0];
-    int instructionLength = 1;
-
-    // 0x66 prefix = 16-bit operand (Dancer)
-    if (opcode == 0x66) {
-        opcode = instructionPtr[1];
-        instructionLength = 2;
-    }
-
-    switch (opcode) {
-
-        case 0xEC: { // IN AL, DX — DJ input (8-bit)
-            uint8_t value;
-            handleDJIn(port, value);
-            context->Eax = (context->Eax & 0xFFFFFF00) | value;
-            context->Eip += instructionLength;
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-
-        case 0xED: { // IN AX, DX — Dancer input (16-bit)
-            uint16_t value;
-            handleDancerIn(port, value);
-            context->Eax = (context->Eax & 0xFFFF0000) | value;
-            context->Eip += instructionLength;
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-
-        case 0xEE: // OUT DX, AL — DJ lights (8-bit)
-            handleDJOut(port, static_cast<uint8_t>(context->Eax & 0xFF));
-            context->Eip += instructionLength;
-            return EXCEPTION_CONTINUE_EXECUTION;
-
-        case 0xEF: // OUT DX, AX — Dancer lights (16-bit)
-            handleDancerOut(port, static_cast<uint16_t>(context->Eax & 0xFFFF));
-            context->Eip += instructionLength;
-            return EXCEPTION_CONTINUE_EXECUTION;
-
-        default:
-            return EXCEPTION_CONTINUE_SEARCH;
-    }
-}
 
 static void suspendOtherThreads(std::vector<HANDLE>& out) {
     DWORD myTid = GetCurrentThreadId();
@@ -128,28 +71,14 @@ static DWORD WINAPI InitThread(void*) {
         return 0;
     }
 
-    Logger::info("[Init] io_emu=" + std::to_string(s_settings->globalSettings().value("io_emu", true))
-        + " high_priority=" + std::to_string(s_settings->globalSettings().value("high_priority", false))
-        + " patch_delay_ms=" + std::to_string(s_settings->globalSettings().value("patch_delay_ms", 2000))
-        + " shim_delay=" + std::to_string(s_settings->globalSettings().value("shim_delay", 10)));
-
     std::vector<HANDLE> suspended;
     suspendOtherThreads(suspended);
 
     timeBeginPeriod(1);
 
-    GameFamily family = familyFromGameId(s_gameId);
-
-    if (family == GameFamily::EZ2DJ || family == GameFamily::EZ2Dancer) {
-        if (s_settings->globalSettings().value("io_emu", true)){
-            AddVectoredExceptionHandler(1, IOHandler);
-            Logger::info("[+] IO Hook initilaised");
-        }
-    }
-
     if (s_settings->globalSettings().value("high_priority", false)){
         SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-        Logger::info("[+] High Priority process initilaised");
+        Logger::info("[+] High Priority process initialised");
     }
 
     resumeThreads(suspended);
@@ -169,12 +98,12 @@ static DWORD WINAPI InitThread(void*) {
         Logger::error("[-] Bindings failed to load");
     }
 
-    // Start the appropriate IO handler based on game family
+    // Dispatch to the appropriate IO handler based on game family
+    GameFamily family = familyFromGameId(s_gameId);
     switch (family) {
         case GameFamily::EZ2DJ:
         case GameFamily::EZ2Dancer:
-            startInputPollThread(s_bindings);
-            startLightFlushThread(s_bindings);
+            EZ2IO::installHooks(&s_bindings, s_input, s_settings, s_gameId);
             break;
         case GameFamily::SabinSS:
             SabinIO::installHooks(&s_bindings, s_input);
@@ -195,41 +124,6 @@ static void applySuperEarlyPatches() {
         return;
     }
     s_settings->patchStore().applySuperEarlyPatches(s_gameId);
-}
-
-static void initHardlock() {
-    if (!s_settings) {
-        return;
-    }
-    if (!s_settings->gameSettings().value("hardlock_enabled", false)) {
-        return;
-    }
-
-    auto hardlockConfig = s_settings->gameSettings().value("hardlock", nlohmann::json::object());
-    auto modAd = static_cast<unsigned short>(std::stoul(hardlockConfig.value("ModAd", "0"), nullptr, 16));
-    auto seed1 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed1", "0"), nullptr, 16));
-    auto seed2 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed2", "0"), nullptr, 16));
-    auto seed3 = static_cast<unsigned short>(std::stoul(hardlockConfig.value("Seed3", "0"), nullptr, 16));
-
-    Logger::info("[Hardlock] ModAd=0x" + toHexString(modAd) + " Seeds=0x" + toHexString(seed1) + ",0x" + toHexString(seed2) + ",0x" + toHexString(seed3));
-
-    if (LoadHardLockInfo(modAd, seed1, seed2, seed3) && InitHooks()) {
-        Logger::info("[+] Hardlock initialised");
-    } else {
-        Logger::error("[-] Hardlock initialisation failed");
-    }
-}
-
-static void initLogger() {
-    if (!s_settings) {
-        return;
-    }
-    bool loggingEnabled = s_settings->gameSettings().value("logging_enabled", false);
-    Logger::init(s_currDirectory, loggingEnabled, "2ez-logs.txt");
-    bool verboseOutput = s_settings->gameSettings().value("verbose_output_logging", false);
-    initOutputLogging(verboseOutput);
-    bool isDancer = familyFromGameId(s_gameId) == GameFamily::EZ2Dancer;
-    initDancerOutput(isDancer);
 }
 
 static void loadSettings(HMODULE hModule) {
@@ -270,25 +164,26 @@ static void loadSettings(HMODULE hModule) {
     Logger::info("[Init] Game ID: " + (s_gameId.empty() ? "(none)" : s_gameId));
 }
 
-static void resolveRemember1st() {
-    if (s_gameId != "ez2dj_6th") return;
-    char exePath[MAX_PATH] = {};
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    const char* exeName = strrchr(exePath, '\\');
-    exeName = exeName ? exeName + 1 : exePath;
-    if (_stricmp(exeName, "EZ2DJ.exe") == 0) {
-        s_gameId = "rmbr_1st";
-        Logger::info("[Init] Remember 1st detected, using rmbr_1st patches");
+static void initLogger() {
+    if (!s_settings) {
+        return;
     }
+    bool loggingEnabled = s_settings->gameSettings().value("logging_enabled", false);
+    Logger::init(s_currDirectory, loggingEnabled, "2ez-logs.txt");
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         s_dllModule = hModule;
         loadSettings(hModule);
-        resolveRemember1st();
+
+        // EZ2-specific early init (hardlock + remember1st) — must run before threads
+        GameFamily family = familyFromGameId(s_gameId);
+        if (s_settings && (family == GameFamily::EZ2DJ || family == GameFamily::EZ2Dancer)) {
+            EZ2IO::earlyInit(s_settings, s_gameId);
+        }
+
         initLogger();
-        initHardlock();
         applySuperEarlyPatches();
         CreateThread(nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(InitThread), nullptr, 0, nullptr);
     }

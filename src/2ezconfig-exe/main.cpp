@@ -28,38 +28,38 @@ struct Theme {
 
 // EZ2DJ/AC — warm orange
 static constexpr Theme THEME_EZ2DJ = {
-    { 0.16f, 0.15f, 0.13f, 1.00f }, // frame
-    { 0.28f, 0.26f, 0.21f, 1.00f }, // border
-    { 0.07f, 0.07f, 0.07f, 1.00f }, // background
-    { 1.00f, 1.00f, 1.00f, 1.00f }, // text
-    { 0.42f, 0.41f, 0.38f, 1.00f }, // disabled text
-    { 0.83f, 0.44f, 0.10f, 1.00f }, // accent
-    { 0.40f, 0.22f, 0.05f, 1.00f }, // accent dim
-    { 1.00f, 0.58f, 0.15f, 1.00f }, // accent active
+    { 0.16f, 0.15f, 0.13f, 1.00f },
+    { 0.28f, 0.26f, 0.21f, 1.00f },
+    { 0.07f, 0.07f, 0.07f, 1.00f },
+    { 1.00f, 1.00f, 1.00f, 1.00f },
+    { 0.42f, 0.41f, 0.38f, 1.00f },
+    { 0.83f, 0.44f, 0.10f, 1.00f },
+    { 0.40f, 0.22f, 0.05f, 1.00f },
+    { 1.00f, 0.58f, 0.15f, 1.00f },
 };
 
-// EZ2Dancer — blue base, pink accent, bright green hovers
+// EZ2Dancer — blue/pink//green 
 static constexpr Theme THEME_DANCER = {
-    { 0.10f, 0.18f, 0.30f, 1.00f }, // frame (blue-grey)
-    { 0.20f, 0.40f, 0.65f, 1.00f }, // border (bright blue)
-    { 0.06f, 0.10f, 0.18f, 1.00f }, // background (blue-black)
-    { 1.00f, 1.00f, 1.00f, 1.00f }, // text
-    { 0.35f, 0.50f, 0.65f, 1.00f }, // disabled text (muted blue)
-    { 0.30f, 0.58f, 0.95f, 1.00f }, // accent (bright blue — buttons, tabs, checks)
-    { 0.85f, 0.20f, 0.50f, 1.00f }, // accent dim (pink — resting buttons/headers)
-    { 0.55f, 0.92f, 0.45f, 1.00f }, // accent active (bright green — hovers)
+    { 0.10f, 0.18f, 0.30f, 1.00f }, 
+    { 0.20f, 0.40f, 0.65f, 1.00f }, 
+    { 0.06f, 0.10f, 0.18f, 1.00f }, 
+    { 1.00f, 1.00f, 1.00f, 1.00f }, 
+    { 0.35f, 0.50f, 0.65f, 1.00f }, 
+    { 0.30f, 0.58f, 0.95f, 1.00f }, 
+    { 0.85f, 0.20f, 0.50f, 1.00f }, 
+    { 0.55f, 0.92f, 0.45f, 1.00f }, 
 };
 
 // Sabin Sound Star — green/teal
 static constexpr Theme THEME_SABIN = {
-    { 0.10f, 0.12f, 0.10f, 1.00f }, // frame
-    { 0.15f, 0.28f, 0.28f, 1.00f }, // border
-    { 0.05f, 0.06f, 0.05f, 1.00f }, // background
-    { 1.00f, 1.00f, 1.00f, 1.00f }, // text
-    { 0.30f, 0.45f, 0.48f, 1.00f }, // disabled text
-    { 0.18f, 0.80f, 0.30f, 1.00f }, // accent
-    { 0.08f, 0.28f, 0.28f, 1.00f }, // accent dim
-    { 0.10f, 0.70f, 0.90f, 1.00f }, // accent active
+    { 0.10f, 0.12f, 0.10f, 1.00f },
+    { 0.15f, 0.28f, 0.28f, 1.00f },
+    { 0.05f, 0.06f, 0.05f, 1.00f },
+    { 1.00f, 1.00f, 1.00f, 1.00f },
+    { 0.30f, 0.45f, 0.48f, 1.00f },
+    { 0.18f, 0.80f, 0.30f, 1.00f },
+    { 0.08f, 0.28f, 0.28f, 1.00f },
+    { 0.10f, 0.70f, 0.90f, 1.00f },
 };
 
 static const Theme& themeForFamily(GameFamily family) {

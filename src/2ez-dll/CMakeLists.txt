@@ -1,8 +1,9 @@
 # 2EZ.dll
 add_library(2EZ SHARED
     dll.cpp
-    dll_input.cpp
-    dll_output.cpp
+    ez2-io/ez2_io_hooks.cpp
+    ez2-io/ez2_io_input.cpp
+    ez2-io/ez2_io_output.cpp
     sabin-io/sabin_io_hooks.cpp
     sabin-io/sabin_io_input.cpp
     sabin-io/sabin_io_output.cpp
@@ -12,6 +13,7 @@ set_target_properties(2EZ PROPERTIES PREFIX "" OUTPUT_NAME "2EZ")
 
 target_include_directories(2EZ PRIVATE
     ${CMAKE_SOURCE_DIR}/src/common/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ez2-io
     ${CMAKE_CURRENT_SOURCE_DIR}/sabin-io
 )
 
