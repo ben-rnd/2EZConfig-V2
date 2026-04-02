@@ -20,7 +20,11 @@ static std::string vkToName(int vk) {
     char keyNameBuffer[64] = {};
     int len = GetKeyNameTextA(lParam, keyNameBuffer, static_cast<int>(sizeof(keyNameBuffer)));
     if (len > 0) {
-        return std::string(keyNameBuffer);
+        std::string name(keyNameBuffer);
+        if (vk == VK_LSHIFT)   return "Left " + name;
+        if (vk == VK_LCONTROL) return "Left " + name;
+        if (vk == VK_LMENU)    return "Left " + name;
+        return name;
     }
     return std::string("VK ") + std::to_string(vk);
 }

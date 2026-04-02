@@ -1124,11 +1124,13 @@ static void renderLightBindPopup(const std::vector<Device>& outputDevices) {
     ImGui::EndPopup();
 }
 
-// Returns newly-pressed VK (ignoring mouse buttons), or -1 if none. Updates prevKeys[] in-place.
 static int pollKeyboardPress(bool* prevKeys) {
     for (int virtualKey = 0x01; virtualKey < 0xFF; virtualKey++) {
         bool isPressed = (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
-        if (isPressed && !prevKeys[virtualKey] && virtualKey != VK_LBUTTON && virtualKey != VK_RBUTTON && virtualKey != VK_MBUTTON) {
+        // Skip mouse buttons and generic modifier VK codes. L/R specific ones are used instead.
+        if (isPressed && !prevKeys[virtualKey] &&
+            virtualKey != VK_LBUTTON && virtualKey != VK_RBUTTON && virtualKey != VK_MBUTTON &&
+            virtualKey != VK_SHIFT && virtualKey != VK_CONTROL && virtualKey != VK_MENU) {
             prevKeys[virtualKey] = true;
             return virtualKey;
         }
