@@ -89,7 +89,7 @@ static std::string deviceDescFromPath(const std::string& rawPath) {
             // Try to append HID product string (open with access 0 to avoid exclusive lock).
             HANDLE hFile = CreateFileA(rawPath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
             if (hFile != INVALID_HANDLE_VALUE) {
-                wchar_t prodBuf[126] = {};
+                wchar_t prodBuf[256] = {};
                 if (HidD_GetProductString(hFile, prodBuf, sizeof(prodBuf))) {
                     std::string prod = wideToUtf8(prodBuf);
                     if (!prod.empty() && prod != result) {
@@ -461,7 +461,7 @@ static void devicesReload(InputManagerImpl* impl) {
             bool gotName = false;
             HANDLE nameHandle = CreateFileA(path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
             if (nameHandle != INVALID_HANDLE_VALUE) {
-                wchar_t wideNameBuffer[126] = {};
+                wchar_t wideNameBuffer[256] = {};
                 if (HidD_GetProductString(nameHandle, wideNameBuffer, sizeof(wideNameBuffer))) {
                     std::string utf8Name = wideToUtf8(wideNameBuffer);
                     if (!utf8Name.empty()) {
@@ -470,7 +470,7 @@ static void devicesReload(InputManagerImpl* impl) {
                     }
                 }
                 if (!gotName) {
-                    wchar_t wideManufacturerBuffer[126] = {};
+                    wchar_t wideManufacturerBuffer[256] = {};
                     if (HidD_GetManufacturerString(nameHandle, wideManufacturerBuffer, sizeof(wideManufacturerBuffer))) {
                         std::string utf8Name = wideToUtf8(wideManufacturerBuffer);
                         if (!utf8Name.empty()) {
