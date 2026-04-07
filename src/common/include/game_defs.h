@@ -78,7 +78,7 @@ static int firstGameIndexForFamily(GameFamily family) {
 
 // EZ2DJ buttons, analogs, lights
 enum class DJButton {
-    TEST = 0, SERVICE,
+    TEST = 0, SERVICE, COIN,
     EFFECTOR_1, EFFECTOR_2, EFFECTOR_3, EFFECTOR_4,
     P1_START, P2_START,
     P1_1, P1_2, P1_3, P1_4, P1_5, P1_PEDAL,
@@ -87,7 +87,7 @@ enum class DJButton {
 };
 
 static const char* djButtonNames[] = {
-    "Test", "Service",
+    "Test", "Service", "Coin",
     "Effector 1", "Effector 2", "Effector 3", "Effector 4",
     "P1 Start", "P2 Start",
     "P1 1", "P1 2", "P1 3", "P1 4", "P1 5", "P1 Pedal",

@@ -12,6 +12,9 @@
 
 static std::atomic<uint8_t> s_portCache[7] = { 0xFF, 0xFF, 0xFF, 0x80, 0x80, 0xFF, 0xFF };
 
+static bool s_coinWasHeld = false;
+static std::atomic<bool> s_coinPending{false};
+
 struct BoundDevice {
     std::string path;
     std::string name;
@@ -24,6 +27,7 @@ enum DjPort {
     DJ_P1_KEYS  = 2,  // 0x102
     DJ_P1_TT    = 3,  // 0x103
     DJ_P2_TT    = 4,  // 0x104
+    DJ_COIN     = 5,  // 0x105
     DJ_P2_KEYS  = 6,  // 0x106
 };
 
@@ -41,6 +45,10 @@ static const ButtonBit djSystemButtons[] = {
     { (int)DJButton::EFFECTOR_4, 0x20 },
     { (int)DJButton::SERVICE,    0x40 },
     { (int)DJButton::TEST,       0x80 },
+};
+
+static const ButtonBit djCoinButtons[] = {
+    { (int)DJButton::COIN, 0x01 },
 };
 
 static const ButtonBit djP1Buttons[] = {
@@ -79,6 +87,13 @@ bool handleDJIn(uint16_t port, uint8_t& out) {
         case 0x102: out = s_portCache[DJ_P1_KEYS].load(); return true;
         case 0x103: out = s_portCache[DJ_P1_TT].load();   return true;
         case 0x104: out = s_portCache[DJ_P2_TT].load();   return true;
+        case 0x105:
+            if (s_coinPending.exchange(false)) {
+                out = 0xFE; // bit 0 low = coin inserted
+            } else {
+                out = 0xFF;
+            }
+            return true;
         case 0x106: out = s_portCache[DJ_P2_KEYS].load(); return true;
         default:
             Logger::warnOnce("[IO] Unexpected DJ port read: 0x" + toHexString(port));
@@ -101,6 +116,14 @@ static void updatePortCache(BindingStore& bindings) {
     };
 
     s_portCache[DJ_SYSTEM].store(computePort(0xFF, djSystemButtons, std::size(djSystemButtons), isHeld));
+
+    // Coin is edge-triggered: set pending on press, consumed on first port read.
+    bool coinHeld = isHeld((int)DJButton::COIN);
+    if (coinHeld && !s_coinWasHeld) {
+        s_coinPending.store(true);
+    }
+    s_coinWasHeld = coinHeld;
+
     s_portCache[DJ_P1_KEYS].store(computePort(0xFF, djP1Buttons, std::size(djP1Buttons), isHeld));
     s_portCache[DJ_P2_KEYS].store(computePort(0xFF, djP2Buttons, std::size(djP2Buttons), isHeld));
 
