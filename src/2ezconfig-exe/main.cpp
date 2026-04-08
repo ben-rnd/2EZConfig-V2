@@ -200,37 +200,13 @@ static std::string s_testPath;
 static int s_testOutIdx = -1;
 
 
-int main() {
-    glfwSetErrorCallback([](int errorCode, const char* errorDescription) {
-        fprintf(stderr, "GLFW error %d: %s\n", errorCode, errorDescription);
-    });
-    if (!glfwInit()) {
-        return 1;
+int main(int argc, char* argv[]) {
+    bool skipConfig = false;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-skip-config") == 0) {
+            skipConfig = true;
+        }
     }
-
-    g_window = glfwCreateWindow(640, 480, "2EZConfig", nullptr, nullptr);
-    if (!g_window) {
-        glfwTerminate();
-        return 1;
-    }
-    glfwMakeContextCurrent(g_window);
-    glfwSwapInterval(1);
-
-    HWND hwnd = glfwGetWin32Window(g_window);
-    HICON icon = LoadIconA(GetModuleHandleA(nullptr), "IDI_ICON1");
-    SendMessage(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(icon));
-    SendMessage(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icon));
-
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = nullptr;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
-    ImGui_ImplGlfw_InitForOpenGL(g_window, true);
-    ImGui_ImplOpenGL2_Init();
-
-    setTheme();
 
     std::string appDataDir = getAppDataDir();
     std::filesystem::create_directories(appDataDir);
@@ -277,16 +253,48 @@ int main() {
     g_app.bindings.load(g_app.settings, *g_app.input);
 
     autoDetectGame();
-    applyTheme(g_app.family);
 
-    if (g_app.settings.gameSettings().value("skip_ui", false)) {
+    if (skipConfig || g_app.settings.gameSettings().value("skip_ui", false)) {
         launchGame();
-        cleanupUI();
+        delete g_app.input;
+        g_app.input = nullptr;
         if (s_sixthMode) {
             return sixthBackgroundLoop(s_sixthLauncherExe.c_str(), s_sixthExtraDlls);
         }
         return 0;
     }
+
+    glfwSetErrorCallback([](int errorCode, const char* errorDescription) {
+        fprintf(stderr, "GLFW error %d: %s\n", errorCode, errorDescription);
+    });
+    if (!glfwInit()) {
+        return 1;
+    }
+
+    g_window = glfwCreateWindow(640, 480, "2EZConfig", nullptr, nullptr);
+    if (!g_window) {
+        glfwTerminate();
+        return 1;
+    }
+    glfwMakeContextCurrent(g_window);
+    glfwSwapInterval(1);
+
+    HWND hwnd = glfwGetWin32Window(g_window);
+    HICON icon = LoadIconA(GetModuleHandleA(nullptr), "IDI_ICON1");
+    SendMessage(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(icon));
+    SendMessage(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icon));
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+    ImGui_ImplGlfw_InitForOpenGL(g_window, true);
+    ImGui_ImplOpenGL2_Init();
+
+    setTheme();
+    applyTheme(g_app.family);
 
     while (!glfwWindowShouldClose(g_window)) {
         glfwPollEvents();
