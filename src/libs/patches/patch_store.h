@@ -10,8 +10,13 @@ enum class PatchType  { Toggle, Value };
 enum class PatchApply { Normal, Early, SuperEarly };
 
 struct PatchWrite {
-    uint32_t             offset;  // relative to GetModuleHandle(NULL), parsed from hex string
+    uint32_t             offset;  // relative to scan match (or module base if no scan)
     std::vector<uint8_t> bytes;   // multi-byte write (e.g. "90 90 90" -> {0x90, 0x90, 0x90})
+};
+
+struct ScanGroup {
+    std::vector<int16_t>    scan;     // byte scan pattern: -1 = wildcard, 0-255 = exact byte
+    std::vector<PatchWrite> writes;   // writes relative to this scan's match address
 };
 
 struct Patch {
@@ -22,13 +27,11 @@ struct Patch {
     PatchApply           apply        = PatchApply::Normal;
     bool                 enabled      = false;
 
-    std::vector<PatchWrite>    writes;
+    std::vector<ScanGroup>     scan_group;   // each group: scan pattern + writes
 
-    uint32_t                   offset  = 0;
+    uint32_t                   offset  = 0;  // value-type patches
     std::vector<std::string>   options;
     int                        value   = 0;
-
-    std::vector<int16_t> scan;        // byte scan pattern: -1 = wildcard, 0-255 = exact byte
 
     std::vector<Patch>   children;
 };

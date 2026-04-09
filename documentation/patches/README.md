@@ -10,9 +10,13 @@ Basic format outline:
   "description": "Brief description shown to end users.",
   "type": "toggle",
   "apply": "early",
-  "scan": "8b 45 ?? 89 46 ??",
-  "writes": [
-    { "offset": "0x4", "bytes": "6a 3c 90 90" }
+  "scan_group": [
+    {
+      "scan": "8b 45 ?? 89 46 ??",
+      "writes": [
+        { "offset": "0x4", "bytes": "6a 3c 90 90" }
+      ]
+    }
   ]
 }
 ```
@@ -25,12 +29,18 @@ Basic format outline:
 | `games`       | string[] | shared only | Game IDs this patch applies to, only used under `"shared"`                                                                                     |
 | `type`        | string   | yes         | `"toggle"` or `"value"`                                                                                                                        |
 | `apply`       | string   | no          | `"super_early"` (before app executes), `"early"` (~10ms delay), or omit for default (~2s delay, good for patches that need initial game setup) |
-| `scan`        | string   | no          | Space-separated hex bytes for pattern scanning, `??` for wildcard                                                                              |
-| `writes`      | array    | toggle only | Array of `{ "offset", "bytes" }` objects. Offsets are RVA unless `scan` is present, then relative to match                                     |
+| `scan_group`  | array    | toggle only | Array of scan groups, each containing an optional `scan` pattern and a `writes` array. Allows one patch to target multiple code sites           |
 | `offset`      | string   | value only  | Single hex offset to write the selected value to                                                                                               |
 | `options`     | string[] | value only  | Dropdown options shown in UI, selected index is written to `offset`                                                                            |
 | `default`     | int      | no          | Default selected index for value patches                                                                                                       |
 | `children`    | object   | no          | Nested child patches, only applied when parent is enabled                                                                                      |
+
+**Scan group fields:**
+
+| Field    | Type   | Required | Description                                                                                            |
+| -------- | ------ | -------- | ------------------------------------------------------------------------------------------------------ |
+| `scan`   | string | no       | Space-separated hex bytes for pattern scanning, `??` for wildcard. Omit for RVA-based offset patches   |
+| `writes` | array  | yes      | Array of `{ "offset", "bytes" }` objects. Offsets are RVA if no `scan`, or relative to match if `scan` is present |
 
 ### User Patches
 
@@ -45,8 +55,12 @@ If a user patch has the same id as a bundled patch, the user patch replaces it. 
       "name": "My Custom Patch",
       "description": "Does something cool",
       "type": "toggle",
-      "writes": [
-        { "offset": "0x1234", "bytes": "90 90" }
+      "scan_group": [
+        {
+          "writes": [
+            { "offset": "0x1234", "bytes": "90 90" }
+          ]
+        }
       ]
     }
   }
@@ -74,7 +88,7 @@ Relative Virtual address to where the game is loaded in memory. If a game EXE lo
 
 #### Pattern Scan:
 
-Offsets in a pattern patch are relative to the matched location.
+When a `scan` pattern is provided, offsets are relative to the matched location. Use `??` for wildcard bytes.
 ```json
 "force_60hz_v2": {
   "name": "Force 60Hz",
@@ -82,11 +96,44 @@ Offsets in a pattern patch are relative to the matched location.
   "description": "Forces DirectDraw SetDisplayMode to request 60Hz",
   "type": "toggle",
   "apply": "early",
-  "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-  "writes": [
-    { "offset": "0x4", "bytes": "6a 3c 90 90" }
+  "scan_group": [
+    {
+      "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
+      "writes": [
+        { "offset": "0x4", "bytes": "6a 3c 90 90" }
+      ]
+    }
   ]
-},
+}
+```
+
+#### Multi-Scan:
+
+A single patch can target multiple code sites by having multiple entries in the `scans` array. Each scan group is matched and patched independently. This is useful when one fix requires patching the same bug in multiple functions.
+
+```json
+"fix_spotlight_obo": {
+  "name": "Fix Spotlight",
+  "description": "Fixes the left red spotlight getting stuck.",
+  "type": "toggle",
+  "apply": "early",
+  "scan_group": [
+    {
+      "scan": "8b 47 04 8b 5c 24 10 83 c0 01 ...",
+      "writes": [
+        { "offset": "0x7", "bytes": "90 90 90" },
+        { "offset": "0xA0", "bytes": "90 90 90" }
+      ]
+    },
+    {
+      "scan": "f3 ab 8b 46 04 83 c0 01 ...",
+      "writes": [
+        { "offset": "0x5", "bytes": "90 90 90" },
+        { "offset": "0xA4", "bytes": "90 90 90" }
+      ]
+    }
+  ]
+}
 ```
 
 #### Value Type
@@ -117,9 +164,13 @@ Patches that apply to multiple games can be defined under the top-level `"shared
       "description": "Forces 60Hz refresh rate",
       "type": "toggle",
       "apply": "early",
-      "scan": "8b 56 28 53 8b 5f 18 ...",
-      "writes": [
-        { "offset": "0x4", "bytes": "6a 3c 5b" }
+      "scan_group": [
+        {
+          "scan": "8b 56 28 53 8b 5f 18 ...",
+          "writes": [
+            { "offset": "0x4", "bytes": "6a 3c 5b" }
+          ]
+        }
       ]
     }
   }

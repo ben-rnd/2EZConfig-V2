@@ -1,5 +1,5 @@
 {
-  "ver": 20,
+  "ver": 24,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -8,9 +8,13 @@
         "description": "Forces DirectDraw SetDisplayMode to request 60Hz.",
         "type": "toggle",
         "apply": "early",
-        "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 5b" }
+        "scan_group": [
+          {
+            "scan": "8b 56 28 53 8b 5f 18 8b 7f 54 8b 2a 53 57 51 50 52 ff 55 54",
+            "writes": [
+              { "offset": "0x4", "bytes": "6a 3c 5b" }
+            ]
+          }
         ]
       },
       "force_60hz_v2": {
@@ -20,9 +24,13 @@
         "description": "Forces DirectDraw SetDisplayMode to request 60Hz.",
         "type": "toggle",
         "apply": "early",
-        "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
-        "writes": [
-          { "offset": "0x4", "bytes": "6a 3c 90 90" }
+        "scan_group": [
+          {
+            "scan": "52 8b 45 08 8b 48 ?? 51 8b 55 08 8b 42 ?? 50 8b 8d 58 ff ff ff 8b 51 ?? 52",
+            "writes": [
+              { "offset": "0x4", "bytes": "6a 3c 90 90" }
+            ]
+          }
         ]
       },
       "force_60hz_v3": {
@@ -32,9 +40,37 @@
         "description": "Forces DirectDraw SetDisplayMode to request 60Hz. ",
         "type": "toggle",
         "apply": "early",
-        "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
-        "writes": [
-          { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
+        "scan_group": [
+          {
+            "scan": "8b 57 ?? 53 52 c7 47 ?? 20 00 00 00 8b 56 ?? 8b 46 ?? 8b 08 6a 20 52 8b 56 ?? 52 50 ff 51 54",
+            "writes": [
+              { "offset": "0x0", "bytes": "53 6a 3c 90 90" }
+            ]
+          }
+        ]
+    },
+    "fix_spotlight_obo": {
+        "name": "Fix Spotlights",
+        "notes": "Off-by-one introduced in NT. InputManager entry loops use 'count+1' instead of 'count'. An extra zeroed entry (type=keyboard, key=VK_NONE, target=RED_LAMP_L) is processed every frame. Appears to be some sort of light testing functionality left over from debug builds.",
+        "games": ["ez2ac_tt", "ez2ac_fn", "ez2ac_fn_ex", "ez2ac_nt"],
+        "description": "Fixes the issues with the red spotlight getting stuck.",
+        "type": "toggle",
+        "apply": "early",
+        "scan_group": [
+          {
+            "scan": "8b 47 04 8b 5c 24 10 83 c0 01 33 ed 85 c0 0f 8e 9b 00 00 00 56 8d 77 10",
+            "writes": [
+              { "offset": "0x7", "bytes": "90 90 90" },
+              { "offset": "0xA0", "bytes": "90 90 90" }
+            ]
+          },
+          {
+            "scan": "f3 ab 8b 46 04 83 c0 01 33 db 85 c0 0f 8e a0 00 00 00",
+            "writes": [
+              { "offset": "0x5", "bytes": "90 90 90" },
+              { "offset": "0xA4", "bytes": "90 90 90" }
+            ]
+          }
         ]
     }
   },
@@ -61,6 +97,18 @@
     }
   },
   "ez2dj_1st_se": {
+    "fix_modern_compat": {
+      "name": "Fix Compatibility",
+      "description": "Fixes display, sound, and file loading for modern Windows",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x248B8", "bytes": "C2" },
+        { "offset": "0xFB1F", "bytes": "00" },
+        { "offset": "0x1EE25", "bytes": "00" },
+        { "offset": "0x3198C", "bytes": "00" }
+      ]
+    },
     "force_60hz": {
       "name": "Force 60Hz",
       "description": "Forces DirectDraw SetDisplayMode to request 60Hz.",
@@ -84,7 +132,7 @@
     "restore_boot_splash": {
       "name": "Restore Boot Splash Screens",
       "notes": "Three writes: (1) 0x46C59D redirects EZ2DJ__mainLoop's call to mainGameLoop through a code cave. (2) Cave at 0x488010 calls WarningDirector then CompanyLogoDirector before tail-jumping to mainGameLoop. Only runs once since EZ2DJ__mainLoop is called once by KApplication__run. (3) 0x46823C optimizes WarningDirector__update redundant register reloads and expands cmp imm8 to imm32, changing threshold from 90 frames (1.5s) to 300 frames (5s), matching 3rd TraX.",
-      "description": "Restores the Warning and Company Logo splash screens on boot with correct 5-second duration.",
+      "description": "Restores the Warning and Company Logo splash screens on boot.",
       "type": "toggle",
       "apply": "early",
       "writes": [
@@ -96,7 +144,7 @@
     "restore_cd_advertisement": {
       "name": "Restore CD Advertisement",
       "notes": "Rewrites the attract mode v9==3 handler at 0x46B83F to insert a call to AdvertiseDirector (CD ad with ost.wav) before the demo and company logo. Replaces dead cmp/jnz/jmp sequence with the new call. Attract cycle becomes: Title -> CD Ad -> Demo -> CompanyLogo -> Title.",
-      "description": "Restores the CD advertisement (ost.wav) that plays during the attract mode cycle after the title screen times out.",
+      "description": "Restores the CD advertisemen the attract cycle.",
       "type": "toggle",
       "apply": "early",
       "writes": [

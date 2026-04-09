@@ -104,20 +104,35 @@ Patch PatchStore::parseSinglePatch(const std::string& key, const json& j) {
 
     patch.enabled = false;
 
-    if (j.contains("scan")) {
-        patch.scan = parseScan(j.value("scan", ""));
-    }
-
     if (patch.type == PatchType::Toggle) {
-        if (j.contains("writes") && j["writes"].is_array()) {
-            for (const auto& writeEntry : j["writes"]) {
-                PatchWrite patchWrite;
-                patchWrite.offset = parseHexOffset(writeEntry.value("offset", "0x0"));
-                patchWrite.bytes  = parseBytes(writeEntry.value("bytes", ""));
-                if (!patchWrite.bytes.empty()) {
-                    patch.writes.push_back(patchWrite);
+        if (j.contains("scan_group") && j["scan_group"].is_array()) {
+            // Scan-based patch: each entry has its own scan + writes
+            for (const auto& scanEntry : j["scan_group"]) {
+                ScanGroup group;
+                if (scanEntry.contains("scan"))
+                    group.scan = parseScan(scanEntry.value("scan", ""));
+                if (scanEntry.contains("writes") && scanEntry["writes"].is_array()) {
+                    for (const auto& writeEntry : scanEntry["writes"]) {
+                        PatchWrite pw;
+                        pw.offset = parseHexOffset(writeEntry.value("offset", "0x0"));
+                        pw.bytes  = parseBytes(writeEntry.value("bytes", ""));
+                        if (!pw.bytes.empty())
+                            group.writes.push_back(pw);
+                    }
                 }
+                patch.scan_group.push_back(group);
             }
+        } else if (j.contains("writes") && j["writes"].is_array()) {
+            // RVA-based patch: top-level writes, no scan
+            ScanGroup group;
+            for (const auto& writeEntry : j["writes"]) {
+                PatchWrite pw;
+                pw.offset = parseHexOffset(writeEntry.value("offset", "0x0"));
+                pw.bytes  = parseBytes(writeEntry.value("bytes", ""));
+                if (!pw.bytes.empty())
+                    group.writes.push_back(pw);
+            }
+            patch.scan_group.push_back(group);
         }
     } else if (patch.type == PatchType::Value) {
         patch.offset = parseHexOffset(j.value("offset", "0x0"));
@@ -329,35 +344,43 @@ json PatchStore::saveState(const std::string& gameId) const {
 }
 
 void PatchStore::applyTogglePatch(const Patch& p) {
-    auto matches = scanForPattern(p.scan);
-    if (matches.empty()) {
-        Logger::warn("[PatchStore] Scan pattern not found for patch " + p.name);
-        return;
-    }
-    if (!p.scan.empty()) {
-        for (auto* writeBase : matches) {
-            Logger::info("[PatchStore] Patch " + p.name + " scan matched at 0x" + toHexString(writeBase));
+    for (size_t gi = 0; gi < p.scan_group.size(); ++gi) {
+        const auto& group = p.scan_group[gi];
+        auto matches = scanForPattern(group.scan);
+        if (matches.empty()) {
+            Logger::warn("[PatchStore] Scan pattern not found for patch " + p.name +
+                         " (scan " + std::to_string(gi + 1) + "/" + std::to_string(p.scan_group.size()) + ")");
+            return;
         }
-    }
-
-    for (auto* writeBase : matches) {
-        for (const auto& pw : p.writes) {
-            uint8_t* target = writeBase + pw.offset;
-            DWORD    previousProtection = 0;
-            VirtualProtect(target, pw.bytes.size(), PAGE_EXECUTE_READWRITE, &previousProtection);
-            memcpy(target, pw.bytes.data(), pw.bytes.size());
-            VirtualProtect(target, pw.bytes.size(), previousProtection, &previousProtection);
+        if (!group.scan.empty()) {
+            for (auto* writeBase : matches) {
+                Logger::info("[PatchStore] Patch " + p.name + " scan " +
+                             std::to_string(gi + 1) + " matched at 0x" + toHexString(writeBase));
+            }
+        }
+        for (auto* writeBase : matches) {
+            for (const auto& pw : group.writes) {
+                uint8_t* target = writeBase + pw.offset;
+                DWORD    previousProtection = 0;
+                VirtualProtect(target, pw.bytes.size(), PAGE_EXECUTE_READWRITE, &previousProtection);
+                memcpy(target, pw.bytes.data(), pw.bytes.size());
+                VirtualProtect(target, pw.bytes.size(), previousProtection, &previousProtection);
+            }
         }
     }
 }
 
 void PatchStore::applyValuePatch(const Patch& p) {
-    auto matches = scanForPattern(p.scan);
+    std::vector<int16_t> scan;
+    if (!p.scan_group.empty())
+        scan = p.scan_group[0].scan;
+
+    auto matches = scanForPattern(scan);
     if (matches.empty()) {
         Logger::warn("[PatchStore] Scan pattern not found for patch " + p.name);
         return;
     }
-    if (!p.scan.empty()) {
+    if (!scan.empty()) {
         for (auto* writeBase : matches) {
             Logger::info("[PatchStore] Patch " + p.name + " scan matched at 0x" + toHexString(writeBase));
         }
