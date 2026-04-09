@@ -1,5 +1,5 @@
 {
-  "ver": 16,
+  "ver": 20,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -69,6 +69,40 @@
       "apply": "early",
       "writes": [
         { "offset": "0xD949", "bytes": "6a 3c 90 90" }
+      ]
+    },
+    "restore_boot_splash": {
+      "name": "Restore Boot Splash Screens",
+      "notes": "Three writes: (1) 0x46C59D redirects EZ2DJ__mainLoop's call to mainGameLoop through a code cave. (2) Cave at 0x488010 calls WarningDirector then CompanyLogoDirector before tail-jumping to mainGameLoop. Only runs once since EZ2DJ__mainLoop is called once by KApplication__run. (3) 0x46823C optimizes WarningDirector__update redundant register reloads and expands cmp imm8 to imm32, changing threshold from 90 frames (1.5s) to 300 frames (5s), matching 3rd TraX.",
+      "description": "Restores the Warning and Company Logo splash screens on boot with correct 5-second duration.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x6C59D", "bytes": "E8 6E BA 01 00 90 90 90" },
+        { "offset": "0x88010", "bytes": "E8 4D 97 F7 FF E8 70 92 F7 FF 8B 4D FC E9 EA A1 F7 FF" },
+        { "offset": "0x6823C", "bytes": "8B 45 FC FF 40 14 81 78 14 2C 01 00 00 7E 11 8B C8 E8 FB 90 F9 FF EB 08 90 90 90 90 90 90 90 90" }
+      ]
+    },
+    "restore_cd_advertisement": {
+      "name": "Restore CD Advertisement",
+      "notes": "Rewrites the attract mode v9==3 handler at 0x46B83F to insert a call to AdvertiseDirector (CD ad with ost.wav) before the demo and company logo. Replaces dead cmp/jnz/jmp sequence with the new call. Attract cycle becomes: Title -> CD Ad -> Demo -> CompanyLogo -> Title.",
+      "description": "Restores the CD advertisement (ost.wav) that plays during the attract mode cycle after the title screen times out.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x6B83F", "bytes": "E8 44 5C F9 FF 8B 4D FC E8 61 5F F9 FF 8B 4D FC E8 36 5A F9 FF EB A3 90 90" }
+      ]
+    },
+    "event_mode_title": {
+      "name": "Event Mode Title Screen",
+      "notes": "dword_86FFF8 (EventMode INI setting) exists but is never checked in 2nd TraX. This patch adds the missing runtime check. At 0x45AA24, replaces 'push offset Title.str' with 'call cave'. Cave at 0x488040: pops return addr, checks [0x86FFF8]==0, pushes eventmode.str (0x4E9000) or Title.str (0x4E062C) accordingly, pushes return addr back, ret. String 'eventmode.str' written to .rdata padding at 0x4E9000.",
+      "description": "Checks the EventMode INI flag at runtime and loads eventmode.str instead of Title.str when enabled.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0xE9000", "bytes": "65 76 65 6E 74 6D 6F 64 65 2E 73 74 72 00" },
+        { "offset": "0x5AA24", "bytes": "E8 17 D6 02 00" },
+        { "offset": "0x88040", "bytes": "58 83 3D F8 FF 86 00 00 74 07 68 00 90 4E 00 EB 05 68 2C 06 4E 00 50 C3" }
       ]
     }
   },
