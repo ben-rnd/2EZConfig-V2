@@ -48,6 +48,16 @@
       "writes": [
         { "offset": "0x149CA", "bytes": "6a 3c" }
       ]
+    },
+    "disable_exit_after_credit": {
+      "name": "Disable Exit After Credit",
+      "notes": "Remember 1st was modified for the 6th TraX launcher: realMainGameLoop (VA 0x4217F0) runs ONE credit then sets g_processExitCode=261 and exits, signaling the launcher to switch back to 6th TraX. The original 1st TraX has a while(1) loop (attract->play->repeat). This patch restores that loop by replacing 'mov g_creditWasPlayed, 1' at 0x4218C1 with 'jmp short 0x421848' which jumps back to the timeGetTime + resetGameState + realAttractModeLoop sequence. The game now loops attract->credit->attract indefinitely. Exit via ESC/test button still works normally.",
+      "description": "Prevents the game from exiting after each credit. Returns to title screen instead of closing.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x218C1", "bytes": "eb 85 90 90 90 90 90 90 90 90" }
+      ]
     }
   },
   "ez2dj_1st_se": {

@@ -15,11 +15,12 @@ struct Game {
 static Game games[] = {
     // EZ2DJ / EZ2AC
     {"The 1st Tracks",                          "EZ2DJ.exe",          "ez2dj_1st",    GameFamily::EZ2DJ},
+    {"Remember 1st (Standalone)",               "EZ2DJ.exe",          "rmbr_1st",     GameFamily::EZ2DJ},
     {"The 1st Tracks Special Edition",          "EZ2DJ.exe",          "ez2dj_1st_se", GameFamily::EZ2DJ},
     {"2nd Trax ~It rules once again~",          "EZ2DJ.exe",          "ez2dj_2nd",    GameFamily::EZ2DJ},
     {"3rd Trax ~Absolute Pitch~",               "EZ2DJ.exe",          "ez2dj_3rd",    GameFamily::EZ2DJ},
     {"4th Trax ~OVER MIND~",                    "EZ2DJ.exe",          "ez2dj_4th",    GameFamily::EZ2DJ},
-    {"Platinum",                                "EZ2DJ.exe",          "ez2dj_5th",     GameFamily::EZ2DJ},
+    {"Platinum",                                "EZ2DJ.exe",          "ez2dj_5th",    GameFamily::EZ2DJ},
     {"6th Trax ~Self Evolution~",               "EZ2DJ-Launcher.exe", "ez2dj_6th",    GameFamily::EZ2DJ},
     {"7th Trax ~Resistance~",                   "EZ2DJ.exe",          "ez2dj_7th",    GameFamily::EZ2DJ},
     {"7th Trax Ver 1.5",                        "EZ2DJ.exe",          "ez2dj_7th_15", GameFamily::EZ2DJ},
