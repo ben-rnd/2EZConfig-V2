@@ -1,5 +1,5 @@
 {
-  "ver": 24,
+  "ver": 33,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -97,18 +97,6 @@
     }
   },
   "ez2dj_1st_se": {
-    "fix_modern_compat": {
-      "name": "Fix Compatibility",
-      "description": "Fixes display, sound, and file loading for modern Windows",
-      "type": "toggle",
-      "apply": "early",
-      "writes": [
-        { "offset": "0x248B8", "bytes": "C2" },
-        { "offset": "0xFB1F", "bytes": "00" },
-        { "offset": "0x1EE25", "bytes": "00" },
-        { "offset": "0x3198C", "bytes": "00" }
-      ]
-    },
     "force_60hz": {
       "name": "Force 60Hz",
       "description": "Forces DirectDraw SetDisplayMode to request 60Hz.",
@@ -116,6 +104,39 @@
       "apply": "early",
       "writes": [
         { "offset": "0x1F806", "bytes": "6a 3c" }
+      ]
+    },
+    "fix_modern_compat": {
+      "name": "Fix Windows XP+ Compatibility",
+      "description": "Fixes non relative paths, directsound, and file opening issues on modern Windows.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x248B8", "bytes": "C2" },
+        { "offset": "0xFB1F", "bytes": "00" },
+        { "offset": "0x1EE25", "bytes": "00" },
+        { "offset": "0x3198C", "bytes": "00" },
+        { "offset": "0x581D0", "bytes": "2E 00 00 00 00 00 00 00" },
+        { "offset": "0x581F4", "bytes": "54 45 53 54 2E 45 58 45 00 00 00 00 00 00 00 00 00 00" }
+      ]
+    },
+    "restore_opening": {
+      "name": "Restore Opening Video",
+      "description": "Restores the unused Opening video sequence in the attract mode",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x36E54", "bytes": "E8 A7 C7 01 00" },
+        { "offset": "0x53600", "bytes": "E8 7B 06 FE FF E8 26 2F FE FF C3" }
+      ]
+    },
+    "disable_explorer_launch": {
+      "name": "Disable Launching explorer.exe on Exit",
+      "description": "Prevents the game from launching explorer.exe when it exits.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x37780", "bytes": "31 C0 C3" }
       ]
     }
   },
@@ -143,7 +164,7 @@
     },
     "restore_cd_advertisement": {
       "name": "Restore CD Advertisement",
-      "notes": "Rewrites the attract mode v9==3 handler at 0x46B83F to insert a call to AdvertiseDirector (CD ad with ost.wav) before the demo and company logo. Replaces dead cmp/jnz/jmp sequence with the new call. Attract cycle becomes: Title -> CD Ad -> Demo -> CompanyLogo -> Title.",
+      "notes": "Rewrites the attract mode v9==3 handler at 0x46B83F to insert a call to AdvertiseDirector before the demo and company logo. Replaces dead cmp/jnz/jmp sequence with the new call. Attract cycle becomes: Title -> CD Ad -> Demo -> CompanyLogo -> Title.",
       "description": "Restores the CD advertisemen the attract cycle.",
       "type": "toggle",
       "apply": "early",
@@ -153,7 +174,6 @@
     },
     "event_mode_title": {
       "name": "Event Mode Title Screen",
-      "notes": "dword_86FFF8 (EventMode INI setting) exists but is never checked in 2nd TraX. This patch adds the missing runtime check. At 0x45AA24, replaces 'push offset Title.str' with 'call cave'. Cave at 0x488040: pops return addr, checks [0x86FFF8]==0, pushes eventmode.str (0x4E9000) or Title.str (0x4E062C) accordingly, pushes return addr back, ret. String 'eventmode.str' written to .rdata padding at 0x4E9000.",
       "description": "Checks the EventMode INI flag at runtime and loads eventmode.str instead of Title.str when enabled.",
       "type": "toggle",
       "apply": "early",
