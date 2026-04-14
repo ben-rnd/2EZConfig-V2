@@ -14,6 +14,7 @@
  */
 
 #include "ddraw3_fix.h"
+#include "ddraw_hook_utils.h"
 #include "logger.h"
 
 #include <windows.h>
@@ -64,11 +65,249 @@ static uintptr_t s_createTexSurfaceFuncAddr = 0;
 static uintptr_t s_bmpCacheAddr = 0;
 static uintptr_t s_bmpCacheCountAddr = 0;
 
+// Game-independent fix toggles (applied via vtable chain, work for both ez2dj_1st_se and rmbr_1st)
+static bool s_force32bpp = false;
 static bool s_pointFiltering = false;
+static bool s_texelAlignment = false;
+
+// Hook chain: DirectDrawCreate -> IDirectDraw::QI -> IDirectDraw4::{SetDisplayMode, QI}
+//                              -> IDirect3D3::CreateDevice -> IDirect3DDevice3::DrawPrimitive
+typedef HRESULT (WINAPI *PFN_DirectDrawCreate)(GUID*, LPDIRECTDRAW*, IUnknown*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_SetDisplayMode4)(void*, DWORD, DWORD, DWORD, DWORD, DWORD);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_QueryInterface)(IUnknown*, REFIID, void**);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_D3D3_CreateDevice)(void*, REFCLSID, void*, IDirect3DDevice3**, IUnknown*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_D3D3_DrawPrimitive)(IDirect3DDevice3*, D3DPRIMITIVETYPE, DWORD, void*, DWORD, DWORD);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_D3D3_DrawIndexedPrimitive)(IDirect3DDevice3*, D3DPRIMITIVETYPE, DWORD, void*, DWORD, WORD*, DWORD, DWORD);
+
+static PFN_DirectDrawCreate       g_origDirectDrawCreate       = nullptr;
+static PFN_SetDisplayMode4        g_origSetDisplayMode         = nullptr;
+static PFN_QueryInterface         g_origDDrawQueryInterface    = nullptr;
+static PFN_QueryInterface         g_origDDraw4QueryInterface   = nullptr;
+static PFN_D3D3_CreateDevice      g_origD3D3CreateDevice       = nullptr;
+static PFN_D3D3_DrawPrimitive     g_origD3D3DrawPrimitive      = nullptr;
+static PFN_D3D3_DrawIndexedPrimitive g_origD3D3DrawIndexedPrimitive = nullptr;
+static bool s_32bppHooked = false;
+static BYTE s_ddcTrampoline[10] = {};
+
+// IIDs
+// IID_IDirectDraw4: {9C59509A-39BD-11D1-8C4A-00C04FD930C5}
+static const GUID IID_IDirectDraw4_local =
+    { 0x9c59509a, 0x39bd, 0x11d1, { 0x8c, 0x4a, 0x00, 0xc0, 0x4f, 0xd9, 0x30, 0xc5 } };
+// IID_IDirect3D3: {BB223240-E72B-11D0-A9B4-00AA00C0993E}
+static const GUID IID_IDirect3D3_local =
+    { 0xbb223240, 0xe72b, 0x11d0, { 0xa9, 0xb4, 0x00, 0xaa, 0x00, 0xc0, 0x99, 0x3e } };
+
+// ---- SetDisplayMode hook (force 32bpp) ----
+static HRESULT STDMETHODCALLTYPE Hooked_SetDisplayMode(void* self, DWORD w, DWORD h, DWORD bpp, DWORD refresh, DWORD flags) {
+    Logger::info("[D3D3Fix] SetDisplayMode " + std::to_string(w) + "x" + std::to_string(h) + " bpp " + std::to_string(bpp) + " -> 32");
+    return g_origSetDisplayMode(self, w, h, 32, refresh, flags);
+}
+
+// ---- DrawPrimitive hook (point filter + texel alignment) ----
+// Sets POINT filter per-draw (setting once at CreateDevice isn't sticky —
+// the game/driver resets it), and shifts vertex positions by -0.5px for
+// texel alignment on modern GPUs.
+
+// Saves up to 4 texture stage state values that we want to override for a draw,
+// then restores them after. Only the entries we actually touch get saved/restored.
+struct DrawStateSave {
+    IDirect3DDevice3* device = nullptr;
+    struct Entry { D3DTEXTURESTAGESTATETYPE state; DWORD savedValue; bool valid = false; };
+    Entry magFilter, minFilter, addrU, addrV;
+
+    void set(Entry& entry, D3DTEXTURESTAGESTATETYPE state, DWORD newValue) {
+        entry.state = state;
+        device->GetTextureStageState(0, state, &entry.savedValue);
+        device->SetTextureStageState(0, state, newValue);
+        entry.valid = true;
+    }
+    void restore(const Entry& entry) const {
+        if (entry.valid) device->SetTextureStageState(0, entry.state, entry.savedValue);
+    }
+};
+
+static bool applyPreDraw(IDirect3DDevice3* device, DWORD fvf, void* vertices, DWORD vertCount, DrawStateSave& saved) {
+    saved.device = device;
+    if (s_pointFiltering) {
+        saved.set(saved.magFilter, D3DTSS_MAGFILTER, D3DTFG_POINT);
+        saved.set(saved.minFilter, D3DTSS_MINFILTER, D3DTFN_POINT);
+    }
+    bool didAlign = false;
+    if (s_texelAlignment && (fvf & D3DFVF_XYZRHW) && vertices && vertCount > 0) {
+        if (DDrawHookUtils::uvsInUnitRange(vertices, vertCount, fvf)) {
+            saved.set(saved.addrU, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
+            saved.set(saved.addrV, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+        }
+        DDrawHookUtils::shiftVertexXY(vertices, vertCount, fvf, -0.5f, -0.5f);
+        didAlign = true;
+    }
+    return didAlign;
+}
+
+static void applyPostDraw(DWORD fvf, void* vertices, DWORD vertCount, bool didAlign, const DrawStateSave& saved) {
+    if (didAlign)
+        DDrawHookUtils::shiftVertexXY(vertices, vertCount, fvf, +0.5f, +0.5f);
+    saved.restore(saved.addrU);
+    saved.restore(saved.addrV);
+    saved.restore(saved.magFilter);
+    saved.restore(saved.minFilter);
+}
+
+static HRESULT STDMETHODCALLTYPE Hooked_D3D3_DrawPrimitive(IDirect3DDevice3* device, D3DPRIMITIVETYPE type, DWORD fvf, void* vertices, DWORD vertCount, DWORD flags) {
+    DrawStateSave saved;
+    bool didAlign = applyPreDraw(device, fvf, vertices, vertCount, saved);
+    HRESULT result = g_origD3D3DrawPrimitive(device, type, fvf, vertices, vertCount, flags);
+    applyPostDraw(fvf, vertices, vertCount, didAlign, saved);
+    return result;
+}
+
+static HRESULT STDMETHODCALLTYPE Hooked_D3D3_DrawIndexedPrimitive(IDirect3DDevice3* device, D3DPRIMITIVETYPE type, DWORD fvf, void* vertices, DWORD vertCount, WORD* indices, DWORD idxCount, DWORD flags) {
+    DrawStateSave saved;
+    bool didAlign = applyPreDraw(device, fvf, vertices, vertCount, saved);
+    HRESULT result = g_origD3D3DrawIndexedPrimitive(device, type, fvf, vertices, vertCount, indices, idxCount, flags);
+    applyPostDraw(fvf, vertices, vertCount, didAlign, saved);
+    return result;
+}
+
+// ---- IDirect3D3::CreateDevice hook ----
+// Hooks DrawPrimitive on the returned device to apply per-draw POINT filter
+// and/or texel alignment.
+static HRESULT STDMETHODCALLTYPE Hooked_D3D3_CreateDevice(void* self, REFCLSID rclsid, void* surface, IDirect3DDevice3** device, IUnknown* outer) {
+    HRESULT hr = g_origD3D3CreateDevice(self, rclsid, surface, device, outer);
+    if (SUCCEEDED(hr) && device && *device) {
+        void** vtable = *(void***)*device;
+        DDrawHookUtils::patchVtable(vtable, 28, (void*)Hooked_D3D3_DrawPrimitive,        (void**)&g_origD3D3DrawPrimitive);
+        DDrawHookUtils::patchVtable(vtable, 29, (void*)Hooked_D3D3_DrawIndexedPrimitive, (void**)&g_origD3D3DrawIndexedPrimitive);
+        Logger::info("[D3D3Fix] Hooked IDirect3DDevice3::DrawPrimitive + DrawIndexedPrimitive");
+    }
+    return hr;
+}
+
+// ---- IDirectDraw4::QueryInterface hook (catches IDirect3D3) ----
+static HRESULT STDMETHODCALLTYPE Hooked_DDraw4_QueryInterface(IUnknown* self, REFIID riid, void** ppv) {
+    HRESULT hr = g_origDDraw4QueryInterface(self, riid, ppv);
+    if (SUCCEEDED(hr) && ppv && *ppv && riid == IID_IDirect3D3_local) {
+        void** vtable = *(void***)*ppv;
+        DDrawHookUtils::patchVtable(vtable, 8, (void*)Hooked_D3D3_CreateDevice, (void**)&g_origD3D3CreateDevice);
+        Logger::info("[D3D3Fix] Hooked IDirect3D3::CreateDevice");
+    }
+    return hr;
+}
+
+// ---- IDirectDraw::QueryInterface hook (catches IDirectDraw4) ----
+static HRESULT STDMETHODCALLTYPE Hooked_DDrawQueryInterface(IUnknown* self, REFIID riid, void** ppv) {
+    HRESULT hr = g_origDDrawQueryInterface(self, riid, ppv);
+    if (SUCCEEDED(hr) && ppv && *ppv && riid == IID_IDirectDraw4_local) {
+        void** vtable = *(void***)*ppv;
+        if (s_force32bpp)
+            DDrawHookUtils::patchVtable(vtable, 21, (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode);
+        if (s_pointFiltering || s_texelAlignment)
+            DDrawHookUtils::patchVtable(vtable, 0, (void*)Hooked_DDraw4_QueryInterface, (void**)&g_origDDraw4QueryInterface);
+        Logger::info("[D3D3Fix] Hooked IDirectDraw4 (SetDisplayMode/QueryInterface)");
+    }
+    return hr;
+}
+
+// ---- IAT entry hook ----
+static HRESULT WINAPI Hooked_DirectDrawCreate(GUID* lpGuid, LPDIRECTDRAW* lplpDD, IUnknown* pUnkOuter) {
+    HRESULT hr = g_origDirectDrawCreate(lpGuid, lplpDD, pUnkOuter);
+    if (SUCCEEDED(hr) && lplpDD && *lplpDD) {
+        void** vtable = *(void***)*lplpDD;
+        DDrawHookUtils::patchVtable(vtable, 0, (void*)Hooked_DDrawQueryInterface, (void**)&g_origDDrawQueryInterface);
+        Logger::info("[D3D3Fix] Hooked IDirectDraw::QueryInterface");
+    }
+    return hr;
+}
+
+static bool TryHook32bpp() {
+    if (s_32bppHooked) return true;
+
+    HMODULE ddraw = GetModuleHandleA("ddraw.dll");
+    if (!ddraw) ddraw = GetModuleHandleA("DDRAW.dll");
+    if (!ddraw) ddraw = GetModuleHandleA("DDRAW.DLL");
+    if (!ddraw) return false;
+
+    auto* target = (BYTE*)GetProcAddress(ddraw, "DirectDrawCreate");
+    if (!target) return false;
+
+    DWORD oldProt;
+    VirtualProtect(s_ddcTrampoline, sizeof(s_ddcTrampoline), PAGE_EXECUTE_READWRITE, &oldProt);
+    memcpy(s_ddcTrampoline, target, 5);
+    s_ddcTrampoline[5] = 0xE9;
+    *(int32_t*)&s_ddcTrampoline[6] = (int32_t)((target + 5) - (s_ddcTrampoline + 10));
+    g_origDirectDrawCreate = (PFN_DirectDrawCreate)s_ddcTrampoline;
+
+    VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &oldProt);
+    target[0] = 0xE9;
+    *(int32_t*)&target[1] = (int32_t)((BYTE*)Hooked_DirectDrawCreate - (target + 5));
+    VirtualProtect(target, 5, oldProt, &oldProt);
+
+    Logger::info("[D3D3Fix] Hooked DirectDrawCreate in ddraw.dll");
+    s_32bppHooked = true;
+    return true;
+}
+
+static DWORD WINAPI Hook32bppWatchThread(LPVOID) {
+    for (int i = 0; i < 100 && !s_32bppHooked; i++) {
+        Sleep(50);
+        TryHook32bpp();
+    }
+    if (!s_32bppHooked)
+        Logger::warn("[D3D3Fix] Failed to hook DirectDrawCreate after retries");
+    return s_32bppHooked ? 0 : 1;
+}
 
 static PFN_BltFast g_origBltFast = nullptr;
 static PFN_Blt g_origBlt = nullptr;
 static std::map<IDirectDrawSurface7*, TexCacheEntry> g_texCache;
+
+// Internal helpers: save/restore render state + fullscreen quad drawing.
+// Used by the device wrapper's clearBackbuffer (Fix 1), BltFast hook (Fix 2),
+// and Blt COLORFILL hook (Fix 5) to avoid duplicating the same blend-state
+// save/restore + quad draw dance everywhere.
+
+struct SavedBlendState {
+    IDirect3DTexture2* tex;
+    DWORD src, dst, alphaEnable;
+    DWORD colorKeyEnable;   // only used by BltFast hook
+    bool hasColorKey;
+};
+
+static void saveBlendState(IDirect3DDevice3* dev, SavedBlendState& s, bool includeColorKey = false) {
+    s.tex = nullptr;
+    dev->GetTexture(0, &s.tex);
+    dev->GetRenderState(D3DRENDERSTATE_SRCBLEND, &s.src);
+    dev->GetRenderState(D3DRENDERSTATE_DESTBLEND, &s.dst);
+    dev->GetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, &s.alphaEnable);
+    s.hasColorKey = includeColorKey;
+    if (includeColorKey)
+        dev->GetRenderState(D3DRENDERSTATE_COLORKEYENABLE, &s.colorKeyEnable);
+}
+
+static void restoreBlendState(IDirect3DDevice3* dev, const SavedBlendState& s) {
+    if (s.hasColorKey)
+        dev->SetRenderState(D3DRENDERSTATE_COLORKEYENABLE, s.colorKeyEnable);
+    dev->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, s.alphaEnable);
+    dev->SetRenderState(D3DRENDERSTATE_SRCBLEND, s.src);
+    dev->SetRenderState(D3DRENDERSTATE_DESTBLEND, s.dst);
+    dev->SetTexture(0, s.tex);
+    if (s.tex) s.tex->Release();
+}
+
+// Draw a fullscreen 640x480 colored quad with opaque blending.
+// Used for backbuffer clear (color=0xFF000000) and Blt COLORFILL.
+static void drawFullscreenQuad(IDirect3DDevice3* dev, DWORD argb) {
+    Vertex2D quad[4] = {
+        {   0.0f, 480.0f, 0.0f, 1.0f, argb, 0, 0.0f, 1.0f },
+        {   0.0f,   0.0f, 0.0f, 1.0f, argb, 0, 0.0f, 0.0f },
+        { 640.0f, 480.0f, 0.0f, 1.0f, argb, 0, 1.0f, 1.0f },
+        { 640.0f,   0.0f, 0.0f, 1.0f, argb, 0, 1.0f, 0.0f },
+    };
+    dev->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
+    dev->SetRenderState(D3DRENDERSTATE_SRCBLEND, D3DBLEND_ONE);
+    dev->SetRenderState(D3DRENDERSTATE_DESTBLEND, D3DBLEND_ZERO);
+    dev->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0x1C4, quad, 4, 0);
+}
 
 // IDirect3DDevice3 wrapper — Fix 1, Fix 3, Fix 6
 
@@ -80,39 +319,14 @@ public:
     int m_transitionCountdown;
     int m_skipClearFrames;
 
-    // Fix 1: Draw opaque black quad to clear the backbuffer
+    // Fix 1: Draw opaque black quad to clear the backbuffer.
+    // Point filtering is set once at device creation via the vtable hook, no per-frame work needed.
     void clearBackbuffer() {
-        IDirect3DTexture2* savedTex = nullptr;
-        m_real->GetTexture(0, &savedTex);
+        SavedBlendState saved;
+        saveBlendState(m_real, saved);
         m_real->SetTexture(0, nullptr);
-
-        DWORD savedSrc, savedDst, savedAlpha;
-        m_real->GetRenderState(D3DRENDERSTATE_SRCBLEND, &savedSrc);
-        m_real->GetRenderState(D3DRENDERSTATE_DESTBLEND, &savedDst);
-        m_real->GetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, &savedAlpha);
-
-        m_real->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
-        m_real->SetRenderState(D3DRENDERSTATE_SRCBLEND, D3DBLEND_ONE);
-        m_real->SetRenderState(D3DRENDERSTATE_DESTBLEND, D3DBLEND_ZERO);
-
-        Vertex2D quad[4] = {
-            {   0.0f, 480.0f, 0.0f, 1.0f, 0xFF000000, 0, 0.0f, 1.0f },
-            {   0.0f,   0.0f, 0.0f, 1.0f, 0xFF000000, 0, 0.0f, 0.0f },
-            { 640.0f, 480.0f, 0.0f, 1.0f, 0xFF000000, 0, 1.0f, 1.0f },
-            { 640.0f,   0.0f, 0.0f, 1.0f, 0xFF000000, 0, 1.0f, 0.0f },
-        };
-        m_real->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0x1C4, quad, 4, 0);
-
-        m_real->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, savedAlpha);
-        m_real->SetRenderState(D3DRENDERSTATE_SRCBLEND, savedSrc);
-        m_real->SetRenderState(D3DRENDERSTATE_DESTBLEND, savedDst);
-        m_real->SetTexture(0, savedTex);
-        if (savedTex) savedTex->Release();
-
-        if (s_pointFiltering) {
-            m_real->SetTextureStageState(0, D3DTSS_MAGFILTER, D3DTFG_POINT);
-            m_real->SetTextureStageState(0, D3DTSS_MINFILTER, D3DTFN_POINT);
-        }
+        drawFullscreenQuad(m_real, 0xFF000000);
+        restoreBlendState(m_real, saved);
     }
 
     // Fix 3: Scene management
@@ -354,14 +568,8 @@ static HRESULT STDMETHODCALLTYPE Hooked_BltFast(
     };
 
     IDirect3DDevice3* dev = g_deviceWrapper->m_real;
-
-    IDirect3DTexture2* savedTex = nullptr;
-    DWORD savedSrc, savedDst, savedAlpha, savedColorKey;
-    dev->GetTexture(0, &savedTex);
-    dev->GetRenderState(D3DRENDERSTATE_SRCBLEND, &savedSrc);
-    dev->GetRenderState(D3DRENDERSTATE_DESTBLEND, &savedDst);
-    dev->GetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, &savedAlpha);
-    dev->GetRenderState(D3DRENDERSTATE_COLORKEYENABLE, &savedColorKey);
+    SavedBlendState saved;
+    saveBlendState(dev, saved, /*includeColorKey*/ true);
 
     g_deviceWrapper->ensureSceneActive();
     dev->SetTexture(0, tex);
@@ -372,13 +580,7 @@ static HRESULT STDMETHODCALLTYPE Hooked_BltFast(
     dev->SetRenderState(D3DRENDERSTATE_DESTBLEND, D3DBLEND_ZERO);
     dev->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0x1C4, quad, 4, 0);
 
-    dev->SetRenderState(D3DRENDERSTATE_COLORKEYENABLE, savedColorKey);
-    dev->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, savedAlpha);
-    dev->SetRenderState(D3DRENDERSTATE_SRCBLEND, savedSrc);
-    dev->SetRenderState(D3DRENDERSTATE_DESTBLEND, savedDst);
-    dev->SetTexture(0, savedTex);
-    if (savedTex) savedTex->Release();
-
+    restoreBlendState(dev, saved);
     return DD_OK;
 }
 
@@ -394,35 +596,14 @@ static HRESULT STDMETHODCALLTYPE Hooked_Blt(
         DWORD fillColor = lpFx->dwFillColor;
         DWORD argb = (fillColor == 0) ? 0xFF000000 : (0xFF000000 | fillColor);
 
-        Vertex2D quad[4] = {
-            {   0.0f, 480.0f, 0.0f, 1.0f, argb, 0, 0.0f, 1.0f },
-            {   0.0f,   0.0f, 0.0f, 1.0f, argb, 0, 0.0f, 0.0f },
-            { 640.0f, 480.0f, 0.0f, 1.0f, argb, 0, 1.0f, 1.0f },
-            { 640.0f,   0.0f, 0.0f, 1.0f, argb, 0, 1.0f, 0.0f },
-        };
-
         IDirect3DDevice3* dev = g_deviceWrapper->m_real;
         g_deviceWrapper->ensureSceneActive();
 
-        IDirect3DTexture2* savedTex = nullptr;
-        DWORD savedSrc, savedDst, savedAlpha;
-        dev->GetTexture(0, &savedTex);
-        dev->GetRenderState(D3DRENDERSTATE_SRCBLEND, &savedSrc);
-        dev->GetRenderState(D3DRENDERSTATE_DESTBLEND, &savedDst);
-        dev->GetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, &savedAlpha);
-
+        SavedBlendState saved;
+        saveBlendState(dev, saved);
         dev->SetTexture(0, nullptr);
-        dev->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
-        dev->SetRenderState(D3DRENDERSTATE_SRCBLEND, D3DBLEND_ONE);
-        dev->SetRenderState(D3DRENDERSTATE_DESTBLEND, D3DBLEND_ZERO);
-        dev->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0x1C4, quad, 4, 0);
-
-        dev->SetRenderState(D3DRENDERSTATE_ALPHABLENDENABLE, savedAlpha);
-        dev->SetRenderState(D3DRENDERSTATE_SRCBLEND, savedSrc);
-        dev->SetRenderState(D3DRENDERSTATE_DESTBLEND, savedDst);
-        dev->SetTexture(0, savedTex);
-        if (savedTex) savedTex->Release();
-
+        drawFullscreenQuad(dev, argb);
+        restoreBlendState(dev, saved);
         return DD_OK;
     }
 
@@ -488,7 +669,25 @@ static DWORD WINAPI D3D3FixThread(LPVOID) {
 
 // Public API
 
-void DDraw3Fix::install(const std::string& gameId, bool pointFiltering) {
+void DDraw3Fix::install(const std::string& gameId, bool force32bpp, bool pointFiltering, bool texelAlignment) {
+    // Game-independent hook chain: installs DirectDrawCreate detour if any of the
+    // three fixes is enabled. Works for both ez2dj_1st_se and rmbr_1st.
+    s_force32bpp     = force32bpp;
+    s_pointFiltering = pointFiltering;
+    s_texelAlignment = texelAlignment;
+
+    if (force32bpp || pointFiltering || texelAlignment) {
+        if (TryHook32bpp()) {
+            Logger::info("[D3D3Fix] Hook chain installed (32bpp=" + std::to_string(force32bpp) +
+                         " pointFilter=" + std::to_string(pointFiltering) +
+                         " texelAlign=" + std::to_string(texelAlignment) + ")");
+        } else {
+            Logger::info("[D3D3Fix] ddraw.dll not ready, starting retry thread");
+            CreateThread(nullptr, 0, Hook32bppWatchThread, nullptr, 0, nullptr);
+        }
+    }
+
+    // 1st SE specific: device wrapper + BltFast/Blt hooks require per-game addresses
     if (gameId == "ez2dj_1st_se") {
         s_deviceAddr             = 0x1EB7CC0;
         s_backbufferAddr         = 0x1EB7D08;
@@ -496,11 +695,9 @@ void DDraw3Fix::install(const std::string& gameId, bool pointFiltering) {
         s_createTexSurfaceFuncAddr = 0x422760;
         s_bmpCacheAddr           = 0xBAE268;
         s_bmpCacheCountAddr      = 0xBB6E68;
+        Logger::info("[D3D3Fix] Installing device wrapper for " + gameId);
+        CreateThread(nullptr, 0, D3D3FixThread, nullptr, 0, nullptr);
     } else {
-        return;
+        Logger::info("[D3D3Fix] Device wrapper not installed for " + gameId);
     }
-
-    s_pointFiltering = pointFiltering;
-    Logger::info("[D3D3Fix] Installing for " + gameId);
-    CreateThread(nullptr, 0, D3D3FixThread, nullptr, 0, nullptr);
 }

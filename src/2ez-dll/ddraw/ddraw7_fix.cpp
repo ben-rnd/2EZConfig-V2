@@ -3,6 +3,7 @@
  */
 
 #include "ddraw7_fix.h"
+#include "ddraw_hook_utils.h"
 #include "logger.h"
 
 #include <windows.h>
@@ -41,26 +42,12 @@ static PFN_QueryInterface g_origDDraw7QueryInterface = nullptr;
 static PFN_CreateDevice g_origCreateDevice = nullptr;
 static PFN_DrawPrimitive7 g_origDrawPrimitive = nullptr;
 
-// Vtable helper
-
-static void PatchVtable(void** vtable, int index, void* hook, void** origOut) {
-    if (*origOut) return;
-    *origOut = vtable[index];
-    DWORD oldProt;
-    VirtualProtect(&vtable[index], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProt);
-    vtable[index] = hook;
-    VirtualProtect(&vtable[index], sizeof(void*), oldProt, &oldProt);
-}
-
 // DrawPrimitive hook — point filtering + texel-to-pixel alignment
 
 static HRESULT STDMETHODCALLTYPE Hooked_DrawPrimitive(IDirect3DDevice7* self, D3DPRIMITIVETYPE type, DWORD fvf, void* vertices, DWORD vertCount, DWORD flags) {
     DWORD savedMag = 0, savedMin = 0, savedMip = 0;
     DWORD savedAddrU = 0, savedAddrV = 0;
-    bool didFilter = false;
-    bool didAlign = false;
-    bool didClamp = false;
-    BYTE* v = (BYTE*)vertices;
+    bool didFilter = false, didAlign = false, didClamp = false;
 
     if (s_pointFilter) {
         self->GetTextureStageState(0, D3DTSS_MAGFILTER_D7, &savedMag);
@@ -76,49 +63,22 @@ static HRESULT STDMETHODCALLTYPE Hooked_DrawPrimitive(IDirect3DDevice7* self, D3
     // This causes all sprites/textures to look slightly offset (by half a pixel).
     // We nudge every vertex back by 0.5px to compensate.
     // We also clamp texture addressing when safe, this prevents ugly texture wrapping (thin 1 pixel lines).
-    if (s_texelAlignment && (fvf & D3DFVF_XYZRHW) && v && vertCount > 0) {
-        DWORD stride = 16;
-        if (fvf & D3DFVF_DIFFUSE)  stride += 4;
-        if (fvf & D3DFVF_SPECULAR) stride += 4;
-        stride += ((fvf >> 8) & 0xF) * 8;
-        DWORD uvOffset = stride - ((fvf >> 8) & 0xF) * 8;
-
-        // Check if UVs are within [0,1] — safe to clamp without breaking wrapping
-        bool canClamp = true;
-        for (DWORD i = 0; i < vertCount && canClamp; i++) {
-            float u  = *(float*)(v + stride * i + uvOffset);
-            float uv = *(float*)(v + stride * i + uvOffset + 4);
-            if (u < -0.01f || u > 1.01f || uv < -0.01f || uv > 1.01f)
-                canClamp = false;
-        }
-
-        if (canClamp) {
+    if (s_texelAlignment && (fvf & D3DFVF_XYZRHW) && vertices && vertCount > 0) {
+        if (DDrawHookUtils::uvsInUnitRange(vertices, vertCount, fvf)) {
             self->GetTextureStageState(0, D3DTSS_ADDRESSU_D7, &savedAddrU);
             self->GetTextureStageState(0, D3DTSS_ADDRESSV_D7, &savedAddrV);
             self->SetTextureStageState(0, D3DTSS_ADDRESSU_D7, D3DTADDRESS_CLAMP);
             self->SetTextureStageState(0, D3DTSS_ADDRESSV_D7, D3DTADDRESS_CLAMP);
             didClamp = true;
         }
-
-        for (DWORD i = 0; i < vertCount; i++) {
-            *(float*)(v + stride * i)     -= 0.5f;
-            *(float*)(v + stride * i + 4) -= 0.5f;
-        }
+        DDrawHookUtils::shiftVertexXY(vertices, vertCount, fvf, -0.5f, -0.5f);
         didAlign = true;
     }
 
     HRESULT hr = g_origDrawPrimitive(self, type, fvf, vertices, vertCount, flags);
 
     if (didAlign) {
-        DWORD stride = 16;
-        if (fvf & D3DFVF_DIFFUSE)  stride += 4;
-        if (fvf & D3DFVF_SPECULAR) stride += 4;
-        stride += ((fvf >> 8) & 0xF) * 8;
-
-        for (DWORD i = 0; i < vertCount; i++) {
-            *(float*)(v + stride * i)     += 0.5f;
-            *(float*)(v + stride * i + 4) += 0.5f;
-        }
+        DDrawHookUtils::shiftVertexXY(vertices, vertCount, fvf, +0.5f, +0.5f);
         if (didClamp) {
             self->SetTextureStageState(0, D3DTSS_ADDRESSU_D7, savedAddrU);
             self->SetTextureStageState(0, D3DTSS_ADDRESSV_D7, savedAddrV);
@@ -140,7 +100,7 @@ static HRESULT STDMETHODCALLTYPE Hooked_CreateDevice(IDirect3D7* self, REFCLSID 
     HRESULT hr = g_origCreateDevice(self, rclsid, surface, device);
     if (SUCCEEDED(hr) && device && *device) {
         void** vtable = *(void***)*device;
-        PatchVtable(vtable, 25, (void*)Hooked_DrawPrimitive, (void**)&g_origDrawPrimitive);
+        DDrawHookUtils::patchVtable(vtable,25, (void*)Hooked_DrawPrimitive, (void**)&g_origDrawPrimitive);
         Logger::info("[DDraw7Fix] Hooked IDirect3DDevice7::DrawPrimitive");
 
         if (s_pointFilter) {
@@ -158,7 +118,7 @@ static HRESULT STDMETHODCALLTYPE Hooked_DDraw7QueryInterface(IUnknown* self, REF
     HRESULT hr = g_origDDraw7QueryInterface(self, riid, ppv);
     if (SUCCEEDED(hr) && ppv && *ppv && riid == IID_IDirect3D7_local) {
         void** vtable = *(void***)*ppv;
-        PatchVtable(vtable, 4, (void*)Hooked_CreateDevice, (void**)&g_origCreateDevice);
+        DDrawHookUtils::patchVtable(vtable,4, (void*)Hooked_CreateDevice, (void**)&g_origCreateDevice);
         Logger::info("[DDraw7Fix] Hooked IDirect3D7::CreateDevice");
     }
     return hr;
@@ -179,10 +139,10 @@ static HRESULT WINAPI Hooked_DirectDrawCreateEx(GUID* lpGuid, LPVOID* lplpDD, RE
     void** vtable = *(void***)*lplpDD;
 
     if (s_force32bpp)
-        PatchVtable(vtable, 21, (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode);
+        DDrawHookUtils::patchVtable(vtable,21, (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode);
 
     if (s_pointFilter || s_texelAlignment)
-        PatchVtable(vtable, 0, (void*)Hooked_DDraw7QueryInterface, (void**)&g_origDDraw7QueryInterface);
+        DDrawHookUtils::patchVtable(vtable,0, (void*)Hooked_DDraw7QueryInterface, (void**)&g_origDDraw7QueryInterface);
 
     return hr;
 }

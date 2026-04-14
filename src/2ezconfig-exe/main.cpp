@@ -174,6 +174,10 @@ struct AppState {
     BindingStore bindings;
     int gameIdx = 0;
     GameFamily family = GameFamily::EZ2DJ;
+
+    const Game&       game() const { return games[gameIdx]; }
+    const char*       gameId()     const { return games[gameIdx].id; }
+    const char*       gameName()   const { return games[gameIdx].name; }
 };
 static AppState g_app;
 static GLFWwindow* g_window = nullptr;
@@ -419,24 +423,21 @@ static void renderUI() {
 }
 
 static bool hasDDraw3Fixes(const std::string& gameId) {
-    return gameId == "ez2dj_1st_se";
+    // 6th trax boots rmbr_1st through its launcher; when 6th is selected,
+    // we surface the rmbr_1st DDraw3 fixes in the same settings file so
+    // both games read the right flags at runtime.
+    return gameId == "ez2dj_1st_se" || gameId == "rmbr_1st" || gameId == "ez2dj_6th";
 }
 
 static bool hasDDraw7Fixes(const std::string& gameId) {
     return gameId != "ez2dj_1st" &&
            gameId != "ez2dj_1st_se" &&
            gameId != "rmbr_1st" &&
-           // gameId != "ez2ac_ev" &&
-           // gameId != "ez2ac_nt" &&
-           // gameId != "ez2ac_tt" &&
-           // gameId != "ez2ac_fn" &&
-           // gameId != "ez2ac_fn_ex" &&
            (familyFromGameId(gameId) == GameFamily::EZ2DJ ||
            familyFromGameId(gameId) == GameFamily::EZ2Dancer);
 }
 
 static void renderPatchesTab() {
-    ImGui::SeparatorText("Game Patches");
 
     std::string gameId = g_app.settings.gameSettings().value("game_id", "");
     auto& patches = g_app.settings.patchStore().patchesForGame(gameId);
@@ -454,25 +455,17 @@ static void renderPatchesTab() {
         return;
     }
 
+    ImGui::SeparatorText((std::string(g_app.gameName()) + " Patches").c_str());
+
     for (auto& patch : patches) {
         ImGui::PushID(patch.id.c_str());
         renderPatchRow(patch);
         ImGui::PopID();
     }
-    if (hasSixthR1st) renderRemember1stPatches();
-
-    if (showDDraw3Fixes) {
-        ImGui::SeparatorText("DDraw3 Rendering Fixes (1st/ 1st SE)");
-        gameCheckbox("Enable DDraw3 Fix", "ddraw3_fix", false);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Wraps the D3D3 device to fix rendering on Windows XP.\nFixes ghosting, missing backgrounds, and broken fades.");
-        gameCheckbox("Point Texture Filtering", "ddraw3_point_filtering", false);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Forces POINT filtering instead of LINEAR.\nPrevents bilinear blurring on textures.");
-    }
 
     if (showDDraw7Fixes) {
-        ImGui::SeparatorText("DDraw7 Rendering Patches");
+        ImGui::PushID("ddraw7");
+        ImGui::TextDisabled("DDraw7 Rendering Patches");
         gameCheckbox("Force 32-bit Display Mode", "force_32bit_display", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Forces 32-bit color in SetDisplayMode.\nFixes crashes on Windows 10/11");
@@ -482,7 +475,31 @@ static void renderPatchesTab() {
         gameCheckbox("Adjust Texel Alignment (-0.5)", "texel_alignment", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Subtracts 0.5 from vertex coordinates.\nHelps with various texture alignment issues.");
+        ImGui::PopID();
     }
+
+    if (hasSixthR1st) renderRemember1stPatches();
+
+    if (showDDraw3Fixes) {
+        ImGui::PushID("ddraw3");
+        if(gameId == "ez2dj_1st_se"){
+            ImGui::TextDisabled("DDraw3 Rendering Fixes (1st/ 1st SE)");
+            gameCheckbox("Enable DDraw3 Fix", "ddraw3_fix", false);
+             if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Wraps the D3D3 device to fix rendering on Windows XP.\nFixes ghosting, missing backgrounds, and broken fades.");
+        }
+        gameCheckbox("Force 32-bit Display Mode", "ddraw3_force_32bpp", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Forces 32-bit color in SetDisplayMode.\nFixes crashes on systems that don't support 16-bit modes.");
+        gameCheckbox("Point Texture Filtering", "ddraw3_point_filtering", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Forces POINT filtering instead of LINEAR.\nPrevents bilinear blurring on textures.");
+        gameCheckbox("Adjust Texel Alignment (-0.5)", "ddraw3_texel_alignment", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Subtracts 0.5 from vertex coordinates.\nHelps with various texture alignment issues.");
+        ImGui::PopID();
+    }
+
 }
 
 static void renderPatchRow(Patch& patch) {
@@ -1338,7 +1355,7 @@ static void renderRemember1stPatches() {
         return;
     }
 
-    ImGui::TextDisabled("Remember 1st Patches");
+    ImGui::SeparatorText("Remember 1st Patches");
     for (auto& patch : r1stPatches) {
         ImGui::PushID(patch.id.c_str());
         renderPatchRow(patch);

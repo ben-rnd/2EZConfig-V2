@@ -178,7 +178,9 @@ static void earlyInit() {
             EZ2DJIO::installHooks(s_settings);
             if (s_settings->gameSettings().value("ddraw3_fix", false))
                 DDraw3Fix::install(s_gameId,
-                    s_settings->gameSettings().value("ddraw3_point_filtering", false));
+                    s_settings->gameSettings().value("ddraw3_force_32bpp", false),
+                    s_settings->gameSettings().value("ddraw3_point_filtering", false),
+                    s_settings->gameSettings().value("ddraw3_texel_alignment", false));
             DDraw7Fix::install(
                 s_settings->gameSettings().value("force_32bit_display", false),
                 s_settings->gameSettings().value("point_filtering", false),

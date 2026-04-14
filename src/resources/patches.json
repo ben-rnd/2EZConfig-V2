@@ -1,5 +1,5 @@
 {
-  "ver": 48,
+  "ver": 51,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -110,14 +110,15 @@
       "name": "Fix Windows XP+ Compatibility",
       "description": "Fixes non relative paths, directsound, and file opening issues on modern Windows.",
       "type": "toggle",
-      "apply": "early",
+      "apply": "super_early",
       "writes": [
         { "offset": "0x248B8", "bytes": "C2" },
         { "offset": "0xFB1F", "bytes": "00" },
         { "offset": "0x1EE25", "bytes": "00" },
         { "offset": "0x3198C", "bytes": "00" },
         { "offset": "0x581D0", "bytes": "2E 00 00 00 00 00 00 00" },
-        { "offset": "0x581F4", "bytes": "54 45 53 54 2E 45 58 45 00 00 00 00 00 00 00 00 00 00" }
+        { "offset": "0x581F4", "bytes": "54 45 53 54 2E 45 58 45 00 00 00 00 00 00 00 00 00 00" },
+        { "offset": "0x37C40", "bytes": "B8 01 00 00 00 C3", "notes": "Stubs setupDisplayMode to return 1. Prevents ChangeDisplaySettingsExA from permanently changing desktop resolution to 640x480x16." }
       ]
     },
     "restore_opening": {

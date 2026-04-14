@@ -23,5 +23,5 @@
 #include <string>
 
 namespace DDraw3Fix {
-    void install(const std::string& gameId, bool pointFiltering);
+    void install(const std::string& gameId, bool force32bpp, bool pointFiltering, bool texelAlignment);
 }
