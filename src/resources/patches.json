@@ -1,5 +1,5 @@
 {
-  "ver": 33,
+  "ver": 48,
   "shared": {
     "force_60hz_v1": {
         "name": "Force 60Hz",
@@ -172,6 +172,16 @@
         { "offset": "0x6B83F", "bytes": "E8 44 5C F9 FF 8B 4D FC E8 61 5F F9 FF 8B 4D FC E8 36 5A F9 FF EB A3 90 90" }
       ]
     },
+    "hide_credit_display": {
+      "name": "Hide Credit/Freeplay Display",
+      "notes": "Sets ShowCredit visibility to 0 by patching push 1 -> push 0 before the setVisible call in the constructor. Must be super_early so the byte is patched before the game thread creates any ShowCredit instances.",
+      "description": "Hides the Freeplay/Credits overlay from all screens.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x5BCA3", "bytes": "00" }
+      ]
+    },
     "event_mode_title": {
       "name": "Event Mode Title Screen",
       "description": "Checks the EventMode INI flag at runtime and loads eventmode.str instead of Title.str when enabled.",
@@ -208,7 +218,56 @@
     }
   },
   "ez2dj_ae": {},
-  "ez2dj_ae_ic": {},
+  "ez2dj_ae_ic": {
+    "force_iocard": {
+      "name": "Force UseIOCard",
+      "description": "Forces UseIOCard=1 regardless of INI setting.",
+      "type": "toggle",
+      "apply": "early",
+      "writes": [
+        { "offset": "0x160B6", "bytes": "8B 45 FC C7 80 F4 00 42 00 01 00 00 00 90 90 90 90 90 90 90 90 90 90 90 90" }
+      ]
+    },
+    "restore_iocard_entries": {
+      "name": "Restore I/O",
+      "description": "Restores ISA I/O card functionality.",
+      "type": "toggle",
+      "apply": "early",
+      "scan_group": [
+        {
+          "notes": "Match the UseIOCard check followed by NOPped conditional jump: cmp [eax+4200F4h], 0 / 6x NOP / push -1 / push 1Bh / push 0 / push 0",
+          "scan": "83 B8 F4 00 42 00 00 90 90 90 90 90 90 6A FF 6A 1B 6A 00 6A 00",
+          "writes": [
+            { "offset": "0x07", "bytes": "0F 84 B2 01 00 00", "notes": "Restore jz +0x1B2 (skip to ESC-only fallback when UseIOCard=0)" },
+            { "offset": "0x20", "bytes": "07 6A 02", "notes": "Entry 1: bit=7 type=2 (TEST)" },
+            { "offset": "0x30", "bytes": "06 6A 02", "notes": "Entry 2: bit=6 type=2 (SERVICE)" },
+            { "offset": "0x50", "bytes": "00 6A 02", "notes": "Entry 4: bit=0 type=2 (P1_START)" },
+            { "offset": "0x60", "bytes": "01 6A 02", "notes": "Entry 5: bit=1 type=2 (P2_START)" },
+            { "offset": "0x70", "bytes": "02 6A 02", "notes": "Entry 6: bit=2 type=2 (EFF1)" },
+            { "offset": "0x80", "bytes": "03 6A 02", "notes": "Entry 7: bit=3 type=2 (EFF2)" },
+            { "offset": "0x90", "bytes": "04 6A 02", "notes": "Entry 8: bit=4 type=2 (EFF3)" },
+            { "offset": "0xA0", "bytes": "05 6A 02", "notes": "Entry 9: bit=5 type=2 (EFF4)" },
+            { "offset": "0xB0", "bytes": "08 6A 02", "notes": "Entry 10: bit=8 type=2 (P1_KEY1)" },
+            { "offset": "0xC0", "bytes": "09 6A 02", "notes": "Entry 11: bit=9 type=2 (P1_KEY2)" },
+            { "offset": "0xD0", "bytes": "0A 6A 02", "notes": "Entry 12: bit=10 type=2 (P1_KEY3)" },
+            { "offset": "0xE0", "bytes": "0B 6A 02", "notes": "Entry 13: bit=11 type=2 (P1_KEY4)" },
+            { "offset": "0xF0", "bytes": "0C 6A 02", "notes": "Entry 14: bit=12 type=2 (P1_KEY5)" },
+            { "offset": "0x100", "bytes": "0D 6A 02", "notes": "Entry 15: bit=13 type=2 (P1_PEDAL)" },
+            { "offset": "0x110", "bytes": "0E 6A 02", "notes": "Entry 16: bit=14 type=2 (P1_PEDAL alt)" },
+            { "offset": "0x120", "bytes": "0F 6A 02", "notes": "Entry 17: bit=15 type=2" },
+            { "offset": "0x130", "bytes": "10 6A 02", "notes": "Entry 18: bit=16 type=2 (P2_KEY1)" },
+            { "offset": "0x142", "bytes": "02", "notes": "Entry 19: type=2 (keycode 0x11 unchanged)" },
+            { "offset": "0x152", "bytes": "02", "notes": "Entry 20: type=2 (keycode 0x12 unchanged)" },
+            { "offset": "0x162", "bytes": "02", "notes": "Entry 21: type=2 (keycode 0x13 unchanged)" },
+            { "offset": "0x172", "bytes": "02", "notes": "Entry 22: type=2 (keycode 0x14 unchanged)" },
+            { "offset": "0x182", "bytes": "02", "notes": "Entry 23: type=2 (keycode 0x15 unchanged)" },
+            { "offset": "0x192", "bytes": "02", "notes": "Entry 24: type=2 (keycode 0x16 unchanged)" },
+            { "offset": "0x1A2", "bytes": "02", "notes": "Entry 25: type=2 (keycode 0x17 unchanged)" }
+          ]
+        }
+      ]
+    }
+  },
   "ez2ac_ec": {
     "timer_freeze": {
       "name": "Timer Freeze",
@@ -255,6 +314,16 @@
     }
   },
   "ez2ac_nt": {
+    "hide_credit_display": {
+      "name": "Hide Credit/Freeplay Display",
+      "notes": "Sets ShowCredit visibility to 0. Patches mov [esi+14h],1 -> mov [esi+14h],0 in the constructor.",
+      "description": "Hides the Freeplay/Credits overlay from all screens.",
+      "type": "toggle",
+      "apply": "super_early",
+      "writes": [
+        { "offset": "0x47BD2", "bytes": "00" }
+      ]
+    },
     "timer_freeze": {
       "name": "Timer Freeze",
       "description": "Freezes the countdown timer in mode and song select.",
