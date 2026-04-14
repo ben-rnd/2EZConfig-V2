@@ -22,6 +22,8 @@ extern "C" {
 #include "io.hardlock.emulator.h"
 }
 #include "utilities.h"
+#include "ddraw3_fix.h"
+#include "ddraw7_fix.h"
 
 extern "C" __declspec(dllexport) void hook_init(void) {}
 
@@ -174,10 +176,21 @@ static void earlyInit() {
             resolveRemember1st();
             initHardlock();
             EZ2DJIO::installHooks(s_settings);
+            if (s_settings->gameSettings().value("ddraw3_fix", false))
+                DDraw3Fix::install(s_gameId,
+                    s_settings->gameSettings().value("ddraw3_point_filtering", false));
+            DDraw7Fix::install(
+                s_settings->gameSettings().value("force_32bit_display", false),
+                s_settings->gameSettings().value("point_filtering", false),
+                s_settings->gameSettings().value("texel_alignment", false));
             break;
         case GameFamily::EZ2Dancer:
             initHardlock();
             EZ2DancerIO::installHooks(s_settings);
+            DDraw7Fix::install(
+                s_settings->gameSettings().value("force_32bit_display", false),
+                s_settings->gameSettings().value("point_filtering", false),
+                s_settings->gameSettings().value("texel_alignment", false));
             break;
         case GameFamily::SabinSS:
             SabinIO::installHooks();

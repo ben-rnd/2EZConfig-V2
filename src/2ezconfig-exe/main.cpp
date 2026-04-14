@@ -382,6 +382,11 @@ static void renderUI() {
             ImGui::EndTabItem();
         }
 
+        if (ImGui::BeginTabItem("Patches")) {
+            renderPatchesTab();
+            ImGui::EndTabItem();
+        }
+
         if (ImGui::BeginTabItem("Buttons")) {
             renderButtonsTab();
             ImGui::EndTabItem();
@@ -413,13 +418,34 @@ static void renderUI() {
     ImGui::End();
 }
 
+static bool hasDDraw3Fixes(const std::string& gameId) {
+    return gameId == "ez2dj_1st_se";
+}
+
+static bool hasDDraw7Fixes(const std::string& gameId) {
+    return gameId != "ez2dj_1st" &&
+           gameId != "ez2dj_1st_se" &&
+           gameId != "rmbr_1st" &&
+           // gameId != "ez2ac_ev" &&
+           // gameId != "ez2ac_nt" &&
+           // gameId != "ez2ac_tt" &&
+           // gameId != "ez2ac_fn" &&
+           // gameId != "ez2ac_fn_ex" &&
+           (familyFromGameId(gameId) == GameFamily::EZ2DJ ||
+           familyFromGameId(gameId) == GameFamily::EZ2Dancer);
+}
+
 static void renderPatchesTab() {
+    ImGui::SeparatorText("Game Patches");
+
     std::string gameId = g_app.settings.gameSettings().value("game_id", "");
     auto& patches = g_app.settings.patchStore().patchesForGame(gameId);
     bool hasSixthR1st = (gameId == "ez2dj_6th");
     auto& r1stPatches = hasSixthR1st ? g_app.settings.patchStore().patchesForGame("rmbr_1st") : patches;
+    bool showDDraw3Fixes = hasDDraw3Fixes(gameId);
+    bool showDDraw7Fixes = hasDDraw7Fixes(gameId);
 
-    if (patches.empty() && (!hasSixthR1st || r1stPatches.empty())) {
+    if (patches.empty() && (!hasSixthR1st || r1stPatches.empty()) && !showDDraw3Fixes && !showDDraw7Fixes) {
         const char* emptyMessage = "No patches available for this game.";
         float textW = ImGui::CalcTextSize(emptyMessage).x;
         ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textW) * 0.5f);
@@ -428,14 +454,35 @@ static void renderPatchesTab() {
         return;
     }
 
-    ImGui::BeginChild("##patchScroll", ImVec2(0, 0), false);
     for (auto& patch : patches) {
         ImGui::PushID(patch.id.c_str());
         renderPatchRow(patch);
         ImGui::PopID();
     }
     if (hasSixthR1st) renderRemember1stPatches();
-    ImGui::EndChild();
+
+    if (showDDraw3Fixes) {
+        ImGui::SeparatorText("DDraw3 Rendering Fixes (1st/ 1st SE)");
+        gameCheckbox("Enable DDraw3 Fix", "ddraw3_fix", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Wraps the D3D3 device to fix rendering on Windows XP.\nFixes ghosting, missing backgrounds, and broken fades.");
+        gameCheckbox("Point Texture Filtering", "ddraw3_point_filtering", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Forces POINT filtering instead of LINEAR.\nPrevents bilinear blurring on textures.");
+    }
+
+    if (showDDraw7Fixes) {
+        ImGui::SeparatorText("DDraw7 Rendering Patches");
+        gameCheckbox("Force 32-bit Display Mode", "force_32bit_display", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Forces 32-bit color in SetDisplayMode.\nFixes crashes on Windows 10/11");
+        gameCheckbox("Point Texture Filtering", "point_filtering", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Forces POINT filtering instead of LINEAR.\nPrevents bilinear blurring on textures.\n(eg. 2nd trax STREETMIX CRT filter)");
+        gameCheckbox("Adjust Texel Alignment (-0.5)", "texel_alignment", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Subtracts 0.5 from vertex coordinates.\nHelps with various texture alignment issues.");
+    }
 }
 
 static void renderPatchRow(Patch& patch) {
@@ -572,6 +619,8 @@ static void renderSettingsTab() {
         ImGui::TextDisabled("Space-separated DLLs injected with 2EZ.dll");
     }
 
+    ImGui::BeginChild("##settingsScroll", ImVec2(0, 0), false);
+
     ImGui::SeparatorText("Global Settings");
     globalCheckbox("Enable IO Emulation",                "io_emu",       true);
     globalCheckbox("Force High Priority (experimental)", "high_priority", false);
@@ -587,8 +636,7 @@ static void renderSettingsTab() {
         }
     }
 
-    ImGui::SeparatorText("Game Patches");
-    renderPatchesTab();
+    ImGui::EndChild();
 }
 
 static void renderButtonsTab() {
