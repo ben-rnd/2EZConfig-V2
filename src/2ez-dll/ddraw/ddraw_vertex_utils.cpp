@@ -1,17 +1,8 @@
-#include "ddraw_hook_utils.h"
+#include "ddraw_vertex_utils.h"
 
 #include <d3d.h>
 
-namespace DDrawHookUtils {
-
-void patchVtable(void** vtable, int index, void* hook, void** origOut) {
-    if (*origOut) return;
-    *origOut = vtable[index];
-    DWORD oldProt;
-    VirtualProtect(&vtable[index], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProt);
-    vtable[index] = hook;
-    VirtualProtect(&vtable[index], sizeof(void*), oldProt, &oldProt);
-}
+namespace DDrawVertexUtils {
 
 DWORD computeFvfStride(DWORD fvf) {
     DWORD stride = 16;                        // XYZRHW (4 floats)
@@ -43,4 +34,4 @@ void shiftVertexXY(void* verts, DWORD count, DWORD fvf, float dx, float dy) {
     }
 }
 
-} // namespace DDrawHookUtils
+} // namespace DDrawVertexUtils

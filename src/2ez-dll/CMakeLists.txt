@@ -12,7 +12,7 @@ add_library(2EZ SHARED
     sabin-io/sabin_io_output.cpp
     ddraw/ddraw3_fix.cpp
     ddraw/ddraw7_fix.cpp
-    ddraw/ddraw_hook_utils.cpp
+    ddraw/ddraw_vertex_utils.cpp
     $<$<CONFIG:Debug>:dll_hardlock_debug.cpp>
 )
 set_target_properties(2EZ PROPERTIES PREFIX "" OUTPUT_NAME "2EZ")

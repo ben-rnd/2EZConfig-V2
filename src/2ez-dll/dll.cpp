@@ -177,15 +177,20 @@ static void earlyInit() {
             resolveRemember1st();
             initHardlock();
             EZ2DJIO::installHooks(s_settings);
-            if (s_settings->gameSettings().value("ddraw3_fix", false))
+            // DDraw3 era (1st SE, Remember 1st) vs DDraw7 era (2nd TraX onwards).
+            // Mutually exclusive: both hooks target ddraw.dll's shared QueryInterface
+            // dispatcher, which would collide under MinHook if installed together.
+            if (s_gameId == "ez2dj_1st_se" || s_gameId == "rmbr_1st") {
                 DDraw3Fix::install(s_gameId,
                     s_settings->gameSettings().value("ddraw3_force_32bpp", false),
                     s_settings->gameSettings().value("ddraw3_point_filtering", false),
                     s_settings->gameSettings().value("ddraw3_texel_alignment", false));
-            DDraw7Fix::install(
-                s_settings->gameSettings().value("force_32bit_display", false),
-                s_settings->gameSettings().value("point_filtering", false),
-                s_settings->gameSettings().value("texel_alignment", false));
+            } else {
+                DDraw7Fix::install(
+                    s_settings->gameSettings().value("force_32bit_display", false),
+                    s_settings->gameSettings().value("point_filtering", false),
+                    s_settings->gameSettings().value("texel_alignment", false));
+            }
             break;
         case GameFamily::EZ2Dancer:
             initHardlock();

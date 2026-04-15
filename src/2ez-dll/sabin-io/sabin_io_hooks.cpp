@@ -12,10 +12,7 @@
 #include "sabin_io.h"
 #include "sabin_io_internal.h"
 #include "logger.h"
-
-extern "C" {
-#include "memutils.h"
-}
+#include "hooks.h"
 
 static constexpr uintptr_t RVA_SERIAL_IO_OBJECT = 0x10E9DC;
 static constexpr uintptr_t RVA_SERIAL_WRITE_FN  = 0x0471E0;
@@ -130,8 +127,7 @@ static DWORD WINAPI outputThread(void*) {
 
 void SabinIO::installHooks() {
     void* serialWriteAddr = reinterpret_cast<void*>(gameBase() + RVA_SERIAL_WRITE_FN);
-    struct HotPatchInfo ctx;
-    if (memutils_hotpatch(serialWriteAddr, reinterpret_cast<void*>(&Hook_SerialWrite), 9, &ctx, reinterpret_cast<void**>(&Real_SerialWrite))) {
+    if (hook_create(serialWriteAddr, reinterpret_cast<void*>(&Hook_SerialWrite), reinterpret_cast<void**>(&Real_SerialWrite))) {
         Logger::info("[IO] Serial_Write hooked (early)");
     } else {
         Logger::error("[IO] Failed to hook Serial_Write");

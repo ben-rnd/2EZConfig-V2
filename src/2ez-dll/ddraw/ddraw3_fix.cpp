@@ -14,7 +14,9 @@
  */
 
 #include "ddraw3_fix.h"
-#include "ddraw_hook_utils.h"
+#include "ddraw_vertex_utils.h"
+#include "ddraw_vtable.h"
+#include "hooks.h"
 #include "logger.h"
 
 #include <windows.h>
@@ -81,13 +83,14 @@ typedef HRESULT (STDMETHODCALLTYPE *PFN_D3D3_DrawIndexedPrimitive)(IDirect3DDevi
 
 static PFN_DirectDrawCreate       g_origDirectDrawCreate       = nullptr;
 static PFN_SetDisplayMode4        g_origSetDisplayMode         = nullptr;
+// Single QI hook catches both IDirectDraw->IDirectDraw4 and IDirectDraw4->IDirect3D3
+// because ddraw.dll shares the IUnknown::QueryInterface implementation across all
+// its interfaces — MinHook's inline hook on the shared function fires for both.
 static PFN_QueryInterface         g_origDDrawQueryInterface    = nullptr;
-static PFN_QueryInterface         g_origDDraw4QueryInterface   = nullptr;
 static PFN_D3D3_CreateDevice      g_origD3D3CreateDevice       = nullptr;
 static PFN_D3D3_DrawPrimitive     g_origD3D3DrawPrimitive      = nullptr;
 static PFN_D3D3_DrawIndexedPrimitive g_origD3D3DrawIndexedPrimitive = nullptr;
 static bool s_32bppHooked = false;
-static BYTE s_ddcTrampoline[10] = {};
 
 // IIDs
 // IID_IDirectDraw4: {9C59509A-39BD-11D1-8C4A-00C04FD930C5}
@@ -134,11 +137,11 @@ static bool applyPreDraw(IDirect3DDevice3* device, DWORD fvf, void* vertices, DW
     }
     bool didAlign = false;
     if (s_texelAlignment && (fvf & D3DFVF_XYZRHW) && vertices && vertCount > 0) {
-        if (DDrawHookUtils::uvsInUnitRange(vertices, vertCount, fvf)) {
+        if (DDrawVertexUtils::uvsInUnitRange(vertices, vertCount, fvf)) {
             saved.set(saved.addrU, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
             saved.set(saved.addrV, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
         }
-        DDrawHookUtils::shiftVertexXY(vertices, vertCount, fvf, -0.5f, -0.5f);
+        DDrawVertexUtils::shiftVertexXY(vertices, vertCount, fvf, -0.5f, -0.5f);
         didAlign = true;
     }
     return didAlign;
@@ -146,7 +149,7 @@ static bool applyPreDraw(IDirect3DDevice3* device, DWORD fvf, void* vertices, DW
 
 static void applyPostDraw(DWORD fvf, void* vertices, DWORD vertCount, bool didAlign, const DrawStateSave& saved) {
     if (didAlign)
-        DDrawHookUtils::shiftVertexXY(vertices, vertCount, fvf, +0.5f, +0.5f);
+        DDrawVertexUtils::shiftVertexXY(vertices, vertCount, fvf, +0.5f, +0.5f);
     saved.restore(saved.addrU);
     saved.restore(saved.addrV);
     saved.restore(saved.magFilter);
@@ -174,36 +177,30 @@ static HRESULT STDMETHODCALLTYPE Hooked_D3D3_DrawIndexedPrimitive(IDirect3DDevic
 // and/or texel alignment.
 static HRESULT STDMETHODCALLTYPE Hooked_D3D3_CreateDevice(void* self, REFCLSID rclsid, void* surface, IDirect3DDevice3** device, IUnknown* outer) {
     HRESULT hr = g_origD3D3CreateDevice(self, rclsid, surface, device, outer);
-    if (SUCCEEDED(hr) && device && *device) {
+    if (SUCCEEDED(hr) && device && *device && !g_origD3D3DrawPrimitive) {
         void** vtable = *(void***)*device;
-        DDrawHookUtils::patchVtable(vtable, 28, (void*)Hooked_D3D3_DrawPrimitive,        (void**)&g_origD3D3DrawPrimitive);
-        DDrawHookUtils::patchVtable(vtable, 29, (void*)Hooked_D3D3_DrawIndexedPrimitive, (void**)&g_origD3D3DrawIndexedPrimitive);
-        Logger::info("[D3D3Fix] Hooked IDirect3DDevice3::DrawPrimitive + DrawIndexedPrimitive");
+        if (hook_create(vtable[VT::IDirect3DDevice3::DrawPrimitive],        (void*)Hooked_D3D3_DrawPrimitive,        (void**)&g_origD3D3DrawPrimitive) &&
+            hook_create(vtable[VT::IDirect3DDevice3::DrawIndexedPrimitive], (void*)Hooked_D3D3_DrawIndexedPrimitive, (void**)&g_origD3D3DrawIndexedPrimitive))
+            Logger::info("[D3D3Fix] Hooked IDirect3DDevice3::DrawPrimitive + DrawIndexedPrimitive");
     }
     return hr;
 }
 
-// ---- IDirectDraw4::QueryInterface hook (catches IDirect3D3) ----
-static HRESULT STDMETHODCALLTYPE Hooked_DDraw4_QueryInterface(IUnknown* self, REFIID riid, void** ppv) {
-    HRESULT hr = g_origDDraw4QueryInterface(self, riid, ppv);
-    if (SUCCEEDED(hr) && ppv && *ppv && riid == IID_IDirect3D3_local) {
-        void** vtable = *(void***)*ppv;
-        DDrawHookUtils::patchVtable(vtable, 8, (void*)Hooked_D3D3_CreateDevice, (void**)&g_origD3D3CreateDevice);
-        Logger::info("[D3D3Fix] Hooked IDirect3D3::CreateDevice");
-    }
-    return hr;
-}
-
-// ---- IDirectDraw::QueryInterface hook (catches IDirectDraw4) ----
+// ---- Unified QueryInterface hook ----
+// Fires for IDirectDraw::QI, IDirectDraw4::QI (and any other DDraw interface
+// sharing the IUnknown dispatcher). Dispatches by requested riid.
 static HRESULT STDMETHODCALLTYPE Hooked_DDrawQueryInterface(IUnknown* self, REFIID riid, void** ppv) {
     HRESULT hr = g_origDDrawQueryInterface(self, riid, ppv);
-    if (SUCCEEDED(hr) && ppv && *ppv && riid == IID_IDirectDraw4_local) {
+    if (!SUCCEEDED(hr) || !ppv || !*ppv) return hr;
+
+    if (riid == IID_IDirectDraw4_local && s_force32bpp && !g_origSetDisplayMode) {
         void** vtable = *(void***)*ppv;
-        if (s_force32bpp)
-            DDrawHookUtils::patchVtable(vtable, 21, (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode);
-        if (s_pointFiltering || s_texelAlignment)
-            DDrawHookUtils::patchVtable(vtable, 0, (void*)Hooked_DDraw4_QueryInterface, (void**)&g_origDDraw4QueryInterface);
-        Logger::info("[D3D3Fix] Hooked IDirectDraw4 (SetDisplayMode/QueryInterface)");
+        if (hook_create(vtable[VT::IDirectDraw4::SetDisplayMode], (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode))
+            Logger::info("[D3D3Fix] Hooked IDirectDraw4::SetDisplayMode");
+    } else if (riid == IID_IDirect3D3_local && !g_origD3D3CreateDevice) {
+        void** vtable = *(void***)*ppv;
+        if (hook_create(vtable[VT::IDirect3D3::CreateDevice], (void*)Hooked_D3D3_CreateDevice, (void**)&g_origD3D3CreateDevice))
+            Logger::info("[D3D3Fix] Hooked IDirect3D3::CreateDevice");
     }
     return hr;
 }
@@ -211,40 +208,30 @@ static HRESULT STDMETHODCALLTYPE Hooked_DDrawQueryInterface(IUnknown* self, REFI
 // ---- IAT entry hook ----
 static HRESULT WINAPI Hooked_DirectDrawCreate(GUID* lpGuid, LPDIRECTDRAW* lplpDD, IUnknown* pUnkOuter) {
     HRESULT hr = g_origDirectDrawCreate(lpGuid, lplpDD, pUnkOuter);
-    if (SUCCEEDED(hr) && lplpDD && *lplpDD) {
+    if (SUCCEEDED(hr) && lplpDD && *lplpDD && !g_origDDrawQueryInterface) {
+        // ddraw.dll shares IUnknown::QueryInterface across all its interfaces
+        // (IDirectDraw, IDirectDraw4, IDirect3D3, ...). Hooking once on the shared
+        // function catches QIs from every interface, so we dispatch by riid inside
+        // the hook rather than installing a separate hook per interface.
         void** vtable = *(void***)*lplpDD;
-        DDrawHookUtils::patchVtable(vtable, 0, (void*)Hooked_DDrawQueryInterface, (void**)&g_origDDrawQueryInterface);
-        Logger::info("[D3D3Fix] Hooked IDirectDraw::QueryInterface");
+        if (hook_create(vtable[VT::IDirectDraw::QueryInterface], (void*)Hooked_DDrawQueryInterface, (void**)&g_origDDrawQueryInterface))
+            Logger::info("[D3D3Fix] Hooked shared DDraw QueryInterface");
     }
     return hr;
 }
 
 static bool TryHook32bpp() {
     if (s_32bppHooked) return true;
+    if (!GetModuleHandleW(L"ddraw.dll")) return false;
 
-    HMODULE ddraw = GetModuleHandleA("ddraw.dll");
-    if (!ddraw) ddraw = GetModuleHandleA("DDRAW.dll");
-    if (!ddraw) ddraw = GetModuleHandleA("DDRAW.DLL");
-    if (!ddraw) return false;
-
-    auto* target = (BYTE*)GetProcAddress(ddraw, "DirectDrawCreate");
-    if (!target) return false;
-
-    DWORD oldProt;
-    VirtualProtect(s_ddcTrampoline, sizeof(s_ddcTrampoline), PAGE_EXECUTE_READWRITE, &oldProt);
-    memcpy(s_ddcTrampoline, target, 5);
-    s_ddcTrampoline[5] = 0xE9;
-    *(int32_t*)&s_ddcTrampoline[6] = (int32_t)((target + 5) - (s_ddcTrampoline + 10));
-    g_origDirectDrawCreate = (PFN_DirectDrawCreate)s_ddcTrampoline;
-
-    VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &oldProt);
-    target[0] = 0xE9;
-    *(int32_t*)&target[1] = (int32_t)((BYTE*)Hooked_DirectDrawCreate - (target + 5));
-    VirtualProtect(target, 5, oldProt, &oldProt);
-
-    Logger::info("[D3D3Fix] Hooked DirectDrawCreate in ddraw.dll");
-    s_32bppHooked = true;
-    return true;
+    if (hook_create_api(L"ddraw.dll", "DirectDrawCreate",
+                        (void*)Hooked_DirectDrawCreate,
+                        (void**)&g_origDirectDrawCreate)) {
+        Logger::info("[D3D3Fix] Hooked DirectDrawCreate in ddraw.dll");
+        s_32bppHooked = true;
+        return true;
+    }
+    return false;
 }
 
 static DWORD WINAPI Hook32bppWatchThread(LPVOID) {
@@ -629,17 +616,11 @@ static void InstallBltFastHook() {
     if (!backbuf) return;
 
     void** vtable = *(void***)backbuf;
-    DWORD oldProt;
 
-    g_origBltFast = (PFN_BltFast)vtable[7];
-    VirtualProtect(&vtable[7], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProt);
-    vtable[7] = (void*)Hooked_BltFast;
-    VirtualProtect(&vtable[7], sizeof(void*), oldProt, &oldProt);
-
-    g_origBlt = (PFN_Blt)vtable[5];
-    VirtualProtect(&vtable[5], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProt);
-    vtable[5] = (void*)Hooked_Blt;
-    VirtualProtect(&vtable[5], sizeof(void*), oldProt, &oldProt);
+    if (!g_origBltFast)
+        hook_create(vtable[VT::IDirectDrawSurface7::BltFast], (void*)Hooked_BltFast, (void**)&g_origBltFast);
+    if (!g_origBlt)
+        hook_create(vtable[VT::IDirectDrawSurface7::Blt], (void*)Hooked_Blt, (void**)&g_origBlt);
 
     Logger::info("[D3D3Fix] Hooked backbuffer BltFast and Blt");
 }

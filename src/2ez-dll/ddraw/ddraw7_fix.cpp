@@ -3,7 +3,9 @@
  */
 
 #include "ddraw7_fix.h"
-#include "ddraw_hook_utils.h"
+#include "ddraw_vertex_utils.h"
+#include "ddraw_vtable.h"
+#include "hooks.h"
 #include "logger.h"
 
 #include <windows.h>
@@ -64,21 +66,21 @@ static HRESULT STDMETHODCALLTYPE Hooked_DrawPrimitive(IDirect3DDevice7* self, D3
     // We nudge every vertex back by 0.5px to compensate.
     // We also clamp texture addressing when safe, this prevents ugly texture wrapping (thin 1 pixel lines).
     if (s_texelAlignment && (fvf & D3DFVF_XYZRHW) && vertices && vertCount > 0) {
-        if (DDrawHookUtils::uvsInUnitRange(vertices, vertCount, fvf)) {
+        if (DDrawVertexUtils::uvsInUnitRange(vertices, vertCount, fvf)) {
             self->GetTextureStageState(0, D3DTSS_ADDRESSU_D7, &savedAddrU);
             self->GetTextureStageState(0, D3DTSS_ADDRESSV_D7, &savedAddrV);
             self->SetTextureStageState(0, D3DTSS_ADDRESSU_D7, D3DTADDRESS_CLAMP);
             self->SetTextureStageState(0, D3DTSS_ADDRESSV_D7, D3DTADDRESS_CLAMP);
             didClamp = true;
         }
-        DDrawHookUtils::shiftVertexXY(vertices, vertCount, fvf, -0.5f, -0.5f);
+        DDrawVertexUtils::shiftVertexXY(vertices, vertCount, fvf, -0.5f, -0.5f);
         didAlign = true;
     }
 
     HRESULT hr = g_origDrawPrimitive(self, type, fvf, vertices, vertCount, flags);
 
     if (didAlign) {
-        DDrawHookUtils::shiftVertexXY(vertices, vertCount, fvf, +0.5f, +0.5f);
+        DDrawVertexUtils::shiftVertexXY(vertices, vertCount, fvf, +0.5f, +0.5f);
         if (didClamp) {
             self->SetTextureStageState(0, D3DTSS_ADDRESSU_D7, savedAddrU);
             self->SetTextureStageState(0, D3DTSS_ADDRESSV_D7, savedAddrV);
@@ -99,9 +101,11 @@ static HRESULT STDMETHODCALLTYPE Hooked_DrawPrimitive(IDirect3DDevice7* self, D3
 static HRESULT STDMETHODCALLTYPE Hooked_CreateDevice(IDirect3D7* self, REFCLSID rclsid, IDirectDrawSurface7* surface, IDirect3DDevice7** device) {
     HRESULT hr = g_origCreateDevice(self, rclsid, surface, device);
     if (SUCCEEDED(hr) && device && *device) {
-        void** vtable = *(void***)*device;
-        DDrawHookUtils::patchVtable(vtable,25, (void*)Hooked_DrawPrimitive, (void**)&g_origDrawPrimitive);
-        Logger::info("[DDraw7Fix] Hooked IDirect3DDevice7::DrawPrimitive");
+        if (!g_origDrawPrimitive) {
+            void** vtable = *(void***)*device;
+            if (hook_create(vtable[VT::IDirect3DDevice7::DrawPrimitive], (void*)Hooked_DrawPrimitive, (void**)&g_origDrawPrimitive))
+                Logger::info("[DDraw7Fix] Hooked IDirect3DDevice7::DrawPrimitive");
+        }
 
         if (s_pointFilter) {
             (*device)->SetTextureStageState(0, D3DTSS_MAGFILTER_D7, D3DTFP_POINT);
@@ -117,9 +121,11 @@ static HRESULT STDMETHODCALLTYPE Hooked_CreateDevice(IDirect3D7* self, REFCLSID 
 static HRESULT STDMETHODCALLTYPE Hooked_DDraw7QueryInterface(IUnknown* self, REFIID riid, void** ppv) {
     HRESULT hr = g_origDDraw7QueryInterface(self, riid, ppv);
     if (SUCCEEDED(hr) && ppv && *ppv && riid == IID_IDirect3D7_local) {
-        void** vtable = *(void***)*ppv;
-        DDrawHookUtils::patchVtable(vtable,4, (void*)Hooked_CreateDevice, (void**)&g_origCreateDevice);
-        Logger::info("[DDraw7Fix] Hooked IDirect3D7::CreateDevice");
+        if (!g_origCreateDevice) {
+            void** vtable = *(void***)*ppv;
+            if (hook_create(vtable[VT::IDirect3D7::CreateDevice], (void*)Hooked_CreateDevice, (void**)&g_origCreateDevice))
+                Logger::info("[DDraw7Fix] Hooked IDirect3D7::CreateDevice");
+        }
     }
     return hr;
 }
@@ -138,11 +144,15 @@ static HRESULT WINAPI Hooked_DirectDrawCreateEx(GUID* lpGuid, LPVOID* lplpDD, RE
 
     void** vtable = *(void***)*lplpDD;
 
-    if (s_force32bpp)
-        DDrawHookUtils::patchVtable(vtable,21, (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode);
+    if (s_force32bpp && !g_origSetDisplayMode) {
+        if (hook_create(vtable[VT::IDirectDraw7::SetDisplayMode], (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode))
+            Logger::info("[DDraw7Fix] Hooked IDirectDraw7::SetDisplayMode");
+    }
 
-    if (s_pointFilter || s_texelAlignment)
-        DDrawHookUtils::patchVtable(vtable,0, (void*)Hooked_DDraw7QueryInterface, (void**)&g_origDDraw7QueryInterface);
+    if ((s_pointFilter || s_texelAlignment) && !g_origDDraw7QueryInterface) {
+        if (hook_create(vtable[VT::IDirectDraw7::QueryInterface], (void*)Hooked_DDraw7QueryInterface, (void**)&g_origDDraw7QueryInterface))
+            Logger::info("[DDraw7Fix] Hooked IDirectDraw7::QueryInterface");
+    }
 
     return hr;
 }
@@ -150,37 +160,19 @@ static HRESULT WINAPI Hooked_DirectDrawCreateEx(GUID* lpGuid, LPVOID* lplpDD, RE
 // Inline detour on ddraw.dll's DirectDrawCreateEx export
 
 static bool s_hooked = false;
-static BYTE s_trampoline[10] = {};
 
 static bool TryHookInline() {
     if (s_hooked) return true;
+    if (!GetModuleHandleW(L"ddraw.dll")) return false;
 
-    HMODULE ddraw = GetModuleHandleA("ddraw.dll");
-    if (!ddraw) ddraw = GetModuleHandleA("DDRAW.dll");
-    if (!ddraw) ddraw = GetModuleHandleA("DDRAW.DLL");
-    if (!ddraw) return false;
-
-    auto* target = (BYTE*)GetProcAddress(ddraw, "DirectDrawCreateEx");
-    if (!target) return false;
-
-    // Build trampoline: copy first 5 bytes, then jmp back to target+5
-    DWORD oldProt;
-    VirtualProtect(s_trampoline, sizeof(s_trampoline), PAGE_EXECUTE_READWRITE, &oldProt);
-    memcpy(s_trampoline, target, 5);
-    s_trampoline[5] = 0xE9;
-    *(int32_t*)&s_trampoline[6] = (int32_t)((target + 5) - (s_trampoline + 10));
-
-    g_origDirectDrawCreateEx = (PFN_DirectDrawCreateEx)s_trampoline;
-
-    // Overwrite target with jmp to our hook
-    VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &oldProt);
-    target[0] = 0xE9;
-    *(int32_t*)&target[1] = (int32_t)((BYTE*)Hooked_DirectDrawCreateEx - (target + 5));
-    VirtualProtect(target, 5, oldProt, &oldProt);
-
-    Logger::info("[DDraw7Fix] Hooked DirectDrawCreateEx in ddraw.dll");
-    s_hooked = true;
-    return true;
+    if (hook_create_api(L"ddraw.dll", "DirectDrawCreateEx",
+                        (void*)Hooked_DirectDrawCreateEx,
+                        (void**)&g_origDirectDrawCreateEx)) {
+        Logger::info("[DDraw7Fix] Hooked DirectDrawCreateEx in ddraw.dll");
+        s_hooked = true;
+        return true;
+    }
+    return false;
 }
 
 static DWORD WINAPI HookWatchThread(LPVOID) {
