@@ -422,9 +422,9 @@ static void renderUI() {
     ImGui::End();
 }
 
-static bool hasDDraw3Fixes(const std::string& gameId) {
+static bool hasDDraw4Fixes(const std::string& gameId) {
     // 6th trax boots rmbr_1st through its launcher; when 6th is selected,
-    // we surface the rmbr_1st DDraw3 fixes in the same settings file so
+    // we surface the rmbr_1st DDraw4 fixes in the same settings file so
     // both games read the right flags at runtime.
     return gameId == "ez2dj_1st_se" || gameId == "rmbr_1st" || gameId == "ez2dj_6th";
 }
@@ -443,10 +443,10 @@ static void renderPatchesTab() {
     auto& patches = g_app.settings.patchStore().patchesForGame(gameId);
     bool hasSixthR1st = (gameId == "ez2dj_6th");
     auto& r1stPatches = hasSixthR1st ? g_app.settings.patchStore().patchesForGame("rmbr_1st") : patches;
-    bool showDDraw3Fixes = hasDDraw3Fixes(gameId);
+    bool showDDraw4Fixes = hasDDraw4Fixes(gameId);
     bool showDDraw7Fixes = hasDDraw7Fixes(gameId);
 
-    if (patches.empty() && (!hasSixthR1st || r1stPatches.empty()) && !showDDraw3Fixes && !showDDraw7Fixes) {
+    if (patches.empty() && (!hasSixthR1st || r1stPatches.empty()) && !showDDraw4Fixes && !showDDraw7Fixes) {
         const char* emptyMessage = "No patches available for this game.";
         float textW = ImGui::CalcTextSize(emptyMessage).x;
         ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textW) * 0.5f);
@@ -483,24 +483,24 @@ static void renderPatchesTab() {
 
     if (hasSixthR1st) renderRemember1stPatches();
 
-    if (showDDraw3Fixes) {
-        ImGui::PushID("ddraw3");
+    if (showDDraw4Fixes) {
+        ImGui::PushID("ddraw4");
         if(gameId == "ez2dj_1st_se"){
-            ImGui::TextDisabled("DDraw3 Rendering Fixes (1st/ 1st SE)");
-            gameCheckbox("Enable DDraw3 Fix", "ddraw3_fix", false);
+            ImGui::TextDisabled("DDraw4 Rendering Fixes (1st/ 1st SE)");
+            gameCheckbox("Enable DDraw4 Fix", "ddraw4_fix", false);
              if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Wraps the D3D3 device to fix rendering on Windows XP.\nFixes ghosting, missing backgrounds, and broken fades.");
         }
-        gameCheckbox("Force 32-bit Display Mode", "ddraw3_force_32bpp", false);
+        gameCheckbox("Force 32-bit Display Mode", "ddraw4_force_32bpp", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Forces 32-bit color in SetDisplayMode.\nFixes crashes on systems that don't support 16-bit modes.");
-        gameCheckbox("Force 60Hz Refresh Rate", "ddraw3_force_60hz", false);
+        gameCheckbox("Force 60Hz Refresh Rate", "ddraw4_force_60hz", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Forces 60Hz refresh in SetDisplayMode.");
-        gameCheckbox("Point Texture Filtering", "ddraw3_point_filtering", false);
+        gameCheckbox("Point Texture Filtering", "ddraw4_point_filtering", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Forces POINT filtering instead of LINEAR.\nPrevents bilinear blurring on textures.");
-        gameCheckbox("Adjust Texel Alignment (-0.5)", "ddraw3_texel_alignment", false);
+        gameCheckbox("Adjust Texel Alignment (-0.5)", "ddraw4_texel_alignment", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Subtracts 0.5 from vertex coordinates.\nHelps with various texture alignment issues.");
         ImGui::PopID();

@@ -22,6 +22,6 @@
 
 #include <string>
 
-namespace DDraw3Fix {
+namespace DDraw4Fix {
     void install(const std::string& gameId, bool force32bpp, bool force60hz, bool pointFiltering, bool texelAlignment);
 }

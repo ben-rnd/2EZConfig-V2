@@ -13,7 +13,7 @@
  * Fix 6: Transition hold  — preserve last EyeCatch animation frame
  */
 
-#include "ddraw3_fix.h"
+#include "ddraw4_fix.h"
 #include "ddraw_vertex_utils.h"
 #include "ddraw_vtable.h"
 #include "hooks.h"
@@ -105,7 +105,7 @@ static const GUID IID_IDirect3D3_local =
 static HRESULT STDMETHODCALLTYPE Hooked_SetDisplayMode(void* self, DWORD w, DWORD h, DWORD bpp, DWORD refresh, DWORD flags) {
     DWORD newBpp     = s_force32bpp ? 32 : bpp;
     DWORD newRefresh = s_force60hz  ? 60 : refresh;
-    Logger::info("[D3D3Fix] SetDisplayMode " + std::to_string(w) + "x" + std::to_string(h) +
+    Logger::info("[DDraw4Fix] SetDisplayMode " + std::to_string(w) + "x" + std::to_string(h) +
                  " bpp " + std::to_string(bpp) + "->" + std::to_string(newBpp) +
                  " refresh " + std::to_string(refresh) + "->" + std::to_string(newRefresh));
     return g_origSetDisplayMode(self, w, h, newBpp, newRefresh, flags);
@@ -186,7 +186,7 @@ static HRESULT STDMETHODCALLTYPE Hooked_D3D3_CreateDevice(void* self, REFCLSID r
         void** vtable = *(void***)*device;
         if (hook_create(vtable[VT::IDirect3DDevice3::DrawPrimitive],        (void*)Hooked_D3D3_DrawPrimitive,        (void**)&g_origD3D3DrawPrimitive) &&
             hook_create(vtable[VT::IDirect3DDevice3::DrawIndexedPrimitive], (void*)Hooked_D3D3_DrawIndexedPrimitive, (void**)&g_origD3D3DrawIndexedPrimitive))
-            Logger::info("[D3D3Fix] Hooked IDirect3DDevice3::DrawPrimitive + DrawIndexedPrimitive");
+            Logger::info("[DDraw4Fix] Hooked IDirect3DDevice3::DrawPrimitive + DrawIndexedPrimitive");
     }
     return hr;
 }
@@ -201,11 +201,11 @@ static HRESULT STDMETHODCALLTYPE Hooked_DDrawQueryInterface(IUnknown* self, REFI
     if (riid == IID_IDirectDraw4_local && (s_force32bpp || s_force60hz) && !g_origSetDisplayMode) {
         void** vtable = *(void***)*ppv;
         if (hook_create(vtable[VT::IDirectDraw4::SetDisplayMode], (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode))
-            Logger::info("[D3D3Fix] Hooked IDirectDraw4::SetDisplayMode");
+            Logger::info("[DDraw4Fix] Hooked IDirectDraw4::SetDisplayMode");
     } else if (riid == IID_IDirect3D3_local && !g_origD3D3CreateDevice) {
         void** vtable = *(void***)*ppv;
         if (hook_create(vtable[VT::IDirect3D3::CreateDevice], (void*)Hooked_D3D3_CreateDevice, (void**)&g_origD3D3CreateDevice))
-            Logger::info("[D3D3Fix] Hooked IDirect3D3::CreateDevice");
+            Logger::info("[DDraw4Fix] Hooked IDirect3D3::CreateDevice");
     }
     return hr;
 }
@@ -220,7 +220,7 @@ static HRESULT WINAPI Hooked_DirectDrawCreate(GUID* lpGuid, LPDIRECTDRAW* lplpDD
         // the hook rather than installing a separate hook per interface.
         void** vtable = *(void***)*lplpDD;
         if (hook_create(vtable[VT::IDirectDraw::QueryInterface], (void*)Hooked_DDrawQueryInterface, (void**)&g_origDDrawQueryInterface))
-            Logger::info("[D3D3Fix] Hooked shared DDraw QueryInterface");
+            Logger::info("[DDraw4Fix] Hooked shared DDraw QueryInterface");
     }
     return hr;
 }
@@ -232,7 +232,7 @@ static bool TryHook32bpp() {
     if (hook_create_api(L"ddraw.dll", "DirectDrawCreate",
                         (void*)Hooked_DirectDrawCreate,
                         (void**)&g_origDirectDrawCreate)) {
-        Logger::info("[D3D3Fix] Hooked DirectDrawCreate in ddraw.dll");
+        Logger::info("[DDraw4Fix] Hooked DirectDrawCreate in ddraw.dll");
         s_32bppHooked = true;
         return true;
     }
@@ -245,7 +245,7 @@ static DWORD WINAPI Hook32bppWatchThread(LPVOID) {
         TryHook32bpp();
     }
     if (!s_32bppHooked)
-        Logger::warn("[D3D3Fix] Failed to hook DirectDrawCreate after retries");
+        Logger::warn("[DDraw4Fix] Failed to hook DirectDrawCreate after retries");
     return s_32bppHooked ? 0 : 1;
 }
 
@@ -470,7 +470,7 @@ static IDirect3DTexture2* GetTextureForSurface(IDirectDrawSurface7* surface) {
     if (!s_createTexSurfaceFuncAddr) return nullptr;
     if (!curName) return nullptr;
 
-    Logger::info("[D3D3Fix] BltFast: converting '" + std::string(curName) + "'");
+    Logger::info("[DDraw4Fix] BltFast: converting '" + std::string(curName) + "'");
 
     DDSURFACEDESC2 srcDesc = {};
     srcDesc.dwSize = sizeof(srcDesc);
@@ -627,11 +627,11 @@ static void InstallBltFastHook() {
     if (!g_origBlt)
         hook_create(vtable[VT::IDirectDrawSurface7::Blt], (void*)Hooked_Blt, (void**)&g_origBlt);
 
-    Logger::info("[D3D3Fix] Hooked backbuffer BltFast and Blt");
+    Logger::info("[DDraw4Fix] Hooked backbuffer BltFast and Blt");
 }
 
-static DWORD WINAPI D3D3FixThread(LPVOID) {
-    Logger::info("[D3D3Fix] Waiting for D3D device...");
+static DWORD WINAPI DDraw4FixThread(LPVOID) {
+    Logger::info("[DDraw4Fix] Waiting for D3D device...");
     IDirect3DDevice3** devicePtr = reinterpret_cast<IDirect3DDevice3**>(s_deviceAddr);
 
     for (int i = 0; i < 300; ++i) {
@@ -641,7 +641,7 @@ static DWORD WINAPI D3D3FixThread(LPVOID) {
             auto* wrapper = new D3DDevice3Wrapper(realDevice);
             g_deviceWrapper = wrapper;
             *devicePtr = static_cast<IDirect3DDevice3*>(wrapper);
-            Logger::info("[D3D3Fix] Wrapped IDirect3DDevice3 (real=" +
+            Logger::info("[DDraw4Fix] Wrapped IDirect3DDevice3 (real=" +
                 std::to_string(reinterpret_cast<uintptr_t>(realDevice)) + ")");
             Sleep(500);
             InstallBltFastHook();
@@ -649,13 +649,13 @@ static DWORD WINAPI D3D3FixThread(LPVOID) {
         }
     }
 
-    Logger::warn("[D3D3Fix] Timed out waiting for D3D device");
+    Logger::warn("[DDraw4Fix] Timed out waiting for D3D device");
     return 1;
 }
 
 // Public API
 
-void DDraw3Fix::install(const std::string& gameId, bool force32bpp, bool force60hz, bool pointFiltering, bool texelAlignment) {
+void DDraw4Fix::install(const std::string& gameId, bool force32bpp, bool force60hz, bool pointFiltering, bool texelAlignment) {
     // Game-independent hook chain: installs DirectDrawCreate detour if any of the
     // fixes is enabled. Works for both ez2dj_1st_se and rmbr_1st.
     s_force32bpp     = force32bpp;
@@ -665,12 +665,12 @@ void DDraw3Fix::install(const std::string& gameId, bool force32bpp, bool force60
 
     if (force32bpp || force60hz || pointFiltering || texelAlignment) {
         if (TryHook32bpp()) {
-            Logger::info("[D3D3Fix] Hook chain installed (32bpp=" + std::to_string(force32bpp) +
+            Logger::info("[DDraw4Fix] Hook chain installed (32bpp=" + std::to_string(force32bpp) +
                          " 60hz=" + std::to_string(force60hz) +
                          " pointFilter=" + std::to_string(pointFiltering) +
                          " texelAlign=" + std::to_string(texelAlignment) + ")");
         } else {
-            Logger::info("[D3D3Fix] ddraw.dll not ready, starting retry thread");
+            Logger::info("[DDraw4Fix] ddraw.dll not ready, starting retry thread");
             CreateThread(nullptr, 0, Hook32bppWatchThread, nullptr, 0, nullptr);
         }
     }
@@ -683,9 +683,9 @@ void DDraw3Fix::install(const std::string& gameId, bool force32bpp, bool force60
         s_createTexSurfaceFuncAddr = 0x422760;
         s_bmpCacheAddr           = 0xBAE268;
         s_bmpCacheCountAddr      = 0xBB6E68;
-        Logger::info("[D3D3Fix] Installing device wrapper for " + gameId);
-        CreateThread(nullptr, 0, D3D3FixThread, nullptr, 0, nullptr);
+        Logger::info("[DDraw4Fix] Installing device wrapper for " + gameId);
+        CreateThread(nullptr, 0, DDraw4FixThread, nullptr, 0, nullptr);
     } else {
-        Logger::info("[D3D3Fix] Device wrapper not installed for " + gameId);
+        Logger::info("[DDraw4Fix] Device wrapper not installed for " + gameId);
     }
 }

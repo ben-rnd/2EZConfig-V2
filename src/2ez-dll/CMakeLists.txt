@@ -10,7 +10,7 @@ add_library(2EZ SHARED
     sabin-io/sabin_io_hooks.cpp
     sabin-io/sabin_io_input.cpp
     sabin-io/sabin_io_output.cpp
-    ddraw/ddraw3_fix.cpp
+    ddraw/ddraw4_fix.cpp
     ddraw/ddraw7_fix.cpp
     ddraw/ddraw_vertex_utils.cpp
     $<$<CONFIG:Debug>:dll_hardlock_debug.cpp>

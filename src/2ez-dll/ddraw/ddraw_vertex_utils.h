@@ -2,7 +2,7 @@
 
 #include <windows.h>
 
-// FVF-stride / UV / vertex helpers used by both ddraw3_fix and ddraw7_fix.
+// FVF-stride / UV / vertex helpers used by both ddraw4_fix and ddraw7_fix.
 // Not hook code — pure math.
 namespace DDrawVertexUtils {
     DWORD computeFvfStride(DWORD fvf);
