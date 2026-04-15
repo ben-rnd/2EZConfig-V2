@@ -28,6 +28,7 @@ target_include_directories(2EZ PRIVATE
 target_link_libraries(2EZ PRIVATE
     hardlock
     memutils
+    hooks
     bindings
     patches
     logger

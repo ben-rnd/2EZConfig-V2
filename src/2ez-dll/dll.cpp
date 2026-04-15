@@ -24,6 +24,7 @@ extern "C" {
 #include "utilities.h"
 #include "ddraw3_fix.h"
 #include "ddraw7_fix.h"
+#include "hooks.h"
 
 extern "C" __declspec(dllexport) void hook_init(void) {}
 
@@ -252,8 +253,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         loadSettings(hModule);
         initLogger();
+        hooks_init();
         earlyInit();
         CreateThread(nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(InitThread), nullptr, 0, nullptr);
+    } else if (reason == DLL_PROCESS_DETACH) {
+        hooks_shutdown();
     }
     return TRUE;
 }

@@ -148,6 +148,16 @@ FetchContent_Declare(usbhidusage
 )
 FetchContent_MakeAvailable(usbhidusage)
 
+# MinHook — unified inline hooking library
+FetchContent_Declare(minhook
+    GIT_REPOSITORY https://github.com/TsudaKageyu/minhook.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(minhook)
+target_compile_options(minhook PRIVATE -w)
+
+add_subdirectory(src/libs/hooks)
 add_subdirectory(src/libs/memutils)
 add_subdirectory(src/libs/hardlock)
 add_subdirectory(src/libs/injector)
