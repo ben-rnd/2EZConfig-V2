@@ -158,7 +158,6 @@ FetchContent_MakeAvailable(minhook)
 target_compile_options(minhook PRIVATE -w)
 
 add_subdirectory(src/libs/hooks)
-add_subdirectory(src/libs/memutils)
 add_subdirectory(src/libs/hardlock)
 add_subdirectory(src/libs/injector)
 add_subdirectory(src/libs/logger)
