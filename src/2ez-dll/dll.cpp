@@ -183,11 +183,13 @@ static void earlyInit() {
             if (s_gameId == "ez2dj_1st_se" || s_gameId == "rmbr_1st") {
                 DDraw3Fix::install(s_gameId,
                     s_settings->gameSettings().value("ddraw3_force_32bpp", false),
+                    s_settings->gameSettings().value("ddraw3_force_60hz", false),
                     s_settings->gameSettings().value("ddraw3_point_filtering", false),
                     s_settings->gameSettings().value("ddraw3_texel_alignment", false));
             } else {
                 DDraw7Fix::install(
                     s_settings->gameSettings().value("force_32bit_display", false),
+                    s_settings->gameSettings().value("force_60hz", false),
                     s_settings->gameSettings().value("point_filtering", false),
                     s_settings->gameSettings().value("texel_alignment", false));
             }
@@ -197,6 +199,7 @@ static void earlyInit() {
             EZ2DancerIO::installHooks(s_settings);
             DDraw7Fix::install(
                 s_settings->gameSettings().value("force_32bit_display", false),
+                s_settings->gameSettings().value("force_60hz", false),
                 s_settings->gameSettings().value("point_filtering", false),
                 s_settings->gameSettings().value("texel_alignment", false));
             break;

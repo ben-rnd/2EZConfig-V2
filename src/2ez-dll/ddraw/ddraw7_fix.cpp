@@ -35,6 +35,7 @@ typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateDevice)(IDirect3D7* self, REFCLSID
 // Static state
 
 static bool s_force32bpp = false;
+static bool s_force60hz = false;
 static bool s_pointFilter = false;
 static bool s_texelAlignment = false;
 
@@ -133,7 +134,9 @@ static HRESULT STDMETHODCALLTYPE Hooked_DDraw7QueryInterface(IUnknown* self, REF
 // Vtable chain: SetDisplayMode (force 32-bit)
 
 static HRESULT STDMETHODCALLTYPE Hooked_SetDisplayMode(IDirectDraw7* self, DWORD width, DWORD height, DWORD bpp, DWORD refreshRate, DWORD flags) {
-    return g_origSetDisplayMode(self, width, height, 32, refreshRate, flags);
+    DWORD newBpp     = s_force32bpp ? 32 : bpp;
+    DWORD newRefresh = s_force60hz  ? 60 : refreshRate;
+    return g_origSetDisplayMode(self, width, height, newBpp, newRefresh, flags);
 }
 
 // IAT hook: DirectDrawCreateEx — entry point for all hooks
@@ -144,7 +147,7 @@ static HRESULT WINAPI Hooked_DirectDrawCreateEx(GUID* lpGuid, LPVOID* lplpDD, RE
 
     void** vtable = *(void***)*lplpDD;
 
-    if (s_force32bpp && !g_origSetDisplayMode) {
+    if ((s_force32bpp || s_force60hz) && !g_origSetDisplayMode) {
         if (hook_create(vtable[VT::IDirectDraw7::SetDisplayMode], (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode))
             Logger::info("[DDraw7Fix] Hooked IDirectDraw7::SetDisplayMode");
     }
@@ -185,15 +188,17 @@ static DWORD WINAPI HookWatchThread(LPVOID) {
     return s_hooked ? 0 : 1;
 }
 
-void DDraw7Fix::install(bool force32bpp, bool pointFilter, bool texelAlignment) {
-    if (!force32bpp && !pointFilter && !texelAlignment) return;
+void DDraw7Fix::install(bool force32bpp, bool force60hz, bool pointFilter, bool texelAlignment) {
+    if (!force32bpp && !force60hz && !pointFilter && !texelAlignment) return;
 
     s_force32bpp = force32bpp;
+    s_force60hz = force60hz;
     s_pointFilter = pointFilter;
     s_texelAlignment = texelAlignment;
 
     if (TryHookInline()) {
         Logger::info("[DDraw7Fix] Installed (32bpp=" + std::to_string(force32bpp) +
+                     " 60hz=" + std::to_string(force60hz) +
                      " pointFilter=" + std::to_string(pointFilter) +
                      " texelAlignment=" + std::to_string(texelAlignment) + ")");
         return;

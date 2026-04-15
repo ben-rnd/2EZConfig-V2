@@ -69,6 +69,7 @@ static uintptr_t s_bmpCacheCountAddr = 0;
 
 // Game-independent fix toggles (applied via vtable chain, work for both ez2dj_1st_se and rmbr_1st)
 static bool s_force32bpp = false;
+static bool s_force60hz = false;
 static bool s_pointFiltering = false;
 static bool s_texelAlignment = false;
 
@@ -102,8 +103,12 @@ static const GUID IID_IDirect3D3_local =
 
 // ---- SetDisplayMode hook (force 32bpp) ----
 static HRESULT STDMETHODCALLTYPE Hooked_SetDisplayMode(void* self, DWORD w, DWORD h, DWORD bpp, DWORD refresh, DWORD flags) {
-    Logger::info("[D3D3Fix] SetDisplayMode " + std::to_string(w) + "x" + std::to_string(h) + " bpp " + std::to_string(bpp) + " -> 32");
-    return g_origSetDisplayMode(self, w, h, 32, refresh, flags);
+    DWORD newBpp     = s_force32bpp ? 32 : bpp;
+    DWORD newRefresh = s_force60hz  ? 60 : refresh;
+    Logger::info("[D3D3Fix] SetDisplayMode " + std::to_string(w) + "x" + std::to_string(h) +
+                 " bpp " + std::to_string(bpp) + "->" + std::to_string(newBpp) +
+                 " refresh " + std::to_string(refresh) + "->" + std::to_string(newRefresh));
+    return g_origSetDisplayMode(self, w, h, newBpp, newRefresh, flags);
 }
 
 // ---- DrawPrimitive hook (point filter + texel alignment) ----
@@ -193,7 +198,7 @@ static HRESULT STDMETHODCALLTYPE Hooked_DDrawQueryInterface(IUnknown* self, REFI
     HRESULT hr = g_origDDrawQueryInterface(self, riid, ppv);
     if (!SUCCEEDED(hr) || !ppv || !*ppv) return hr;
 
-    if (riid == IID_IDirectDraw4_local && s_force32bpp && !g_origSetDisplayMode) {
+    if (riid == IID_IDirectDraw4_local && (s_force32bpp || s_force60hz) && !g_origSetDisplayMode) {
         void** vtable = *(void***)*ppv;
         if (hook_create(vtable[VT::IDirectDraw4::SetDisplayMode], (void*)Hooked_SetDisplayMode, (void**)&g_origSetDisplayMode))
             Logger::info("[D3D3Fix] Hooked IDirectDraw4::SetDisplayMode");
@@ -650,16 +655,18 @@ static DWORD WINAPI D3D3FixThread(LPVOID) {
 
 // Public API
 
-void DDraw3Fix::install(const std::string& gameId, bool force32bpp, bool pointFiltering, bool texelAlignment) {
+void DDraw3Fix::install(const std::string& gameId, bool force32bpp, bool force60hz, bool pointFiltering, bool texelAlignment) {
     // Game-independent hook chain: installs DirectDrawCreate detour if any of the
-    // three fixes is enabled. Works for both ez2dj_1st_se and rmbr_1st.
+    // fixes is enabled. Works for both ez2dj_1st_se and rmbr_1st.
     s_force32bpp     = force32bpp;
+    s_force60hz      = force60hz;
     s_pointFiltering = pointFiltering;
     s_texelAlignment = texelAlignment;
 
-    if (force32bpp || pointFiltering || texelAlignment) {
+    if (force32bpp || force60hz || pointFiltering || texelAlignment) {
         if (TryHook32bpp()) {
             Logger::info("[D3D3Fix] Hook chain installed (32bpp=" + std::to_string(force32bpp) +
+                         " 60hz=" + std::to_string(force60hz) +
                          " pointFilter=" + std::to_string(pointFiltering) +
                          " texelAlign=" + std::to_string(texelAlignment) + ")");
         } else {

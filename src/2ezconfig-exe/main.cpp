@@ -469,6 +469,9 @@ static void renderPatchesTab() {
         gameCheckbox("Force 32-bit Display Mode", "force_32bit_display", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Forces 32-bit color in SetDisplayMode.\nFixes crashes on Windows 10/11");
+        gameCheckbox("Force 60Hz Refresh Rate", "force_60hz", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Forces 60Hz refresh in SetDisplayMode.\nReplaces the pattern-scan 60Hz byte patch.");
         gameCheckbox("Point Texture Filtering", "point_filtering", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Forces POINT filtering instead of LINEAR.\nPrevents bilinear blurring on textures.\n(eg. 2nd trax STREETMIX CRT filter)");
@@ -491,6 +494,9 @@ static void renderPatchesTab() {
         gameCheckbox("Force 32-bit Display Mode", "ddraw3_force_32bpp", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Forces 32-bit color in SetDisplayMode.\nFixes crashes on systems that don't support 16-bit modes.");
+        gameCheckbox("Force 60Hz Refresh Rate", "ddraw3_force_60hz", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Forces 60Hz refresh in SetDisplayMode.\nReplaces the pattern-scan 60Hz byte patch.");
         gameCheckbox("Point Texture Filtering", "ddraw3_point_filtering", false);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Forces POINT filtering instead of LINEAR.\nPrevents bilinear blurring on textures.");

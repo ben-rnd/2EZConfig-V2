@@ -16,5 +16,5 @@
 #include <string>
 
 namespace DDraw7Fix {
-    void install(bool force32bpp, bool pointFilter, bool texelAlignment);
+    void install(bool force32bpp, bool force60hz, bool pointFilter, bool texelAlignment);
 }
