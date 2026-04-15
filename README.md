@@ -1,4 +1,4 @@
-# EZ2Config V2 ~ it rules once again ~
+# 2EZConfig V2 ~ it rules once again ~
 A Complete Rewrite of the orginal [2EZConfig](https://github.com/ben-rnd/2EZConfig).
 
 This tool is designed to enable USB controllers to work with all versions of EZ2DJ/AC, EZ2Dancer and Sabin Sound Star: Renascence Burst, as well as offering various patches that make the home experience more enjoyable. 
@@ -15,6 +15,7 @@ This tool is designed to enable USB controllers to work with all versions of EZ2
 - "Skip UI" option to boot directly into game once settings are set. Great for arcade like setups.
 - Multi DLL injection. If youve got your own EZ2 mods, 2EZconfig can inject them all in one place.
 - Support for 6th Trax "Remember 1st" mode. This mode is accesed by the game closing itself and opening an entirely different executable. 2EZConfig handles this without a hitch.
+- Optional DDRAW fixes built in to improve visuals on modern hardware.
 
 ## Setup 
 
