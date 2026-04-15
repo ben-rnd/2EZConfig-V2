@@ -1,5 +1,5 @@
 {
-  "ver": 52,
+  "ver": 54,
   "shared": {
     "fix_spotlight_obo": {
         "name": "Fix Spotlights",
@@ -52,7 +52,8 @@
         { "offset": "0x3198C", "bytes": "00" },
         { "offset": "0x581D0", "bytes": "2E 00 00 00 00 00 00 00" },
         { "offset": "0x581F4", "bytes": "54 45 53 54 2E 45 58 45 00 00 00 00 00 00 00 00 00 00" },
-        { "offset": "0x37C40", "bytes": "B8 01 00 00 00 C3", "notes": "Stubs setupDisplayMode to return 1. Prevents ChangeDisplaySettingsExA from permanently changing desktop resolution to 640x480x16." }
+        { "offset": "0x37C40", "bytes": "B8 01 00 00 00 C3", "notes": "Stubs setupDisplayMode to return 1. Prevents ChangeDisplaySettingsExA from permanently changing desktop resolution to 640x480x16." },
+        { "offset": "0x370E2", "bytes": "EB", "notes": "Fixes an issue where any '-' in a folder path is intepreted as a arg" }
       ]
     },
     "restore_opening": {
