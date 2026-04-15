@@ -7,9 +7,6 @@ void DBG_print_buffer(unsigned char* data, size_t size);
 void DBG_printfA(const char* fmt, ...);
 void DBG_printfW(const wchar_t* format, ...);
 
-// HotPatch — now in memutils library
-#include "memutils.h"
-
 // Utils
 int GetDirectoryPath(char* lpFilename, unsigned long nSize);
 void ResolveFullCurrentPath(char* file_name, char* out_path);

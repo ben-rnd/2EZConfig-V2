@@ -7,7 +7,7 @@ add_library(hardlock STATIC
     ks.misc.c
 )
 target_include_directories(hardlock PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(hardlock PUBLIC memutils)
+target_link_libraries(hardlock PUBLIC hooks)
 
 # Suppress warnings from third-party code
 target_compile_options(hardlock PRIVATE -w)
