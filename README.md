@@ -30,6 +30,7 @@ If you're playing on Windows Vista or later I highly reccomend using [DDrawCompa
 #### Notes
 - Do not put any "." characters in any folders containing your EZ2 data, this breaks how to game reads its .ini configurations files and may prevent the game from working at all. When the game launches, it will scan the entire path and break on the first "." detected, if this is NOT the .ini file it will load defualt settings which often make the game unplayable.
 - When Upgrading to new version of 2EZconfig, ensure all copies are updated so that patches are applied correctly. Patches.json has been revised twice to better accomodate more complex patches and may break backwards compatibilitly.
+- 1st SE expects to run on the C drive regardless of the path fix applied in the compatibility patch. ON WinXP always run 1stSE from the C Drive. On Win11 this does not seem to be an issue.
 
 ## Get Involved
 
