@@ -485,8 +485,8 @@ static void renderPatchesTab() {
 
     if (showDDraw4Fixes) {
         ImGui::PushID("ddraw4");
+        ImGui::TextDisabled("DDraw4 Rendering Fixes (1st/ 1st SE)");
         if(gameId == "ez2dj_1st_se"){
-            ImGui::TextDisabled("DDraw4 Rendering Fixes (1st/ 1st SE)");
             gameCheckbox("Enable DDraw4 Fix", "ddraw4_fix", false);
              if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Wraps the D3D3 device to fix rendering on Windows XP.\nFixes ghosting, missing backgrounds, and broken fades.");
@@ -505,6 +505,30 @@ static void renderPatchesTab() {
             ImGui::SetTooltip("Subtracts 0.5 from vertex coordinates.\nHelps with various texture alignment issues.");
         ImGui::PopID();
     }
+
+    {
+        ImGui::TextDisabled("Software EQ (Vista+ Only)");
+        gameCheckbox("Enable WASAPI Audio EQ", "audio_eq", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Enables the ingame bass/treble features to be re-routed through WASAPI,\nMaking them useable without SoundBlaster Live! CT4670 Soundcard.\nOnly available on Vista or later.");
+
+        if (g_app.settings.gameSettings().value("audio_eq", false)) {
+            ImGui::Indent();
+            gameCheckbox("Second-Order Filter (12 dB/oct)", "audio_eq_second_order", false);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Uses a steeper 12 dB/oct shelf filter, closer to the\nreal EMU10K1 DSP. Default (off) uses a gentler 6 dB/oct.");
+
+            float gain = g_app.settings.gameSettings().value("audio_eq_gain", 1.0f);
+            if (ImGui::SliderFloat("Gain Multiplier", &gain, 0.0f, 3.0f, "%.1fx")) {
+                g_app.settings.gameSettings()["audio_eq_gain"] = gain;
+                g_app.settings.save();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Scales the EQ effect strength. default = 1.0");
+            ImGui::Unindent();
+        }
+    }
+
 
 }
 
