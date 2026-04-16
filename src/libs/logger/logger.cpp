@@ -96,11 +96,15 @@ void Logger::info (const std::string& msg) { log(LogLevel::INFO, msg); }
 void Logger::warn (const std::string& msg) { log(LogLevel::WARN, msg); }
 void Logger::error(const std::string& msg) { log(LogLevel::ERR,  msg); }
 
-void Logger::warnOnce(const std::string& msg) {
+static void logOnce(LogLevel level, const std::string& msg) {
     acquireLock();
     bool inserted = s_seenOnce.insert(msg).second;
     releaseLock();
     if (inserted) {
-        log(LogLevel::WARN, msg);
+        log(level, msg);
     }
 }
+
+void Logger::infoOnce (const std::string& msg) { logOnce(LogLevel::INFO, msg); }
+void Logger::warnOnce (const std::string& msg) { logOnce(LogLevel::WARN, msg); }
+void Logger::errorOnce(const std::string& msg) { logOnce(LogLevel::ERR,  msg); }

@@ -25,6 +25,7 @@ extern "C" {
 #include "utilities.h"
 #include "ddraw4_fix.h"
 #include "ddraw7_fix.h"
+#include "dsound_eq.h"
 #include "hooks.h"
 
 extern "C" __declspec(dllexport) void hook_init(void) {}
@@ -170,6 +171,11 @@ static void earlyInit() {
             resolveRemember1st();
             initHardlock();
             EZ2DJIO::installHooks(s_settings);
+            // Software EQ: replaces SoundBlaster-only hardware bass/treble
+            if (s_settings->gameSettings().value("dsound_eq", false)) {
+                float eqGain = s_settings->gameSettings().value("dsound_eq_gain", 1.0f);
+                DSoundEQ::install(eqGain);
+            }
             // DDraw4 era (1st SE, Remember 1st) vs DDraw7 era (2nd TraX onwards).
             // Mutually exclusive: both hooks target ddraw.dll's shared QueryInterface
             // dispatcher, which would collide under MinHook if installed together.
