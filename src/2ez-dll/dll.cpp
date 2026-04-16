@@ -182,6 +182,7 @@ static void earlyInit() {
             // dispatcher, which would collide under MinHook if installed together.
             if (s_gameId == "ez2dj_1st_se" || s_gameId == "rmbr_1st") {
                 DDraw4Fix::install(s_gameId,
+                    s_settings->gameSettings().value("ddraw4_fix", false),
                     s_settings->gameSettings().value("ddraw4_force_32bpp", false),
                     s_settings->gameSettings().value("ddraw4_force_60hz", false),
                     s_settings->gameSettings().value("ddraw4_point_filtering", false),

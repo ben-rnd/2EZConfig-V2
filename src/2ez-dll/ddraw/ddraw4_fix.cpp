@@ -655,7 +655,7 @@ static DWORD WINAPI DDraw4FixThread(LPVOID) {
 
 // Public API
 
-void DDraw4Fix::install(const std::string& gameId, bool force32bpp, bool force60hz, bool pointFiltering, bool texelAlignment) {
+void DDraw4Fix::install(const std::string& gameId, bool ddraw4Fix, bool force32bpp, bool force60hz, bool pointFiltering, bool texelAlignment) {
     // Game-independent hook chain: installs DirectDrawCreate detour if any of the
     // fixes is enabled. Works for both ez2dj_1st_se and rmbr_1st.
     s_force32bpp     = force32bpp;
@@ -676,7 +676,7 @@ void DDraw4Fix::install(const std::string& gameId, bool force32bpp, bool force60
     }
 
     // 1st SE specific: device wrapper + BltFast/Blt hooks require per-game addresses
-    if (gameId == "ez2dj_1st_se") {
+    if (gameId == "ez2dj_1st_se" && ddraw4Fix) {
         s_deviceAddr             = 0x1EB7CC0;
         s_backbufferAddr         = 0x1EB7D08;
         s_texCapsAddr            = 0x1462880;
