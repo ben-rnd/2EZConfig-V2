@@ -25,7 +25,7 @@ extern "C" {
 #include "utilities.h"
 #include "ddraw4_fix.h"
 #include "ddraw7_fix.h"
-#include "dsound_eq.h"
+#include "audio_eq.h"
 #include "hooks.h"
 
 extern "C" __declspec(dllexport) void hook_init(void) {}
@@ -171,37 +171,17 @@ static void earlyInit() {
             resolveRemember1st();
             initHardlock();
             EZ2DJIO::installHooks(s_settings);
-            // Software EQ: replaces SoundBlaster-only hardware bass/treble
-            if (s_settings->gameSettings().value("dsound_eq", false)) {
-                float eqGain = s_settings->gameSettings().value("dsound_eq_gain", 1.0f);
-                DSoundEQ::install(eqGain);
-            }
-            // DDraw4 era (1st SE, Remember 1st) vs DDraw7 era (2nd TraX onwards).
-            // Mutually exclusive: both hooks target ddraw.dll's shared QueryInterface
-            // dispatcher, which would collide under MinHook if installed together.
+            AudioEQ::install(s_settings);
             if (s_gameId == "ez2dj_1st_se" || s_gameId == "rmbr_1st") {
-                DDraw4Fix::install(s_gameId,
-                    s_settings->gameSettings().value("ddraw4_fix", false),
-                    s_settings->gameSettings().value("ddraw4_force_32bpp", false),
-                    s_settings->gameSettings().value("ddraw4_force_60hz", false),
-                    s_settings->gameSettings().value("ddraw4_point_filtering", false),
-                    s_settings->gameSettings().value("ddraw4_texel_alignment", false));
+                DDraw4Fix::install(s_gameId, s_settings);
             } else {
-                DDraw7Fix::install(
-                    s_settings->gameSettings().value("force_32bit_display", false),
-                    s_settings->gameSettings().value("force_60hz", false),
-                    s_settings->gameSettings().value("point_filtering", false),
-                    s_settings->gameSettings().value("texel_alignment", false));
+                DDraw7Fix::install(s_settings);
             }
             break;
         case GameFamily::EZ2Dancer:
             initHardlock();
             EZ2DancerIO::installHooks(s_settings);
-            DDraw7Fix::install(
-                s_settings->gameSettings().value("force_32bit_display", false),
-                s_settings->gameSettings().value("force_60hz", false),
-                s_settings->gameSettings().value("point_filtering", false),
-                s_settings->gameSettings().value("texel_alignment", false));
+            DDraw7Fix::install(s_settings);
             break;
         case GameFamily::SabinSS:
             SabinIO::installHooks();

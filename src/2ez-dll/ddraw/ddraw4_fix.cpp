@@ -14,6 +14,7 @@
  */
 
 #include "ddraw4_fix.h"
+#include "settings.h"
 #include "ddraw_vertex_utils.h"
 #include "ddraw_vtable.h"
 #include "hooks.h"
@@ -655,20 +656,20 @@ static DWORD WINAPI DDraw4FixThread(LPVOID) {
 
 // Public API
 
-void DDraw4Fix::install(const std::string& gameId, bool ddraw4Fix, bool force32bpp, bool force60hz, bool pointFiltering, bool texelAlignment) {
-    // Game-independent hook chain: installs DirectDrawCreate detour if any of the
-    // fixes is enabled. Works for both ez2dj_1st_se and rmbr_1st.
-    s_force32bpp     = force32bpp;
-    s_force60hz      = force60hz;
-    s_pointFiltering = pointFiltering;
-    s_texelAlignment = texelAlignment;
+void DDraw4Fix::install(const std::string& gameId, SettingsManager* settings) {
+    auto& gs = settings->gameSettings();
+    bool enableFix   = gs.value("ddraw4_fix", false);
+    s_force32bpp     = gs.value("ddraw4_force_32bpp", false);
+    s_force60hz      = gs.value("ddraw4_force_60hz", false);
+    s_pointFiltering = gs.value("ddraw4_point_filtering", false);
+    s_texelAlignment = gs.value("ddraw4_texel_alignment", false);
 
-    if (force32bpp || force60hz || pointFiltering || texelAlignment) {
+    if (s_force32bpp || s_force60hz || s_pointFiltering || s_texelAlignment) {
         if (TryHook32bpp()) {
-            Logger::info("[DDraw4Fix] Hook chain installed (32bpp=" + std::to_string(force32bpp) +
-                         " 60hz=" + std::to_string(force60hz) +
-                         " pointFilter=" + std::to_string(pointFiltering) +
-                         " texelAlign=" + std::to_string(texelAlignment) + ")");
+            Logger::info("[DDraw4Fix] Hook chain installed (32bpp=" + std::to_string(s_force32bpp) +
+                         " 60hz=" + std::to_string(s_force60hz) +
+                         " pointFilter=" + std::to_string(s_pointFiltering) +
+                         " texelAlign=" + std::to_string(s_texelAlignment) + ")");
         } else {
             Logger::info("[DDraw4Fix] ddraw.dll not ready, starting retry thread");
             CreateThread(nullptr, 0, Hook32bppWatchThread, nullptr, 0, nullptr);
@@ -676,7 +677,7 @@ void DDraw4Fix::install(const std::string& gameId, bool ddraw4Fix, bool force32b
     }
 
     // 1st SE specific: device wrapper + BltFast/Blt hooks require per-game addresses
-    if (gameId == "ez2dj_1st_se" && ddraw4Fix) {
+    if (gameId == "ez2dj_1st_se" && enableFix) {
         s_deviceAddr             = 0x1EB7CC0;
         s_backbufferAddr         = 0x1EB7D08;
         s_texCapsAddr            = 0x1462880;
