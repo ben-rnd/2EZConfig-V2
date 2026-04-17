@@ -8,11 +8,9 @@
  * This is the same point in the pipeline where the SoundBlaster's
  * EMU10K1 DSP would process the audio - after all mixing, before output.
  *
- * On XP (no WASAPI), the feature is gracefully disabled. The mixer
- * hooks still fake the controls so the game doesn't crash.
+ * On XP (no WASAPI), the feature is gracefully disabled.
  *
- * The EQ uses shelf filters inspired by the SoundBlaster Live! CT4670
- * (EMU10K1) DSP tone controls. Supports first-order (6 dB/oct, gentler)
+ * The EQ uses shelf filters, Supports first-order (6 dB/oct, gentler)
  * or second-order (12 dB/oct, closer to EMU10K1) via a user toggle.
  */
 
