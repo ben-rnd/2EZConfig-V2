@@ -1,27 +1,25 @@
 #pragma once
 
 /**
- * DDraw Render Fixes for EZ2DJ 1st TraX SE
+ * DDraw4 Render Fixes for EZ2DJ 1st TraX SE / Remember 1st
  *
- * Fixes rendering issues present on non-ForceWare era drivers on Windows XP.
- * 99% of these problems are not present on win10/11 when using ddraw compat with the
- * simple 1st SE compatiblilty patch ("Fix Windows XP+ Compatibility")
- * Wraps IDirect3DDevice3 and hooks BltFast/Blt on the backbuffer.
+ * Hooks DirectDrawCreate -> IDirectDraw4 -> IDirect3D3 -> IDirect3DDevice3
+ * to apply display-mode overrides (32bpp, 60Hz), point filtering, and
+ * texel alignment. For 1st SE, also wraps the D3D3 device and hooks
+ * BltFast/Blt on the backbuffer to fix rendering on Windows XP.
  *
- * - Backbuffer clear via opaque black quad each frame (prevents ghosting)
- * - Point texture filtering (optional, prevents bilinear blurring)
- * - BltFast/Blt source blits rerouted through D3D textured quads
- * - Blt COLORFILL rerouted through D3D colored quad
- * - D3D scene kept open during mixed DDraw/D3D rendering
- * - Transition hold: prevents black screen during scene transitions
- *
- * Supported games: ez2dj_1st_se
- * Fixes do not currently work for remember 1st, low prio as ghosting only occurs on a select few song BG's.
- * otherwise generally works fine.
+ * Reads settings from SettingsManager:
+ *   ddraw4_fix              (bool) — enable device wrapper (1st SE only)
+ *   ddraw4_force_32bpp      (bool) — force 32-bit display mode
+ *   ddraw4_force_60hz       (bool) — force 60Hz refresh rate
+ *   ddraw4_point_filtering  (bool) — force POINT texture filtering
+ *   ddraw4_texel_alignment  (bool) — apply -0.5px texel offset
  */
 
 #include <string>
 
+class SettingsManager;
+
 namespace DDraw4Fix {
-    void install(const std::string& gameId, bool ddrawFix, bool force32bpp, bool force60hz, bool pointFiltering, bool texelAlignment);
+    void install(const std::string& gameId, SettingsManager* settings);
 }

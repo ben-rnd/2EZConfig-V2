@@ -13,9 +13,9 @@ add_library(2EZ SHARED
     ddraw/ddraw4_fix.cpp
     ddraw/ddraw7_fix.cpp
     ddraw/ddraw_vertex_utils.cpp
-    dsound-eq/dsound_eq.cpp
-    dsound-eq/mixer_hook.cpp
-    dsound-eq/biquad.c
+    audio-eq/audio_eq.cpp
+    audio-eq/mixer_hook.cpp
+    audio-eq/biquad.c
     $<$<CONFIG:Debug>:dll_hardlock_debug.cpp>
 )
 set_target_properties(2EZ PROPERTIES PREFIX "" OUTPUT_NAME "2EZ")
@@ -26,7 +26,7 @@ target_include_directories(2EZ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/ez2dancer-io
     ${CMAKE_CURRENT_SOURCE_DIR}/sabin-io
     ${CMAKE_CURRENT_SOURCE_DIR}/ddraw
-    ${CMAKE_CURRENT_SOURCE_DIR}/dsound-eq
+    ${CMAKE_CURRENT_SOURCE_DIR}/audio-eq
 )
 
 target_link_libraries(2EZ PRIVATE

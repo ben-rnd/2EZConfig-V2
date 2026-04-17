@@ -7,6 +7,7 @@
 #include "ddraw_vtable.h"
 #include "hooks.h"
 #include "logger.h"
+#include "settings.h"
 
 #include <windows.h>
 #include <d3d.h>
@@ -188,19 +189,19 @@ static DWORD WINAPI HookWatchThread(LPVOID) {
     return s_hooked ? 0 : 1;
 }
 
-void DDraw7Fix::install(bool force32bpp, bool force60hz, bool pointFilter, bool texelAlignment) {
-    if (!force32bpp && !force60hz && !pointFilter && !texelAlignment) return;
+void DDraw7Fix::install(SettingsManager* settings) {
+    s_force32bpp     = settings->gameSettings().value("force_32bit_display", false);
+    s_force60hz      = settings->gameSettings().value("force_60hz", false);
+    s_pointFilter    = settings->gameSettings().value("point_filtering", false);
+    s_texelAlignment = settings->gameSettings().value("texel_alignment", false);
 
-    s_force32bpp = force32bpp;
-    s_force60hz = force60hz;
-    s_pointFilter = pointFilter;
-    s_texelAlignment = texelAlignment;
+    if (!s_force32bpp && !s_force60hz && !s_pointFilter && !s_texelAlignment) return;
 
     if (TryHookInline()) {
-        Logger::info("[DDraw7Fix] Installed (32bpp=" + std::to_string(force32bpp) +
-                     " 60hz=" + std::to_string(force60hz) +
-                     " pointFilter=" + std::to_string(pointFilter) +
-                     " texelAlignment=" + std::to_string(texelAlignment) + ")");
+        Logger::info("[DDraw7Fix] Installed (32bpp=" + std::to_string(s_force32bpp) +
+                     " 60hz=" + std::to_string(s_force60hz) +
+                     " pointFilter=" + std::to_string(s_pointFilter) +
+                     " texelAlignment=" + std::to_string(s_texelAlignment) + ")");
         return;
     }
 
