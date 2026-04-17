@@ -506,17 +506,17 @@ static void renderPatchesTab() {
         ImGui::PopID();
     }
 
-    {
+    if(familyFromGameId(gameId) == GameFamily::EZ2DJ || familyFromGameId(gameId) == GameFamily::EZ2Dancer) {
         ImGui::TextDisabled("Software EQ (Vista+ Only)");
         gameCheckbox("Enable WASAPI Audio EQ", "audio_eq", false);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Enables the ingame bass/treble features to be re-routed through WASAPI,\nMaking them useable without SoundBlaster Live! CT4670 Soundcard.\nOnly available on Vista or later.");
+            ImGui::SetTooltip("Re-routes ingame bass/treble features through WASAPI,\nmaking them useable without SoundBlaster Live! Soundcard.\nOnly works on Vista or later.");
 
         if (g_app.settings.gameSettings().value("audio_eq", false)) {
             ImGui::Indent();
-            gameCheckbox("Second-Order Filter (12 dB/oct)", "audio_eq_second_order", false);
+            gameCheckbox("Second-Order Filter", "audio_eq_second_order", false);
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Uses a steeper 12 dB/oct shelf filter, closer to the\nreal EMU10K1 DSP. Default (off) uses a gentler 6 dB/oct.");
+                ImGui::SetTooltip("Uses a steeper 12 dB/oct shelf filter, closer to the\nreal SoundBlaster Live!. Default (off) uses a gentler 6 dB/oct.");
 
             float gain = g_app.settings.gameSettings().value("audio_eq_gain", 1.0f);
             if (ImGui::SliderFloat("Gain Multiplier", &gain, 0.0f, 3.0f, "%.1fx")) {

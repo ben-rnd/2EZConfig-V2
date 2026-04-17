@@ -181,6 +181,7 @@ static void earlyInit() {
         case GameFamily::EZ2Dancer:
             initHardlock();
             EZ2DancerIO::installHooks(s_settings);
+            AudioEQ::install(s_settings);
             DDraw7Fix::install(s_settings);
             break;
         case GameFamily::SabinSS:
