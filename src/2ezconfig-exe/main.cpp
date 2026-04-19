@@ -507,10 +507,26 @@ static void renderPatchesTab() {
     }
 
     if(familyFromGameId(gameId) == GameFamily::EZ2DJ || familyFromGameId(gameId) == GameFamily::EZ2Dancer) {
-        ImGui::TextDisabled("Software EQ (Vista+ Only)");
+        ImGui::TextDisabled("Audio (Vista+ Only)");
+        gameCheckbox("Enable Hypersonik (WASAPI Excusive mode)", "hypersonik", false);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Replaces DirectSound with Hypersonik,\na WASAPI exclusive mode DirectSound shim for low latency audio.\nRequires Vista or later.");
+
+        if (g_app.settings.gameSettings().value("hypersonik", false)) {
+            ImGui::Indent();
+            int vol = g_app.settings.gameSettings().value("hypersonik_volume", 75);
+            if (ImGui::SliderInt("Master Volume", &vol, 0, 100, "%d%%")) {
+                g_app.settings.gameSettings()["hypersonik_volume"] = vol;
+                g_app.settings.save();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Limit max volume requested. By default EZ2 requests 100%% volume.\nExclusive mode bypasses the Windows volume mixer.");
+            ImGui::Unindent();
+        }
+
         gameCheckbox("Enable WASAPI Audio EQ", "audio_eq", false);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Re-routes ingame bass/treble features through WASAPI,\nmaking them useable without SoundBlaster Live! Soundcard.\nOnly works on Vista or later.");
+            ImGui::SetTooltip("Re-routes ingame bass/treble features through WASAPI,\nmaking them useable without a SoundBlaster Live! Soundcard.\nRequires Vista or later.");
 
         if (g_app.settings.gameSettings().value("audio_eq", false)) {
             ImGui::Indent();
