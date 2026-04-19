@@ -26,6 +26,7 @@ extern "C" {
 #include "ddraw4_fix.h"
 #include "ddraw7_fix.h"
 #include "audio_eq.h"
+#include "hypersonik_hook.h"
 #include "hooks.h"
 
 extern "C" __declspec(dllexport) void hook_init(void) {}
@@ -171,6 +172,10 @@ static void earlyInit() {
             resolveRemember1st();
             initHardlock();
             EZ2DJIO::installHooks(s_settings);
+            if (s_settings->gameSettings().value("hypersonik", false)) {
+                Hypersonik::install();
+                Hypersonik::setMasterVolume(s_settings->gameSettings().value("hypersonik_volume", 75));
+            }
             AudioEQ::install(s_settings);
             if (s_gameId == "ez2dj_1st_se" || s_gameId == "rmbr_1st") {
                 DDraw4Fix::install(s_gameId, s_settings);
@@ -181,6 +186,10 @@ static void earlyInit() {
         case GameFamily::EZ2Dancer:
             initHardlock();
             EZ2DancerIO::installHooks(s_settings);
+            if (s_settings->gameSettings().value("hypersonik", false)) {
+                Hypersonik::install();
+                Hypersonik::setMasterVolume(s_settings->gameSettings().value("hypersonik_volume", 75));
+            }
             AudioEQ::install(s_settings);
             DDraw7Fix::install(s_settings);
             break;

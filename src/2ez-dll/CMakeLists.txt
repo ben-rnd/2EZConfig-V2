@@ -16,6 +16,8 @@ add_library(2EZ SHARED
     audio-eq/audio_eq.cpp
     audio-eq/mixer_hook.cpp
     audio-eq/biquad.c
+    audio-eq/eq_processor.c
+    audio-eq/hypersonik_hook.cpp
     $<$<CONFIG:Debug>:dll_hardlock_debug.cpp>
 )
 set_target_properties(2EZ PROPERTIES PREFIX "" OUTPUT_NAME "2EZ")
@@ -32,6 +34,7 @@ target_include_directories(2EZ PRIVATE
 target_link_libraries(2EZ PRIVATE
     hardlock
     hooks
+    -Wl,--whole-archive hypersonik -Wl,--no-whole-archive
     bindings
     patches
     logger

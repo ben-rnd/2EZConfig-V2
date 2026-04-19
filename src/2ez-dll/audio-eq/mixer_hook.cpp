@@ -23,9 +23,7 @@
 #include <windows.h>
 #include <mmsystem.h>
 
-// Forward declaration from audio_eq.cpp
-void AudioEQ_updateBass(double gainDb);
-void AudioEQ_updateTreble(double gainDb);
+#include "eq_processor.h"
 
 // ---------------------------------------------------------------------------
 // Constants matching the game's lookup tables
@@ -254,7 +252,7 @@ static MMRESULT WINAPI Hooked_mixerSetControlDetails(
         if (controlId == FAKE_CONTROL_ID_BASS) {
             g_bassValue = value;
             double db = mapBassToDb(value);
-            AudioEQ_updateBass(db);
+            EqProcessor_updateBass(db);
             Logger::info("[MixerHook] Bass set to " + std::to_string(value) +
                         " (" + std::to_string(db) + " dB)");
             return MMSYSERR_NOERROR;
@@ -263,7 +261,7 @@ static MMRESULT WINAPI Hooked_mixerSetControlDetails(
         if (controlId == FAKE_CONTROL_ID_TREBLE) {
             g_trebleValue = value;
             double db = mapTrebleToDb(value);
-            AudioEQ_updateTreble(db);
+            EqProcessor_updateTreble(db);
             Logger::info("[MixerHook] Treble set to " + std::to_string(value) +
                         " (" + std::to_string(db) + " dB)");
             return MMSYSERR_NOERROR;
