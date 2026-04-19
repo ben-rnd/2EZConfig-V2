@@ -8,6 +8,7 @@
 #include "input_manager.h"
 #include "bindings.h"
 #include "patch_store.h"
+#include "licenses.h"
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -152,6 +153,7 @@ static void renderAnalogEditPopup(const std::vector<Device>& axisDevices);
 static void renderLightsTab();
 static void renderLightBindPopup(const std::vector<Device>& outputDevices);
 static void renderPatchesTab();
+static void renderLicensesTab();
 static void renderPatchRow(Patch& patch);
 static int pollKeyboardPress(bool* prevKeys);
 static void renderVttKeyBind(const char* label, const char* bindId, const char* clearId,
@@ -405,6 +407,11 @@ static void renderUI() {
 
         if (ImGui::BeginTabItem("Lights")) {
             renderLightsTab();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Licenses", nullptr, ImGuiTabItemFlags_Trailing)) {
+            renderLicensesTab();
             ImGui::EndTabItem();
         }
 
@@ -1394,4 +1401,10 @@ static void setTheme() {
 
     // Apply initial theme colours
     applyTheme(g_app.family);
+}
+
+static void renderLicensesTab() {
+    ImGui::BeginChild("##licenses_scroll", ImVec2(0, 0), true);
+    ImGui::TextWrapped("%s", k_thirdPartyLicenses);
+    ImGui::EndChild();
 }

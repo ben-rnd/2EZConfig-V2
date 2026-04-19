@@ -1,3 +1,15 @@
+# Embed THIRD_PARTY_LICENSES as a C string
+file(READ "${CMAKE_SOURCE_DIR}/THIRD_PARTY_LICENSES" _licenses_raw)
+string(REPLACE "\\" "\\\\" _licenses_escaped "${_licenses_raw}")
+string(REPLACE "\"" "\\\"" _licenses_escaped "${_licenses_escaped}")
+string(REPLACE "\n" "\\n\"\n\"" _licenses_escaped "${_licenses_escaped}")
+set(LICENSES_STRING "\"${_licenses_escaped}\"")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/licenses.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/licenses.h"
+    @ONLY
+)
+
 # 2EZConfig.exe
 add_executable(2EZConfig WIN32 main.cpp app.rc)
 
@@ -15,6 +27,7 @@ set_source_files_properties(app.rc PROPERTIES
 target_include_directories(2EZConfig PRIVATE
     ${CMAKE_SOURCE_DIR}/src/common/include
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(2EZConfig PRIVATE
