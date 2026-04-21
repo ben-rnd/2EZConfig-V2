@@ -353,9 +353,18 @@ static __stdcall HRESULT ds_api_get_caps(
         IDirectSound8 *com,
         DSCAPS *caps)
 {
-    trace("%s [stub]", __func__);
+    trace("%s(%p) [stub]", __func__, caps);
 
-    return E_NOTIMPL;
+    if (caps == NULL) {
+        return E_POINTER;
+    }
+
+    if (caps->dwSize != sizeof(*caps)) {
+        trace("%s: unexpected caps param size: %i", __func__, caps->dwSize);
+        return E_INVALIDARG;
+    }
+    
+    return S_OK;
 }
 
 static __stdcall HRESULT ds_api_get_speaker_config(

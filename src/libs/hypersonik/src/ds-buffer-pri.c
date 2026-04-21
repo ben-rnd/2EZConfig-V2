@@ -115,6 +115,17 @@ static __stdcall ULONG ds_buffer_pri_release(IDirectSoundBuffer *com)
     return 0;
 }
 
+static __stdcall HRESULT ds_buffer_pri_play(
+        IDirectSoundBuffer *com,
+        DWORD reserved1,
+        DWORD reserved2,
+        DWORD flags)
+{
+    trace("%s [stub]", __func__);
+
+    return S_OK;
+}
+
 static __stdcall HRESULT ds_buffer_pri_set_format(
         IDirectSoundBuffer *com,
         const WAVEFORMATEX *format)
@@ -132,5 +143,6 @@ static struct IDirectSoundBufferVtbl ds_buffer_pri_vtbl = {
     .QueryInterface     = ds_buffer_pri_query_interface,
     .AddRef             = ds_buffer_pri_add_ref,
     .Release            = ds_buffer_pri_release,
+    .Play               = ds_buffer_pri_play,
     .SetFormat          = ds_buffer_pri_set_format,
 };
