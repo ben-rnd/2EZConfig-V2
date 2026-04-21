@@ -22,6 +22,28 @@
 #include "eq_processor.h"
 #endif
 
+/* Dynamic loading of avrt.dll (Vista+, not available on XP) */
+
+typedef HANDLE (WINAPI *PFN_AvSetMmThreadCharacteristicsW)(LPCWSTR, LPDWORD);
+typedef BOOL   (WINAPI *PFN_AvRevertMmThreadCharacteristics)(HANDLE);
+
+static PFN_AvSetMmThreadCharacteristicsW    pAvSetMmThreadCharacteristicsW;
+static PFN_AvRevertMmThreadCharacteristics  pAvRevertMmThreadCharacteristics;
+
+#define AvSetMmThreadCharacteristicsW   pAvSetMmThreadCharacteristicsW
+#define AvRevertMmThreadCharacteristics pAvRevertMmThreadCharacteristics
+
+static void avrt_load(void)
+{
+    HMODULE mod = LoadLibraryA("avrt.dll");
+    if (mod) {
+        pAvSetMmThreadCharacteristicsW = (PFN_AvSetMmThreadCharacteristicsW)
+            GetProcAddress(mod, "AvSetMmThreadCharacteristicsW");
+        pAvRevertMmThreadCharacteristics = (PFN_AvRevertMmThreadCharacteristics)
+            GetProcAddress(mod, "AvRevertMmThreadCharacteristics");
+    }
+}
+
 struct wasapi {
     HANDLE thread;
     HANDLE started;
@@ -301,6 +323,7 @@ static unsigned int __stdcall wasapi_thread_main(void *ctx)
     events[1] = NULL;
     task = NULL;
 
+    avrt_load();
     hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
     if (FAILED(hr)) {

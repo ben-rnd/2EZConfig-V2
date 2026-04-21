@@ -37,4 +37,4 @@ set_source_files_properties(${_hypersonik_src_files} PROPERTIES
     COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/precompiled.h"
 )
 
-target_link_libraries(hypersonik PRIVATE avrt msacm32)
+target_link_libraries(hypersonik PRIVATE msacm32)
