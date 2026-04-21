@@ -576,10 +576,15 @@ static __stdcall HRESULT ds_buffer_lock(
     *out_ptr = NULL;
     *out_nbytes = 0;
 
-    if (out_ptr2 != NULL || out_nbytes2 != NULL) {
-        trace("%s: Circular buffer lock is not implemented", __func__);
+    /* Validate wrap around params for circular buffer lock if provided*/
+    if ((out_ptr2 == NULL) != (out_nbytes2 == NULL)) {
+        trace("%s: Mismatched wrap-around out params", __func__);
+        return E_POINTER;
+    }
 
-        return E_NOTIMPL;
+    if (out_ptr2 != NULL) {
+        *out_ptr2 = NULL;
+        *out_nbytes2 = 0;
     }
 
     if (flags & DSBLOCK_FROMWRITECURSOR) {
@@ -626,7 +631,11 @@ static __stdcall HRESULT ds_buffer_lock(
     }
 
     if (span_end > buf_nbytes) {
-        trace("span_end %i > buf_nbytes %i", span_end, buf_nbytes);
+        /* Handle wrap around if ptr provided*/
+        if (out_ptr2 != NULL) {
+            *out_ptr2 = buf_bytes;
+            *out_nbytes2 = span_end - buf_nbytes;
+        }
         span_end = buf_nbytes;
     }
 
