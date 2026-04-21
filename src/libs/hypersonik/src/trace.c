@@ -21,20 +21,21 @@ void tracev_(const char *file, int line_no, const char *fmt, va_list ap)
     char line[512];
     int r;
 
-    r = vsnprintf_s(msg, sizeof(msg), sizeof(msg) - 1, fmt, ap);
+    r = _vsnprintf(msg, sizeof(msg) - 1, fmt, ap);
+    msg[sizeof(msg) - 1] = '\0';
 
     if (r < 0) {
         abort();
     }
 
-    r = _snprintf_s(
+    r = _snprintf(
             line,
-            sizeof(line),
             sizeof(line) - 1,
             "%s:%i: %s\n",
             file,
             line_no,
             msg);
+    line[sizeof(line) - 1] = '\0';
 
     if (r < 0) {
         abort();
