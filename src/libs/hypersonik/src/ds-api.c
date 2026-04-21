@@ -22,6 +22,7 @@ struct ds_api {
 };
 
 static HRESULT ds_api_alloc(struct ds_api **out);
+static struct ds_api *ds_api_singleton = NULL;
 static struct ds_api *ds_api_downcast(IDirectSound8 *com);
 static IDirectSound8 *ds_api_upcast(struct ds_api *self);
 static struct ds_api *ds_api_ref(struct ds_api *self);
@@ -449,6 +450,11 @@ HRESULT __stdcall ds_api_create8(
         return E_NOTIMPL;
     }
 
+    if (ds_api_singleton != NULL) {
+        *out = ds_api_upcast(ds_api_ref(ds_api_singleton));
+        return S_OK;
+    }
+
     trace("Initializing Hypersonik: Allocating system resources");
 
     *out = NULL;
@@ -466,6 +472,7 @@ HRESULT __stdcall ds_api_create8(
         goto end;
     }
 
+    ds_api_singleton = ds_api_ref(api);
     *out = ds_api_upcast(ds_api_ref(api));
 
 end:
