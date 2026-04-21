@@ -13,6 +13,33 @@
 #include "snd-stream.h"
 #include "trace.h"
 
+/* Dynamic loading of CONDITION_VARIABLE APIs (Vista+) */
+
+typedef void (WINAPI *PFN_InitializeConditionVariable)(PCONDITION_VARIABLE);
+typedef BOOL (WINAPI *PFN_SleepConditionVariableCS)(PCONDITION_VARIABLE, PCRITICAL_SECTION, DWORD);
+typedef void (WINAPI *PFN_WakeConditionVariable)(PCONDITION_VARIABLE);
+
+static PFN_InitializeConditionVariable  pInitializeConditionVariable;
+static PFN_SleepConditionVariableCS     pSleepConditionVariableCS;
+static PFN_WakeConditionVariable        pWakeConditionVariable;
+
+#define InitializeConditionVariable pInitializeConditionVariable
+#define SleepConditionVariableCS    pSleepConditionVariableCS
+#define WakeConditionVariable       pWakeConditionVariable
+
+static void condvar_load(void)
+{
+    HMODULE mod = GetModuleHandleA("kernel32.dll");
+    if (mod) {
+        pInitializeConditionVariable = (PFN_InitializeConditionVariable)
+            GetProcAddress(mod, "InitializeConditionVariable");
+        pSleepConditionVariableCS = (PFN_SleepConditionVariableCS)
+            GetProcAddress(mod, "SleepConditionVariableCS");
+        pWakeConditionVariable = (PFN_WakeConditionVariable)
+            GetProcAddress(mod, "WakeConditionVariable");
+    }
+}
+
 struct reaper {
     CRITICAL_SECTION lock;
     CONDITION_VARIABLE cond;
@@ -48,6 +75,8 @@ HRESULT reaper_alloc(
     assert(cli != NULL);
 
     *out = NULL;
+
+    condvar_load();
 
     reaper = calloc(1, sizeof(*reaper));
 
