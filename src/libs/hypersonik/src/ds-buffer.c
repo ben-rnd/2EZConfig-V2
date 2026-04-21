@@ -682,9 +682,16 @@ static __stdcall HRESULT ds_buffer_set_current_position(
         IDirectSoundBuffer *com,
         DWORD pos)
 {
+    struct ds_buffer *self;
+
+    self = ds_buffer_downcast(com);
+
     if (pos != 0) {
-        trace("%s: erk, nonzero seek (%i)", pos);
+        trace("%s: erk, nonzero seek (%i)", __func__, pos);
+        return S_OK;
     }
+
+    snd_stream_rewind(self->stm);
 
     return S_OK;
 }
