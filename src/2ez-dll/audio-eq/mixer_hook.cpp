@@ -211,7 +211,6 @@ static MMRESULT WINAPI Hooked_mixerGetLineControlsA(
         pCtrl->Metrics.cSteps = 16;
         lstrcpynA(pCtrl->szShortName, "Bass", MIXER_SHORT_NAME_CHARS);
         lstrcpynA(pCtrl->szName, "Bass", MIXER_LONG_NAME_CHARS);
-        Logger::info("[MixerHook] Faked BASS control");
         return MMSYSERR_NOERROR;
     }
 
@@ -223,7 +222,6 @@ static MMRESULT WINAPI Hooked_mixerGetLineControlsA(
         pCtrl->Metrics.cSteps = 16;
         lstrcpynA(pCtrl->szShortName, "Treble", MIXER_SHORT_NAME_CHARS);
         lstrcpynA(pCtrl->szName, "Treble", MIXER_LONG_NAME_CHARS);
-        Logger::info("[MixerHook] Faked TREBLE control");
         return MMSYSERR_NOERROR;
     }
 
@@ -253,8 +251,6 @@ static MMRESULT WINAPI Hooked_mixerSetControlDetails(
             g_bassValue = value;
             double db = mapBassToDb(value);
             EqProcessor_updateBass(db);
-            Logger::info("[MixerHook] Bass set to " + std::to_string(value) +
-                        " (" + std::to_string(db) + " dB)");
             return MMSYSERR_NOERROR;
         }
 
@@ -262,8 +258,6 @@ static MMRESULT WINAPI Hooked_mixerSetControlDetails(
             g_trebleValue = value;
             double db = mapTrebleToDb(value);
             EqProcessor_updateTreble(db);
-            Logger::info("[MixerHook] Treble set to " + std::to_string(value) +
-                        " (" + std::to_string(db) + " dB)");
             return MMSYSERR_NOERROR;
         }
 

@@ -166,16 +166,17 @@ static void earlyInit() {
 
     applySuperEarlyPatches();
 
+    if (s_settings->gameSettings().value("hypersonik", false)) {
+        Hypersonik::install();
+        Hypersonik::setMasterVolume(s_settings->gameSettings().value("hypersonik_volume", 75));
+    }
+
     GameFamily family = familyFromGameId(s_gameId);
     switch (family) {
         case GameFamily::EZ2DJ:
             resolveRemember1st();
             initHardlock();
             EZ2DJIO::installHooks(s_settings);
-            if (s_settings->gameSettings().value("hypersonik", false)) {
-                Hypersonik::install();
-                Hypersonik::setMasterVolume(s_settings->gameSettings().value("hypersonik_volume", 75));
-            }
             AudioEQ::install(s_settings);
             if (s_gameId == "ez2dj_1st_se" || s_gameId == "rmbr_1st") {
                 DDraw4Fix::install(s_gameId, s_settings);
@@ -186,10 +187,6 @@ static void earlyInit() {
         case GameFamily::EZ2Dancer:
             initHardlock();
             EZ2DancerIO::installHooks(s_settings);
-            if (s_settings->gameSettings().value("hypersonik", false)) {
-                Hypersonik::install();
-                Hypersonik::setMasterVolume(s_settings->gameSettings().value("hypersonik_volume", 75));
-            }
             AudioEQ::install(s_settings);
             DDraw7Fix::install(s_settings);
             break;
