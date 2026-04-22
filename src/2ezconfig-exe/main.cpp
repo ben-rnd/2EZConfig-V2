@@ -9,6 +9,7 @@
 #include "bindings.h"
 #include "patch_store.h"
 #include "licenses.h"
+#include "utils.h"
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -133,14 +134,6 @@ static void applyTheme(GameFamily family) {
     colors[ImGuiCol_PlotLinesHovered]     = ACCENT_ACTIVE;
     colors[ImGuiCol_PlotHistogram]        = ACCENT;
     colors[ImGuiCol_PlotHistogramHovered] = ACCENT_ACTIVE;
-}
-
-static std::string getAppDataDir() {
-    char pathBuffer[MAX_PATH] = {};
-    if (GetEnvironmentVariableA("APPDATA", pathBuffer, MAX_PATH)) {
-        return std::string(pathBuffer) + "\\2ezconfig";
-    }
-    return ".";
 }
 
 static void renderUI();

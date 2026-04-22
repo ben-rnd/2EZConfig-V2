@@ -35,4 +35,7 @@ target_link_libraries(2EZ PRIVATE
     kernel32
     user32
     winmm
+    dsound
+    ole32
+    shell32
 )

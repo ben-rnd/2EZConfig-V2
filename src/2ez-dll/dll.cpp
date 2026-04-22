@@ -16,6 +16,7 @@
 #include "settings.h"
 #include "game_defs.h"
 #include "logger.h"
+#include "utils.h"
 
 extern "C" {
 #include "io.hardlock.hooks.h"
@@ -65,14 +66,6 @@ static void resumeThreads(std::vector<HANDLE>& handles) {
     }
     handles.clear();
     Logger::info("[+] Application resumed");
-}
-
-static std::string getAppDataDir() {
-    char pathBuffer[MAX_PATH] = {};
-    if (GetEnvironmentVariableA("APPDATA", pathBuffer, MAX_PATH)) {
-        return std::string(pathBuffer) + "\\2ezconfig";
-    }
-    return "";
 }
 
 static DWORD WINAPI InitThread(void*) {

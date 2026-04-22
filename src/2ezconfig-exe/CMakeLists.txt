@@ -37,6 +37,7 @@ target_link_libraries(2EZConfig PRIVATE
     imgui
     opengl32
     gdi32
+    shell32
     setupapi
     hid
 )
