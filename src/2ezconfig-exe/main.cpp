@@ -687,6 +687,11 @@ static void renderSettingsTab() {
     globalCheckbox("Enable IO Emulation",                "io_emu",       true);
     globalCheckbox("Force High Priority (experimental)", "high_priority", false);
 
+    ImGui::SeparatorText("Launch Settings");
+    gameCheckbox("Skip UI (boot directly into game)", "skip_ui", false);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Bypasses the config UI and launches the game immediately.\nGreat for arcade-like setups. Use -skip-config on the command line\nfor a one-time bypass, or edit skip_ui in game-settings.json to revert.");
+
     ImGui::SeparatorText("Debug Settings");
     gameCheckbox("Enable Logging", "logging_enabled", false);
     {
