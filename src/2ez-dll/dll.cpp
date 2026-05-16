@@ -10,6 +10,7 @@
 #include "ez2dj_io.h"
 #include "ez2dancer_io.h"
 #include "sabin_io.h"
+#include "autoplay.h"
 #include "bindings.h"
 #include "input_manager.h"
 #include "patch_store.h"
@@ -94,6 +95,7 @@ static DWORD WINAPI InitThread(void*) {
     //Initialise the appropriate IO handler based on game family
     switch (s_gameFamily) {
         case GameFamily::EZ2DJ:
+            Autoplay::init(s_gameId);
             EZ2DJIO::initialiseIO(&s_bindings, s_input, s_settings);
             break;
         case GameFamily::EZ2Dancer:
