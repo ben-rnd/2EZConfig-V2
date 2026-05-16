@@ -39,6 +39,7 @@ target_link_libraries(2EZ PRIVATE
     patches
     logger
     utilities
+    autoplay
     kernel32
     user32
     winmm
